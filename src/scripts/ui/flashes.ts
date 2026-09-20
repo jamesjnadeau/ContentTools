@@ -8,6 +8,7 @@ import {rootContext} from '../../core/root-context.js';
  */
 ContentTools.FlashUI = class FlashUI extends ContentTools.AnchoredComponentUI {
     declare _domElement: any;
+    declare _monitorTimeout: any;
 
 
     // A flash is a visual indicator displayed typically once a task has been
@@ -47,6 +48,10 @@ ContentTools.FlashUI = class FlashUI extends ContentTools.AnchoredComponentUI {
         // Monitor for when the element is no long visible, at which point we can
         // remove it.
         var monitorForHidden = () => {
+            // No `this._monitorTimeout = null` here: every path out of this
+            // tick either reassigns it or unmounts, and clearing a handle
+            // that has already fired is a no-op. Mutation testing confirmed
+            // no test could fail without it.
 
             // If there's no support for `getComputedStyle` then we fallback to
             // unmounting the widget immediately.
@@ -55,14 +60,43 @@ ContentTools.FlashUI = class FlashUI extends ContentTools.AnchoredComponentUI {
                 return;
             }
 
+            // Off the page counts as hidden.
+            //
+            // A detached node has no computed style, so `opacity` reads as
+            // the empty string, `parseFloat` gives NaN, and EVERY comparison
+            // against NaN is false -- so a flash still fading when the editor
+            // is removed from the page would reschedule itself every 250ms
+            // for the life of the document, holding the detached subtree with
+            // it. Nothing else would ever clean it up: a flash is an
+            // `AnchoredComponentUI`, so it is not among the app's children and
+            // the editor's own teardown never sees it.
+            if (!this._domElement.isConnected) {
+                this.unmount();
+                return;
+            }
+
             // If the widget is now hidden we unmount it
             if (parseFloat(rootContext().getComputedStyle(this._domElement).opacity) < 0.01) {
                 return this.unmount();
             } else {
-                return setTimeout(monitorForHidden, 250);
+                return this._monitorTimeout = setTimeout(monitorForHidden, 250);
             }
         };
 
-        return setTimeout(monitorForHidden, 250);
+        return this._monitorTimeout = setTimeout(monitorForHidden, 250);
+    }
+
+    unmount() {
+        // Cancel a pending poll before unmounting.
+        //
+        // `unmount()` is public and nulls `_domElement`, so a tick left
+        // scheduled runs `getComputedStyle(null)` a quarter of a second
+        // later -- which throws from a timer, with a stack pointing at
+        // nothing the caller did.
+        if (this._monitorTimeout) {
+            clearTimeout(this._monitorTimeout);
+            this._monitorTimeout = null;
+        }
+        return super.unmount();
     }
 };
