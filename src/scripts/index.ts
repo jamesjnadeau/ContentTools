@@ -19,6 +19,6 @@ import './clean-html.js';
 import './editor.js';
 import './history.js';
 import './styles.js';
-import './tools.js';
+import './tools/index.js';
 
 export {default} from './namespace.js';

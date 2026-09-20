@@ -1,93 +1,118 @@
+# ContentTools 2 (alpha)
 
-> *For information on the ContentTools 2.x roadmap please view the: [Roadmap repo](https://github.com/GetmeUK/contenttools-2-roadmap)* 
+A WYSIWYG editor for HTML content, being modernized into the editing surface
+for a git-backed markdown CMS.
 
----
+This is a fork of [GetmeUK/ContentTools](https://github.com/GetmeUK/ContentTools),
+which has been unmaintained since 2022.
 
+## Status
 
-# ContentTools
+**`2.0.0-alpha.0` — the library modernization is done; the CMS is not built yet.**
 
-[![Build Status](https://travis-ci.org/GetmeUK/ContentTools.svg?branch=master)](https://travis-ci.org/GetmeUK/ContentTools)
+What changed from v1.6.16:
 
-> A JS library for building WYSIWYG editors for HTML content.
+| | v1.6.16 | now |
+|---|---|---|
+| Language | CoffeeScript 1.x | TypeScript |
+| Modules | one shared closure, concatenated | 71 ES modules |
+| Build | Grunt + PhantomJS (unrunnable on Node 22) | Vite |
+| Dependencies | ContentEdit/ContentSelect/HTMLString vendored as one prebuilt file | absorbed as source |
+| Tests | 127 assertions, PhantomJS | 517, real browser |
+| Host access | bare `document`/`window` throughout | one `RootContext` seam |
 
-<a href="http://getcontenttools.com"><img width="728" src="http://getcontenttools.com/images/github-splash.png" alt="Demo"></a>
+ContentEdit, ContentSelect and HTMLString are no longer external: their
+upstream sources were verified byte-identical to what was vendored, then
+absorbed. See `vendor-src/UPSTREAM.md`.
 
 ## Install
 
-**Using bower**
-
-```
-bower install --save ContentTools
+```sh
+npm install @jamesjnadeau/content-tools
 ```
 
-**Using npm**
+## Use
 
-```
-npm install --save ContentTools
+The v1.6.x integration contract is unchanged:
+
+```js
+import ContentTools from '@jamesjnadeau/content-tools';
+import '@jamesjnadeau/content-tools/style.css';
+
+const editor = ContentTools.EditorApp.get();
+editor.init('[data-editable]', 'data-name');
+
+editor.addEventListener('saved', ev => {
+    const regions = ev.detail().regions;   // {name: html}, CHANGED regions only
+    if (!Object.keys(regions).length) return;
+
+    editor.busy(true);
+    persist(regions).then(
+        () => { editor.busy(false); new ContentTools.FlashUI('ok'); },
+        () => { editor.busy(false); new ContentTools.FlashUI('no'); }
+    );
+});
 ```
 
-## Building
-To build the library you'll need to use Grunt. First install the required node modules ([grunt-cli](http://gruntjs.com/getting-started) must be installed):
+Or as a single script that attaches the browser globals, as before:
+
+```html
+<link rel="stylesheet" href="node_modules/@jamesjnadeau/content-tools/dist/content-tools.css">
+<script src="node_modules/@jamesjnadeau/content-tools/dist/content-tools.js"></script>
 ```
-git clone https://github.com/GetmeUK/ContentTools.git
-cd ContentTools
+
+## Development
+
+```sh
 npm install
+npm run build        # dist/: IIFE, minified IIFE, ESM, CSS + images
+npm test             # lint, typecheck, 517 browser tests, golden master, visual
+npm run test:coverage
 ```
 
-Install Sass (if not already installed):
-```
-gem install sass
-```
+`npm run dev` builds and serves the playground at
+`http://127.0.0.1:8931/playground/`.
 
-Then run `grunt build` to build the project.
+### How this is tested
 
-## Testing
-To test the library you'll need to use Jasmine. First install Jasmine:
-```
-git clone https://github.com/pivotal/jasmine.git
-mkdir ContentTools/jasmine
-mv jasmine/dist/jasmine-standalone-2.0.3.zip ContentTools/jasmine
-cd ContentTools/jasmine
-unzip jasmine-standalone-2.0.3.zip
-```
+Three suites, deliberately covering different things:
 
-Then open `ContentTools/SpecRunner.html` in a browser to run the tests.
+- **`test/browser/`** — 517 tests in real Chromium, run against the SOURCE so
+  coverage can attribute. Includes upstream ContentEdit's own 329 specs,
+  inherited with the code.
+- **`test/golden/golden.spec.mjs`** — a characterisation harness that drives
+  the BUILT bundle through scripted edits and compares against snapshots taken
+  from the frozen v1.6.16 artifact. This is what made the rewrite safe: it
+  answers "did behaviour change?" independently of whether a test was written
+  for it.
+- **`test/golden/visual.spec.mjs`** — screenshots the editor chrome under the
+  rebuilt stylesheet and compares against the legacy one.
 
-Alternatively you can use `grunt jasmine` to run the tests from the command line.
+`build/` holds the frozen v1.6.16 artifacts as the reference those suites
+compare against. Do not rebuild them.
 
-## ContentTools via jsdelivr
+## Known issues
 
-ContentTools is available via the [jsdelivr open source CDN](http://www.jsdelivr.com/), to reference a file from the ContentTools build directory use the following URL format:
+Bugs found during the port and deliberately left as-is, because fixing each
+changes behaviour and needs verifying on its own:
 
-`http://cdn.jsdelivr.net/npm/ContenTools@{version}/{file}`
+- `editor.ts` — `(!region.type() === 'Fixture')` compares a boolean with a
+  string, so the branch that blanks the HTML of a single-empty-child region
+  has never executed.
+- `html-string/strings.ts` — CoffeeScript's implicit-call syntax bound every
+  argument to `concat`, so one parser transition is registered with a single
+  argument instead of four.
+- `HTMLString.Tag.SELF_CLOSING` is an object, but membership is tested with
+  array semantics, so the test never matches.
+- `EditorApp` is a singleton, and `init()` only assigns `fixtureTest` when the
+  argument is truthy — so passing `null` cannot restore the default, and a
+  custom test persists for every later caller.
 
-For example to access the current primary JavaScript file the URL would be:
+## Roadmap
 
-`https://cdn.jsdelivr.net/npm/ContentTools@1.6.1/build/content-tools.min.js`
+Next: `<content-tools-editor>` as a Shadow DOM custom element, then markdown
+round-tripping, a git/PR backend over Octokit, and the CMS shell.
 
-As the project's CSS uses relative file paths you will need to either role your own version of CSS from the SASS files (recommended) or [override references to fonts/images within your local CSS](https://gist.github.com/anthonyjb/a6aec8ecfbfe6f875d5c6691687ba43d).
+## Licence
 
-
-## Documentation
-Full documentation is available at http://getcontenttools.com/api/content-tools
-
-## Where to post...
-
-- How do I? -- StackOverflow
-- I got this error, why? -- StackOverflow
-- I got this error and I'm sure it's a bug -- post an issue
-- I have an idea/request -- post an issue
-- Why do you? -- chat with me on gitter (I may then post it as an issue)
-- When will you? -- chat with me on gitter (I may then post it as an issue)
-- You suck and I hate you -- contact us privately at pm@piersmorgan.me!
-- You're awesome -- please find a megaphone and suitably high rooftop (but seriously any help spreading the word about ContentTools is much appreciated)
-
-> Stolen almost in it's entirety from this [post](http://meta.stackexchange.com/questions/3966/is-it-okay-to-use-stack-overflow-as-the-support-forum-for-a-product-or-project) on meta.stackexchange.com
-
-## Browser support
-The current aim is for all the libraries to support IE9+, Chrome and Firefox. Test suites are complete for all the libraries except ContentTools and I'm using Jasmine to check that the tests pass in those browsers.
-
-There will be some visual differences for ContentTools in IE9 as I use CSS animations for some of the UI feedback.
-
-## Helpful organizations
-ContentTools is developed using a number of tools & services provided for free by nice folks at organizations committed to supporting open-source projects including [BrowserStack](http://www.browserstack.com), [GitHub](https://github.com) and [jsdelivr](http://www.jsdelivr.com/), [Travis CI](https://travis-ci.org).
+MIT, as upstream.
