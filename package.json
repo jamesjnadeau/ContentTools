@@ -16,10 +16,13 @@
   "main": "dist/content-tools.js",
   "devDependencies": {
     "@playwright/test": "^1.49.0",
+    "@vitest/browser": "^3.2.7",
     "coffee-script": "^1.7.1",
     "coffeescript": "^1.12.7",
+    "decaffeinate": "^8.1.4",
     "sass": "^1.104.1",
-    "vite": "^6.4.3"
+    "vite": "^6.4.3",
+    "vitest": "^3.2.7"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -29,7 +32,8 @@
     "build:playground": "node scripts/build-playground.mjs",
     "dev": "node scripts/build.mjs && node test/golden/server.mjs",
     "test:visual": "playwright test --config test/golden/playwright.config.mjs visual.spec.mjs",
-    "test": "npm run test:golden && npm run test:visual"
+    "test": "npm run test:unit && npm run test:golden && npm run test:visual",
+    "test:unit": "vitest run --config vitest.config.mjs"
   },
   "repository": {
     "type": "git",
