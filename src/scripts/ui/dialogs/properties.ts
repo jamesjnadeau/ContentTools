@@ -2,6 +2,7 @@ import HTMLString from '../../../../vendor-src/html-string/namespace.js';
 import ContentEdit from '../../../../vendor-src/content-edit/scripts/namespace.js';
 import ContentTools from '../../namespace.js';
 import {rootContext} from '../../../core/root-context.js';
+import {restrictedAttributes} from '../../../core/profile.js';
 
 /*
  * decaffeinate suggestions:
@@ -27,6 +28,7 @@ ContentTools.PropertiesDialog = class PropertiesDialog extends ContentTools.Dial
     declare _focusedAttributeUI: any;
     declare _styleUIs: any;
     declare _supportsCoding: any;
+    declare _supportsStyles: any;
     declare element: any;
 
 
@@ -53,6 +55,13 @@ ContentTools.PropertiesDialog = class PropertiesDialog extends ContentTools.Dial
         if ((needle = this.element.type(), ['ListItem', 'TableCell'].includes(needle))) {
             this._supportsCoding = true;
         }
+
+        // Whether the styles tab is offered. Unlike `_supportsCoding` this is
+        // not a property of the element but of the editor's constraint
+        // profile, which is not reachable from a constructor -- the dialog is
+        // given its parent by `attach()`, which runs later. It is therefore
+        // resolved in `mount()`, and defaults to the v1.6.16 answer here.
+        this._supportsStyles = true;
     }
 
     // Methods
@@ -95,8 +104,13 @@ ContentTools.PropertiesDialog = class PropertiesDialog extends ContentTools.Dial
         }
 
         // Find removed attributes
-        const restricted = ContentTools.getRestrictedAtributes(this.element.tagName());
         const object = this.element.attributes();
+        const restricted = restrictedAttributes(
+            this._profile(),
+            this.element.tagName(),
+            Object.keys(object),
+            ContentTools.getRestrictedAtributes(this.element.tagName())
+            );
         for (name in object) {
             value = object[name];
             if (restricted && (restricted.indexOf(name.toLowerCase()) !== -1)) {
@@ -148,6 +162,14 @@ ContentTools.PropertiesDialog = class PropertiesDialog extends ContentTools.Dial
         let name, value;
         super.mount();
 
+        // Resolve the constraint profile. This is the first point at which
+        // the dialog can see the editor it belongs to.
+        const profile = this._profile();
+        this._supportsStyles = profile.styles;
+        if (!profile.coding) {
+            this._supportsCoding = false;
+        }
+
         // Update dialog class
         ContentEdit.addCSSClass(this._domElement, 'ct-properties-dialog');
 
@@ -166,7 +188,10 @@ ContentTools.PropertiesDialog = class PropertiesDialog extends ContentTools.Dial
         this._domView.appendChild(this._domStyles);
 
         // Add the styles in the style palette for this element
-        for (var style of Array.from<any>(ContentTools.StylePalette.styles(this.element))) {
+        const paletteStyles = this._supportsStyles
+            ? ContentTools.StylePalette.styles(this.element)
+            : [];
+        for (var style of Array.from<any>(paletteStyles)) {
             var styleUI = new StyleUI(
                 style,
                 this.element.hasCSSClass(style.cssClass())
@@ -181,8 +206,13 @@ ContentTools.PropertiesDialog = class PropertiesDialog extends ContentTools.Dial
         this._domView.appendChild(this._domAttributes);
 
         // Add the elements attributes
-        const restricted = ContentTools.getRestrictedAtributes(this.element.tagName());
         const attributes = this.element.attributes();
+        const restricted = restrictedAttributes(
+            profile,
+            this.element.tagName(),
+            Object.keys(attributes),
+            ContentTools.getRestrictedAtributes(this.element.tagName())
+            );
 
         // Build a list of attribute names that we can sort alphabetically. We
         // sort the attributes on mounting the dialog but not when new attributes
@@ -238,6 +268,10 @@ ContentTools.PropertiesDialog = class PropertiesDialog extends ContentTools.Dial
         this._domStylesTab.setAttribute('data-ct-tooltip', ContentEdit._('Styles'));
         domTabs.appendChild(this._domStylesTab);
 
+        if (!this._supportsStyles) {
+            ContentEdit.addCSSClass(this._domStylesTab, 'ct-control--muted');
+        }
+
         // Attributes
         this._domAttributesTab = (this.constructor as unknown as {createDiv(classNames?: string[], attributes?: Record<string, string>, content?: string): HTMLDivElement}).createDiv([
             'ct-control',
@@ -292,7 +326,7 @@ ContentTools.PropertiesDialog = class PropertiesDialog extends ContentTools.Dial
         // Check to see which tab was last active and restore it (defaults to the
         // styles tab).
         const lastTab = rootContext().storage().getItem('ct-properties-dialog-tab');
-        if (lastTab === 'attributes') {
+        if ((lastTab === 'attributes') || !this._supportsStyles) {
             ContentEdit.addCSSClass(this._domElement,
                 'ct-properties-dialog--attributes');
             ContentEdit.addCSSClass(this._domAttributesTab, 'ct-control--active');
@@ -406,6 +440,20 @@ ContentTools.PropertiesDialog = class PropertiesDialog extends ContentTools.Dial
                 valid = false;
             }
 
+            // Validate the name against the profile's allow-list. This is a
+            // stronger statement than the deny-list above and has to be made
+            // here rather than in `restrictedAttributes`: that converts an
+            // allow-list into a deny-list over the attributes the element
+            // ALREADY has, and a name being typed into the empty row is by
+            // definition not one of them.
+            const permitted = dialog._profile().attributes;
+            if (valid && permitted && (name !== '')) {
+                const allowed = permitted[element.tagName().toLowerCase()] || [];
+                if (allowed.indexOf(name) === -1) {
+                    valid = false;
+                }
+            }
+
             // Validate the name isn't duplicated
             for (var otherAttributeUI of Array.from<any>(dialog._attributeUIs)) {
 
@@ -484,9 +532,11 @@ ContentTools.PropertiesDialog = class PropertiesDialog extends ContentTools.Dial
         };
 
         // Styles
-        this._domStylesTab.addEventListener('mousedown', () => {
-            return selectTab('styles');
-        });
+        if (this._supportsStyles) {
+            this._domStylesTab.addEventListener('mousedown', () => {
+                return selectTab('styles');
+            });
+        }
 
         // Attributes
         this._domAttributesTab.addEventListener('mousedown', () => {

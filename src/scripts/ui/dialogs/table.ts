@@ -55,6 +55,17 @@ ContentTools.TableDialog = class TableDialog extends ContentTools.DialogUI {
                 };
         }
 
+        /* A GFM table REQUIRES a header row and has no footer at all, so
+           under a profile that says so the two switches are not offered and
+           the configuration is forced. The sections are still built, because
+           `save()` reads their classes to report the configuration back --
+           they are simply never appended to the view. */
+        const sections = this._profile().tableSections;
+        if (!sections) {
+            cfg.head = true;
+            cfg.foot = false;
+        }
+
         // Update dialog class
         ContentEdit.addCSSClass(this._domElement, 'ct-table-dialog');
 
@@ -69,7 +80,9 @@ ContentTools.TableDialog = class TableDialog extends ContentTools.DialogUI {
             headCSSClasses.push('ct-section--applied');
         }
         this._domHeadSection = (this.constructor as unknown as {createDiv(classNames?: string[], attributes?: Record<string, string>, content?: string): HTMLDivElement}).createDiv(headCSSClasses);
-        this._domView.appendChild(this._domHeadSection);
+        if (sections) {
+            this._domView.appendChild(this._domHeadSection);
+        }
 
         const domHeadLabel = (this.constructor as unknown as {createDiv(classNames?: string[], attributes?: Record<string, string>, content?: string): HTMLDivElement}).createDiv(['ct-section__label']);
         domHeadLabel.textContent = ContentEdit._('Table head');
@@ -104,7 +117,9 @@ ContentTools.TableDialog = class TableDialog extends ContentTools.DialogUI {
             footCSSClasses.push('ct-section--applied');
         }
         this._domFootSection = (this.constructor as unknown as {createDiv(classNames?: string[], attributes?: Record<string, string>, content?: string): HTMLDivElement}).createDiv(footCSSClasses);
-        this._domView.appendChild(this._domFootSection);
+        if (sections) {
+            this._domView.appendChild(this._domFootSection);
+        }
 
         const domFootLabel = (this.constructor as unknown as {createDiv(classNames?: string[], attributes?: Record<string, string>, content?: string): HTMLDivElement}).createDiv(['ct-section__label']);
         domFootLabel.textContent = ContentEdit._('Table foot');
@@ -183,8 +198,10 @@ ContentTools.TableDialog = class TableDialog extends ContentTools.DialogUI {
             }
         };
 
-        this._domHeadSection.addEventListener('click', toggleSection);
-        this._domFootSection.addEventListener('click', toggleSection);
+        if (this._profile().tableSections) {
+            this._domHeadSection.addEventListener('click', toggleSection);
+            this._domFootSection.addEventListener('click', toggleSection);
+        }
 
         // Focus on the columns input if the section is clicked
         this._domBodySection.addEventListener('click', ev => {

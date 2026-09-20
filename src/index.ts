@@ -30,3 +30,17 @@ export default ContentTools;
  */
 export {rootContext, setRootContext, deepActiveElement} from './core/root-context.js';
 export {default as DocumentRootContext} from './core/document-root-context.js';
+
+/* The constraint profiles. `markdown` restricts the editor to output
+ * markdown can express; see docs/markdown-mode.md. Plain frozen data with no
+ * imports, so exporting it here costs the IIFE build nothing and the
+ * markdown serializer stays behind its own `./markdown` subpath.
+ */
+export {
+    HTML_PROFILE,
+    MARKDOWN_PROFILE,
+    PROFILES,
+    filterToolGroups,
+    restrictedAttributes
+} from './core/profile.js';
+export type {ConstraintProfile, AttributeWhitelist} from './core/profile.js';

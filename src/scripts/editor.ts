@@ -3,6 +3,7 @@ import ContentSelect from '../../vendor-src/content-select/content-select.js';
 import ContentEdit from '../../vendor-src/content-edit/scripts/namespace.js';
 import ContentTools from './namespace.js';
 import {rootContext} from '../core/root-context.js';
+import {HTML_PROFILE, filterToolGroups} from '../core/profile.js';
 
 /*
  * decaffeinate suggestions:
@@ -23,6 +24,7 @@ class _EditorApp extends ContentTools.ComponentUI {
     declare _fixtureTest: any;
     declare _handleBeforeUnload: any;
     declare _handleClipboardPaste: any;
+    declare _handleAttach: any;
     declare _handleDetach: any;
     declare _handleHighlightOff: any;
     declare _handleHighlightOn: any;
@@ -34,6 +36,7 @@ class _EditorApp extends ContentTools.ComponentUI {
     declare _ignition: any;
     declare _inspector: any;
     declare _namingProp: any;
+    declare _profile: any;
     declare _orderedRegions: any;
     declare _regionQuery: any;
     declare _regions: any;
@@ -63,6 +66,11 @@ class _EditorApp extends ContentTools.ComponentUI {
 
         // The property used to store a region/fixtures name
         this._namingProp = null;
+
+        // The constraint profile: what this editor is allowed to produce. The
+        // default allows everything v1.6.16 did, so every site that consults
+        // it falls through to its original behaviour.
+        this._profile = HTML_PROFILE;
 
         // The test to use to determine if region is a fixture (by default we
         // look for the data-fixture attribute).
@@ -176,6 +184,33 @@ class _EditorApp extends ContentTools.ComponentUI {
         }
     }
 
+    profile(profile?) {
+        // Get/set the constraint profile for the editor
+        if (profile === undefined) {
+            return this._profile;
+        }
+
+        this._profile = profile;
+
+        /* A profile set after `init()` has to catch up with what init
+           already did: re-filter the toolbox it built, and re-apply the
+           behaviour rules to the regions it already parsed. Setting the
+           profile BEFORE init -- which is what the element does -- leaves
+           both of these no-ops, and the 'attach' binding covers everything
+           created from then on, region parsing included. */
+        if (this._toolbox) {
+            this._toolbox.tools(
+                filterToolGroups(profile, ContentTools.DEFAULT_TOOLS)
+                );
+        }
+
+        for (const name in this._regions) {
+            this._applyProfileTo(this._regions[name]);
+        }
+
+        return profile;
+    }
+
     createPlaceholderElement(region) {
         // Return a placeholder element for the region (used to populate an empty
         // region).
@@ -253,7 +288,9 @@ class _EditorApp extends ContentTools.ComponentUI {
         }
 
         // Toolbox
-        this._toolbox = new ContentTools.ToolboxUI(ContentTools.DEFAULT_TOOLS);
+        this._toolbox = new ContentTools.ToolboxUI(
+            filterToolGroups(this._profile, ContentTools.DEFAULT_TOOLS)
+            );
         this.attach(this._toolbox);
 
         // Inspector
@@ -265,6 +302,14 @@ class _EditorApp extends ContentTools.ComponentUI {
 
         this._handleDetach = element => {
             return this._preventEmptyRegions();
+        };
+
+        // Apply the constraint profile to elements as they are created.
+        // Applying it once over the regions would be undone the moment the
+        // user pressed Enter, so it has to ride the 'attach' event -- the
+        // sibling of the 'detach' binding above.
+        this._handleAttach = (parent, element) => {
+            return this._applyProfileTo(element);
         };
 
         this._handleClipboardPaste = (element, ev) => {
@@ -358,6 +403,9 @@ class _EditorApp extends ContentTools.ComponentUI {
         // Check when elements are detached that the parent region is not empty
         ContentEdit.Root.get().bind('detach', this._handleDetach);
 
+        // Constrain elements as they are created
+        ContentEdit.Root.get().bind('attach', this._handleAttach);
+
         // Monitor paste events so that we can pre-parse the content the user
         // wants to paste into the region.
         ContentEdit.Root.get().bind('paste', this._handleClipboardPaste);
@@ -378,6 +426,7 @@ class _EditorApp extends ContentTools.ComponentUI {
 
         // Remove any events bound to the ContentEdit Root
         ContentEdit.Root.get().unbind('detach', this._handleDetach);
+        ContentEdit.Root.get().unbind('attach', this._handleAttach);
         ContentEdit.Root.get().unbind('paste', this._handleClipboardPaste);
         ContentEdit.Root.get().unbind(
             'next-region',
@@ -449,7 +498,7 @@ class _EditorApp extends ContentTools.ComponentUI {
         // Clean the HTML
         const sandbox = rootContext().createSandboxDocument();
         const wrapper = sandbox.createElement('div');
-        wrapper.innerHTML = ContentTools.getHTMLCleaner().clean(content.trim());
+        wrapper.innerHTML = this._htmlCleaner().clean(content.trim());
 
         // Remove any undefined nodes or empty #text nodes
         const childNodes = [];
@@ -1103,6 +1152,47 @@ class _EditorApp extends ContentTools.ComponentUI {
     }
 
     // Private methods
+
+    _applyProfileTo(element) {
+        // Apply the constraint profile's behaviour rules to one element and
+        // its descendants.
+        //
+        // `can()` is ContentEdit's own per-element gate, so constraining
+        // through it means the drag handles, resize corners and keyboard
+        // paths all agree without any of them being taught about profiles.
+        if (!element) {
+            return;
+        }
+
+        if (!this._profile.resize && (element.type() === 'Image')) {
+            element.can('resize', false);
+        }
+
+        if (element.children) {
+            for (const child of Array.from<any>(element.children)) {
+                this._applyProfileTo(child);
+            }
+        }
+    }
+
+    _htmlCleaner() {
+        // Return the cleaner used to sanitize pasted HTML.
+        //
+        // Under the default profile this is exactly
+        // `ContentTools.getHTMLCleaner()`, which consumers are documented to
+        // override. A constraining profile cannot honour that override -- an
+        // override returning a permissive cleaner would defeat the whole
+        // constraint -- so it builds a cleaner from its own whitelists.
+        const profile = this._profile;
+        if (!profile.tags && !profile.attributes) {
+            return ContentTools.getHTMLCleaner();
+        }
+        return new ContentTools.HTMLCleaner(
+            profile.tags,
+            profile.attributes,
+            profile.voidTags
+            );
+    }
 
     _addDOMEventListeners() {
         // Add DOM event listeners for the widget

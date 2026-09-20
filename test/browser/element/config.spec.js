@@ -224,3 +224,77 @@ describe('adoptStyles', () => {
         expect(appColour()).not.toBe('rgb(0, 0, 255)');
     });
 });
+
+/* `mode`, the markdown constraint.
+ *
+ * The profile itself is tested in `content-tools/markdown-mode.spec.js`
+ * against a bare EditorApp. What is element-specific -- and what is
+ * asserted here -- is that the attribute reaches the app BEFORE init(),
+ * that an unrecognised value degrades instead of breaking, and that a
+ * consumer-supplied tool list does not route around it.
+ */
+describe('mode', () => {
+
+    let el;
+    afterEach(async () => { if (el) await unmount(el); el = null; assertNoResidue(); });
+
+    it('defaults to html', () => {
+        el = mount();
+        expect(el.mode).toBe('html');
+        expect(el.editorApp.profile().name).toBe('html');
+    });
+
+    it('applies the markdown profile', () => {
+        el = mount({mode: 'markdown'});
+        expect(el.editorApp.profile().name).toBe('markdown');
+    });
+
+    it('reaches the toolbox, which means it arrived before init()', () => {
+        // The toolbox is built inside init(), so a filtered toolbox is
+        // proof the profile was set first rather than applied after.
+        el = mount({mode: 'markdown'});
+        const names = el.editorApp.toolbox().tools()
+            .reduce((all, group) => all.concat(group), []);
+        expect(names.length).toBe(17);
+        expect(names.indexOf('video')).toBe(-1);
+    });
+
+    it('falls back to html for an unrecognised value', () => {
+        // An attribute typo should not leave the element dead on the page.
+        el = mount({mode: 'mrkdown'});
+        expect(el.mode).toBe('html');
+        expect(el.editorApp.profile().name).toBe('html');
+    });
+
+    it('filters a consumer-supplied tool list too', () => {
+        el = mount({mode: 'markdown'});
+        el.tools = [['bold', 'align-left'], ['video']];
+        expect(el.editorApp.toolbox().tools()).toEqual([['bold']]);
+    });
+
+    it('filters one supplied before connection', () => {
+        el = create({mode: 'markdown'});
+        el.tools = [['bold', 'align-center']];
+        document.body.appendChild(el);
+        expect(el.editorApp.toolbox().tools()).toEqual([['bold']]);
+    });
+
+    it('rebuilds the editor when the mode changes', () => {
+        el = mount();
+        expect(el.editorApp.toolbox().tools().flat().length).toBe(21);
+        el.setAttribute('mode', 'markdown');
+        expect(el.editorApp.profile().name).toBe('markdown');
+        expect(el.editorApp.toolbox().tools().flat().length).toBe(17);
+    });
+
+    it('refuses to change mode while editing', () => {
+        // Rebuilding under a live editing session would strand the
+        // regions, so the change is ignored with a warning, exactly as
+        // content-scope already is.
+        el = mount();
+        el.start();
+        el.setAttribute('mode', 'markdown');
+        expect(el.editorApp.profile().name).toBe('html');
+        el.stop();
+    });
+});

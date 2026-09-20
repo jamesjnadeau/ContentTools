@@ -14,6 +14,7 @@ const Cls$clean_html = (ContentTools.HTMLCleaner = class HTMLCleaner {
     // the defaults, the instance fields the effective whitelists.
     declare tagWhitelist: any;
     declare attributeWhitelist: any;
+    declare voidTags: any;
 
     static declare DEFAULT_ATTRIBUTE_WHITELIST: any;
     static declare DEFAULT_TAG_WHITELIST: any;
@@ -79,13 +80,28 @@ const Cls$clean_html = (ContentTools.HTMLCleaner = class HTMLCleaner {
         ];
     }
 
-    constructor(tagWhitelist, attributeWhitelist) {
+    constructor(tagWhitelist, attributeWhitelist, voidTags?) {
         // List of tags we consider safe
         this.tagWhitelist = tagWhitelist || (this.constructor as unknown as Record<string, any>).DEFAULT_TAG_WHITELIST;
 
         // Table of tags and the attributes we consider safe
         this.attributeWhitelist = attributeWhitelist ||
                 (this.constructor as unknown as Record<string, any>).DEFAULT_ATTRIBUTE_WHITELIST;
+
+        /* Tags that are meaningful with no children.
+         *
+         * The empty-node rule below deletes any element whose textContent is
+         * blank, which takes <img>, <hr> and <br> with it -- so whitelisting
+         * one of those is not on its own enough to let it through. The rule's
+         * own comment says it excepts <br>, and it never has; that mismatch
+         * is left alone rather than fixed, because HTML mode's paste output
+         * is pinned by the golden master and changing it is a behaviour
+         * change owed its own verification.
+         *
+         * Defaulting to empty is what keeps that promise: a caller passing
+         * nothing gets v1.6.16 exactly.
+         */
+        this.voidTags = voidTags || [];
     }
 
     clean(html) {
@@ -140,7 +156,7 @@ const Cls$clean_html = (ContentTools.HTMLCleaner = class HTMLCleaner {
 
             // Remove any tag with no children or only whitespace children with
             // the exception of text or <br> tags.
-            if (nodeName !== '#text') {
+            if ((nodeName !== '#text') && (this.voidTags.indexOf(nodeName) < 0)) {
                 if (node.textContent.trim() === '') {
                     if ((node.textContent === '') || (node.parentNode === wrapper)) {
                         // If the element is empty or top level remove it...

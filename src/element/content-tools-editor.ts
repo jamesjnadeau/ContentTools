@@ -30,6 +30,7 @@ import {ContentTools, ContentEdit} from '../index.js';
 
 import ShadowRootContext from '../core/shadow-root-context.js';
 import {rootContext, setRootContext} from '../core/root-context.js';
+import {PROFILES, filterToolGroups} from '../core/profile.js';
 import {chromeStyles, hostStyles, chromeStyleSheet, hostStyleSheet} from './styles.js';
 import {ensureIconFont} from './icon-font.js';
 import {createEventBridge} from './event-bridge.js';
@@ -86,7 +87,7 @@ export class ContentToolsEditor extends HTMLElement {
         // custom elements end up in a loop.
         return [
             'regions', 'naming-prop', 'ignition',
-            'content-scope', 'content-styles', 'ui-lang'
+            'content-scope', 'content-styles', 'ui-lang', 'mode'
         ];
     }
 
@@ -171,6 +172,27 @@ export class ContentToolsEditor extends HTMLElement {
         this.toggleAttribute('ignition', !!value);
     }
 
+    /**
+     * `html` (default) or `markdown`.
+     *
+     * Markdown mode constrains the editor to what markdown can express: 17
+     * of the 21 tools, no CSS classes, no raw-HTML tab, no image resizing,
+     * no table head/foot switches and an attribute allow-list. It does NOT
+     * pull in the serializer -- parsing and serializing markdown is the
+     * shell's job, which is what keeps the element free of I/O.
+     *
+     * An unrecognised value falls back to `html` rather than throwing: an
+     * attribute typo should not leave the element dead on the page.
+     */
+    get mode(): string {
+        const mode = this.getAttribute('mode');
+        return (mode && PROFILES[mode]) ? mode : 'html';
+    }
+
+    set mode(value: string) {
+        this.setAttribute('mode', value);
+    }
+
     /** `light` (default, Mode A) or `shadow` (Mode B, experimental). */
     get contentScope(): string {
         return this.getAttribute('content-scope') === 'shadow' ? 'shadow' : 'light';
@@ -235,7 +257,11 @@ export class ContentToolsEditor extends HTMLElement {
     set tools(value: string[][] | null) {
         this._tools = value;
         if (this._booted && value) {
-            this._app.toolbox().tools(value);
+            // Filtered, for the same reason _boot() filters it: a profile
+            // a consumer can step around is a default, not a constraint.
+            this._app.toolbox().tools(
+                filterToolGroups(PROFILES[this.mode], value)
+                );
         }
     }
 
@@ -344,8 +370,11 @@ export class ContentToolsEditor extends HTMLElement {
         case 'naming-prop':
         case 'ignition':
         case 'content-scope':
-            // These are read once, during init(), and content-scope also
-            // decides where the content physically lives.
+        case 'mode':
+            /* These are read once, during init(). content-scope also decides
+               where the content physically lives, and mode decides what the
+               regions were parsed into -- neither can be re-applied to an
+               already-initialised editor without rebuilding it. */
             this._reboot(name);
             break;
         case 'content-styles':
@@ -501,6 +530,12 @@ export class ContentToolsEditor extends HTMLElement {
         });
 
         this._app = ContentTools.EditorApp.get();
+
+        /* Before init(), which is where the toolbox is built from the
+           profile-filtered tool list and where the regions are parsed and
+           constrained. */
+        this._app.profile(PROFILES[this.mode]);
+
         this._app.init(
             this.regions,
             this.namingProp,
@@ -509,7 +544,11 @@ export class ContentToolsEditor extends HTMLElement {
             );
 
         if (this._tools) {
-            this._app.toolbox().tools(this._tools);
+            /* Filtered too. A profile a consumer can step around by setting
+               `tools` is not a constraint, it is a default. */
+            this._app.toolbox().tools(
+                filterToolGroups(PROFILES[this.mode], this._tools)
+                );
         }
 
         this._bridge = createEventBridge(this._app, this);

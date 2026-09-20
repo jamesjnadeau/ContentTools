@@ -1,4 +1,5 @@
 import ContentTools from '../scripts/index.js';
+import {HTML_PROFILE} from '../core/profile.js';
 
 /* The process-wide lease on the editor singletons, and the repair function
  * that makes reusing them possible.
@@ -142,6 +143,7 @@ export function resetEditorApp(): void {
     app._inspector = null;
     app._toolbox = null;
     app._emptyRegionsAllowed = false;
+    app._profile = HTML_PROFILE;
 
     // Not constructor fields; see the note above.
     if (app._highlightTimeout) {

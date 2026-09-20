@@ -1,6 +1,7 @@
 import ContentEdit from '../../../vendor-src/content-edit/scripts/namespace.js';
 import ContentTools from '../namespace.js';
 import {rootContext} from '../../core/root-context.js';
+import {HTML_PROFILE} from '../../core/profile.js';
 
 /*
  * decaffeinate suggestions:
@@ -54,6 +55,24 @@ ContentTools.ComponentUI = class ComponentUI {
     parent() {
         // Return the parent of the component
         return this._parent;
+    }
+
+    _profile() {
+        // Return the constraint profile of the editor this component belongs
+        // to.
+        //
+        // `attach()` assigns `_parent` before calling `mount()`, so a dialog
+        // can read this from `mount()` but not from its constructor. Walking
+        // the chain rather than reading `EditorApp.get()` is what keeps this
+        // correct once Milestone 2b de-singletons the app.
+        let component = this._parent;
+        while (component) {
+            if (component.profile) {
+                return component.profile();
+            }
+            component = component.parent();
+        }
+        return HTML_PROFILE;
     }
 
     // Methods
