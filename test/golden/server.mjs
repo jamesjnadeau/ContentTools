@@ -22,6 +22,16 @@ const TYPES = {
 
 createServer(async (req, res) => {
     let urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    // The repo root holds no index.html, and `npm run dev` exists to show the
+    // playground, so point the bare host at it instead of 404ing.
+    if (urlPath === '/') {
+        res.writeHead(302, {Location: '/playground/'}).end();
+        return;
+    }
+    // A directory request resolves to its index.html, as static servers do.
+    if (urlPath.endsWith('/')) {
+        urlPath += 'index.html';
+    }
     // Phase 1 moved build/images/* to src/assets/. The frozen legacy stylesheet
     // still asks for /build/images/<name>, so alias it rather than keeping a
     // duplicate copy of the binaries around.
@@ -41,4 +51,4 @@ createServer(async (req, res) => {
     } catch {
         res.writeHead(404).end('not found');
     }
-}).listen(PORT, () => console.log(`golden fixture server on http://127.0.0.1:${PORT}`));
+}).listen(PORT, () => console.log(`serving the repo on http://127.0.0.1:${PORT}/ (playground at /playground/)`));
