@@ -1,4 +1,5 @@
 import ContentEdit from './namespace.js';
+import {rootContext} from '../../../src/core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -55,7 +56,7 @@ ContentEdit.Region = class Region extends ContentEdit.NodeCollection {
         if (domElementOrHTML.childNodes === undefined) {
 
             // Convert the HTML string to DOM elements we can pass
-            const wrapper = document.createElement('div');
+            const wrapper = rootContext().createElement('div');
             wrapper.innerHTML = domElementOrHTML;
             domElement = wrapper;
         }

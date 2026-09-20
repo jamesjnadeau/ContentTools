@@ -2,6 +2,7 @@ import HTMLString from '../../vendor-src/html-string/namespace.js';
 import ContentSelect from '../../vendor-src/content-select/content-select.js';
 import ContentEdit from '../../vendor-src/content-edit/scripts/namespace.js';
 import ContentTools from './namespace.js';
+import {rootContext} from '../core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -253,9 +254,9 @@ class _EditorApp extends ContentTools.ComponentUI {
             }
 
             // IE browsers
-            if (window.clipboardData) {
-                clipboardData = window.clipboardData.getData('TEXT');
-                return this.pasteText(element, window.clipboardData.getData('TEXT'));
+            if (rootContext().clipboardData()) {
+                clipboardData = rootContext().clipboardData().getData('TEXT');
+                return this.pasteText(element, rootContext().clipboardData().getData('TEXT'));
             }
         };
 
@@ -379,7 +380,7 @@ class _EditorApp extends ContentTools.ComponentUI {
     mount() {
         // Mount the widget to the DOM
         this._domElement = this.constructor.createDiv(['ct-app']);
-        document.body.insertBefore(this._domElement, null);
+        rootContext().mountPoint().insertBefore(this._domElement, null);
         return this._addDOMEventListeners();
     }
 
@@ -416,7 +417,7 @@ class _EditorApp extends ContentTools.ComponentUI {
         const tagNames = ContentEdit.TagNames.get();
 
         // Clean the HTML
-        const sandbox = document.implementation.createHTMLDocument();
+        const sandbox = rootContext().createSandboxDocument();
         const wrapper = sandbox.createElement('div');
         wrapper.innerHTML = ContentTools.getHTMLCleaner().clean(content.trim());
 
@@ -562,7 +563,7 @@ class _EditorApp extends ContentTools.ComponentUI {
             // We assume nodes that don't match an element are inline and so we
             // wrap then in a paragraph tag for insertion.
             if (elementCls === ContentEdit.Static) {
-                var p = document.createElement('p');
+                var p = rootContext().createElement('p');
                 p.appendChild(node);
                 node = p;
                 elementCls = ContentEdit.Text;
@@ -756,7 +757,7 @@ class _EditorApp extends ContentTools.ComponentUI {
         if (ContentTools.CANCEL_MESSAGE) {
             const confirmMessage = ContentEdit._(ContentTools.CANCEL_MESSAGE);
             if ((ContentEdit.Root.get().lastModified() > this._rootLastModified) &&
-                    !window.confirm(confirmMessage)) {
+                    !rootContext().confirm(confirmMessage)) {
                 return false;
             }
         }
@@ -1035,7 +1036,7 @@ class _EditorApp extends ContentTools.ComponentUI {
             // selector.
             if ((typeof this._regionQuery === 'string') ||
                     this._regionQuery instanceof String) {
-                this._domRegions = document.querySelectorAll(this._regionQuery);
+                this._domRegions = rootContext().contentScope().querySelectorAll(this._regionQuery);
 
             // Otherwise assume a valid list of DOM elements has been provided
             } else {
@@ -1113,15 +1114,15 @@ class _EditorApp extends ContentTools.ComponentUI {
         this._handleVisibility = ev => {
             // If the document is hidden at any time remove the region
             // highlighting.
-            if (!document.hasFocus()) {
+            if (!rootContext().hasFocus()) {
                 clearTimeout(this._highlightTimeout);
                 return this.highlightRegions(false);
             }
         };
 
-        document.addEventListener('keydown', this._handleHighlightOn);
-        document.addEventListener('keyup', this._handleHighlightOff);
-        document.addEventListener('visibilitychange', this._handleVisibility);
+        rootContext().on('document', 'keydown', this._handleHighlightOn);
+        rootContext().on('document', 'keyup', this._handleHighlightOff);
+        rootContext().on('document', 'visibilitychange', this._handleVisibility);
 
         // When unloading the page we check to see if the user is currently
         // editing and if so ask them to confirm the action.
@@ -1129,13 +1130,13 @@ class _EditorApp extends ContentTools.ComponentUI {
             if ((this._state === 'editing') && ContentTools.CANCEL_MESSAGE) {
                 if (this.history && this.history._snapshotIndex) {
                     const cancelMessage = ContentEdit._(ContentTools.CANCEL_MESSAGE);
-                    (ev || window.event).returnValue = cancelMessage;
+                    (ev || rootContext().currentEvent()).returnValue = cancelMessage;
                     return cancelMessage;
                 }
             }
         };
 
-        window.addEventListener('beforeunload', this._handleBeforeUnload);
+        rootContext().on('window', 'beforeunload', this._handleBeforeUnload);
 
         // When the page is unloaded we destroy the app to make sure everything
         // is cleaned up.
@@ -1143,7 +1144,7 @@ class _EditorApp extends ContentTools.ComponentUI {
             return this.destroy();
         };
 
-        return window.addEventListener('unload', this._handleUnload);
+        return rootContext().on('window', 'unload', this._handleUnload);
     }
 
     _allowEmptyRegions(callback) {
@@ -1199,12 +1200,15 @@ class _EditorApp extends ContentTools.ComponentUI {
         // Remove DOM event listeners for the widget
 
         // Highlight events
-        document.removeEventListener('keydown', this._handleHighlightOn);
-        document.removeEventListener('keyup', this._handleHighlightOff);
+        rootContext().off('document', 'keydown', this._handleHighlightOn);
+        rootContext().off('document', 'keyup', this._handleHighlightOff);
+        // Previously leaked: added in _addDOMEventListeners but never removed,
+        // so every destroy() left a visibilitychange listener on the document.
+        rootContext().off('document', 'visibilitychange', this._handleVisibility);
 
         // Unload events
-        window.removeEventListener('beforeunload', this._handleBeforeUnload);
-        return window.removeEventListener('unload', this._handleUnload);
+        rootContext().off('window', 'beforeunload', this._handleBeforeUnload);
+        return rootContext().off('window', 'unload', this._handleUnload);
     }
 
     _initRegions(restoring) {

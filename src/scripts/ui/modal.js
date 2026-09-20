@@ -1,5 +1,6 @@
 import ContentEdit from '../../../vendor-src/content-edit/scripts/namespace.js';
 import ContentTools from '../namespace.js';
+import {rootContext} from '../../core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -46,7 +47,7 @@ ContentTools.ModalUI = class ModalUI extends ContentTools.WidgetUI {
 
         // Unless scrolling is set as allowed disable page scrolling
         if (!this._allowScrolling) {
-            ContentEdit.addCSSClass(document.body, 'ct--no-scroll');
+            rootContext().setGlobalState('no-scroll', true);
         }
 
         // Add interaction handlers
@@ -58,7 +59,7 @@ ContentTools.ModalUI = class ModalUI extends ContentTools.WidgetUI {
 
         // Allow the page to be scrolled again
         if (!this._allowScrolling) {
-            ContentEdit.removeCSSClass(document.body, 'ct--no-scroll');
+            rootContext().setGlobalState('no-scroll', false);
         }
 
         return super.unmount();

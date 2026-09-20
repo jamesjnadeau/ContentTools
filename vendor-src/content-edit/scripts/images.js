@@ -1,4 +1,5 @@
 import ContentEdit from './namespace.js';
+import {rootContext} from '../../../src/core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -93,7 +94,7 @@ let Cls$images = (ContentEdit.Image = class Image extends ContentEdit.ResizableE
         // Mount the element on to the DOM
 
         // Create the DOM element to mount
-        this._domElement = document.createElement('div');
+        this._domElement = rootContext().createElement('div');
 
         // Set the classes for the image, we combine classes from both the outer
         // link tag (if there is one) and image element.
@@ -131,7 +132,7 @@ let Cls$images = (ContentEdit.Image = class Image extends ContentEdit.ResizableE
 
         if (this.isFixed()) {
             // Revert the DOM element to an image
-            const wrapper = document.createElement('div');
+            const wrapper = rootContext().createElement('div');
             wrapper.innerHTML = this.html();
             const domElement = wrapper.querySelector('a, img');
 
@@ -167,7 +168,7 @@ let Cls$images = (ContentEdit.Image = class Image extends ContentEdit.ResizableE
 
             // If we didn't find an image create a blank image
             if (domElement.tagName.toLowerCase() === 'a') {
-                domElement = document.createElement('img');
+                domElement = rootContext().createElement('img');
             }
         }
 
@@ -281,7 +282,7 @@ Cls$images = (ContentEdit.ImageFixture = class ImageFixture extends ContentEdit.
         // Mount the element on to the DOM
 
         // Create the DOM element to mount
-        this._domElement = document.createElement(this.tagName());
+        this._domElement = rootContext().createElement(this.tagName());
 
         // Set the attributes
         for (var name in this._attributes) {
@@ -307,7 +308,7 @@ Cls$images = (ContentEdit.ImageFixture = class ImageFixture extends ContentEdit.
 
         // Remove any existing background image from the style attribute
         let style = this._attributes['style'] ? this._attributes['style'] : '';
-        const styleElm = document.createElement('div');
+        const styleElm = rootContext().createElement('div');
         styleElm.setAttribute('style', style.trim());
         styleElm.style.backgroundImage = null;
         style = styleElm.getAttribute('style');
@@ -345,7 +346,7 @@ Cls$images = (ContentEdit.ImageFixture = class ImageFixture extends ContentEdit.
         // Unmount the element from the DOM
         if (this.isFixed()) {
             // Build the DOM element
-            const wrapper = document.createElement('div');
+            const wrapper = rootContext().createElement('div');
             wrapper.innerHTML = this.html();
             const domElement = wrapper.firstElementChild;
 
@@ -366,7 +367,7 @@ Cls$images = (ContentEdit.ImageFixture = class ImageFixture extends ContentEdit.
         if (this._attributes['style']) {
             // Remove any existing background image from the style attribute
             let style = this._attributes['style'] ? this._attributes['style'] : '';
-            const styleElm = document.createElement('div');
+            const styleElm = rootContext().createElement('div');
             styleElm.setAttribute('style', style.trim());
             styleElm.style.backgroundImage = null;
             style = styleElm.getAttribute('style');

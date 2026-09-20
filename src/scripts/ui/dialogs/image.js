@@ -1,6 +1,7 @@
 import ContentSelect from '../../../../vendor-src/content-select/content-select.js';
 import ContentEdit from '../../../../vendor-src/content-edit/scripts/namespace.js';
 import ContentTools from '../../namespace.js';
+import {rootContext} from '../../../core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -164,7 +165,7 @@ ContentTools.ImageDialog = class ImageDialog extends ContentTools.DialogUI {
         domActions.appendChild(this._domUpload);
 
         // File input for upload
-        this._domInput = document.createElement('input');
+        this._domInput = rootContext().createElement('input');
         this._domInput.setAttribute('class', 'ct-image-dialog__file-upload');
         this._domInput.setAttribute('name', 'file');
         this._domInput.setAttribute('type', 'file');
@@ -588,22 +589,22 @@ class CropMarksUI extends ContentTools.AnchoredComponentUI {
             return this._drag(ev.clientY, ev.clientX);
         };
 
-        document.addEventListener('mousemove', this._onMouseMove);
+        rootContext().on('document', 'mousemove', this._onMouseMove);
 
         // Handle any mouse up event (as stop dragging)
         this._onMouseUp = ev => {
             return this._stopDrag();
         };
 
-        return document.addEventListener('mouseup', this._onMouseUp);
+        return rootContext().on('document', 'mouseup', this._onMouseUp);
     }
 
     _stopDrag() {
         // Handle handle/ruler drag stopping
 
         // Remove event handlers
-        document.removeEventListener('mousemove', this._onMouseMove);
-        document.removeEventListener('mouseup', this._onMouseUp);
+        rootContext().off('document', 'mousemove', this._onMouseMove);
+        rootContext().off('document', 'mouseup', this._onMouseUp);
 
         // Unset dragging state
         this._dragging = null;

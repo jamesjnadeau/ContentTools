@@ -1,6 +1,7 @@
 import HTMLString from '../../html-string/namespace.js';
 import ContentSelect from '../../content-select/content-select.js';
 import ContentEdit from './namespace.js';
+import {rootContext} from '../../../src/core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -117,7 +118,7 @@ let Cls$text = (ContentEdit.Text = class Text extends ContentEdit.Element {
             // `Unexpected call to method or property access.`
             //
             // Which in later versions of the browser (IE11+) cannot be captured.
-            if (!document.documentMode &&
+            if (!rootContext().isLegacyIE() &&
                     !/Edge/.test(navigator.userAgent)) {
                 this._domElement.blur();
             }
@@ -219,7 +220,7 @@ let Cls$text = (ContentEdit.Text = class Text extends ContentEdit.Element {
         // Mount the element on to the DOM
 
         // Create the DOM element to mount
-        this._domElement = document.createElement(this._tagName);
+        this._domElement = rootContext().createElement(this._tagName);
 
         // Set the attributes
         for (var name in this._attributes) {
@@ -249,7 +250,7 @@ let Cls$text = (ContentEdit.Text = class Text extends ContentEdit.Element {
 
         // If we're restoring the selection state then we need to make sure the
         // element has focus.
-        if (document.activeElement !== this.domElement()) {
+        if (rootContext().getActiveElement() !== this.domElement()) {
             this.domElement().focus();
         }
 
@@ -344,7 +345,7 @@ let Cls$text = (ContentEdit.Text = class Text extends ContentEdit.Element {
         // Anthony Blackshaw <ant@getme.co.uk>, 2016-01-30
         if ((this.content.length() === 0) && (ContentEdit.Root.get().focused() === this)) {
             ev.preventDefault();
-            if (document.activeElement !== this._domElement) {
+            if (rootContext().getActiveElement() !== this._domElement) {
                 this._domElement.focus();
             }
             return new ContentSelect.Range(0, 0).select(this._domElement);

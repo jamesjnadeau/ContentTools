@@ -1,5 +1,6 @@
 import ContentSelect from '../../content-select/content-select.js';
 import ContentEdit from './namespace.js';
+import {rootContext} from '../../../src/core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -82,11 +83,11 @@ class _Root extends ContentEdit.Node {
         }
 
         // Remove dragging helper
-        document.body.removeChild(this._draggingDOMElement);
+        rootContext().overlayPoint().removeChild(this._draggingDOMElement);
 
         // Remove dragging behaviour
-        document.removeEventListener('mousemove', this._onDrag);
-        document.removeEventListener('mouseup', this._onStopDragging);
+        rootContext().off('document', 'mousemove', this._onDrag);
+        rootContext().off('document', 'mouseup', this._onStopDragging);
 
         // Mark the element as no longer being dragged
         this._dragging._removeCSSClass('ce-element--dragging');
@@ -94,7 +95,7 @@ class _Root extends ContentEdit.Node {
         this._dropTarget = null;
 
         // Remove dragging class from body
-        return ContentEdit.removeCSSClass(document.body, 'ce--dragging');
+        return rootContext().setGlobalState('dragging', false);
     }
 
     startDragging(element, x, y) {
@@ -112,18 +113,18 @@ class _Root extends ContentEdit.Node {
 
         // Add a helper class for the element
         this._draggingDOMElement = this._dragging.createDraggingDOMElement();
-        document.body.appendChild(this._draggingDOMElement);
+        rootContext().overlayPoint().appendChild(this._draggingDOMElement);
 
         // Position the drag helper at the mouse cursor
         this._draggingDOMElement.style.left = `${ x }px`;
         this._draggingDOMElement.style.top = `${ y }px`;
 
         // Setup dragging behaviour for the element
-        document.addEventListener('mousemove', this._onDrag);
-        document.addEventListener('mouseup', this._onStopDragging);
+        rootContext().on('document', 'mousemove', this._onDrag);
+        rootContext().on('document', 'mouseup', this._onStopDragging);
 
         // Add dragging class to body
-        return ContentEdit.addCSSClass(document.body, 'ce--dragging');
+        return rootContext().setGlobalState('dragging', true);
     }
 
     _getDropPlacement(x, y) {
@@ -225,18 +226,18 @@ class _Root extends ContentEdit.Node {
 
         // To measure the parent's width exluding padding we add a block element
         // and measure it's width before removing.
-        const measureDom = document.createElement('div');
+        const measureDom = rootContext().createElement('div');
         measureDom.setAttribute('class', 'ce-measure');
         parentDom.appendChild(measureDom);
         this._resizingParentWidth = measureDom.getBoundingClientRect().width;
         parentDom.removeChild(measureDom);
 
         // Setup dragging behaviour for the element
-        document.addEventListener('mousemove', this._onResize);
-        document.addEventListener('mouseup', this._onStopResizing);
+        rootContext().on('document', 'mousemove', this._onResize);
+        rootContext().on('document', 'mouseup', this._onStopResizing);
 
         // Add resizing class to body
-        return ContentEdit.addCSSClass(document.body, 'ce--resizing');
+        return rootContext().setGlobalState('resizing', true);
     }
 
     _onResize(ev) {
@@ -286,8 +287,8 @@ class _Root extends ContentEdit.Node {
         // Reset the resizing interactions
 
         // Remove resizing behaviour
-        document.removeEventListener('mousemove', this._onResize);
-        document.removeEventListener('mouseup', this._onStopResizing);
+        rootContext().off('document', 'mousemove', this._onResize);
+        rootContext().off('document', 'mouseup', this._onStopResizing);
 
         // Mark the element as no longer being resized
         // Mark the elment as being dragged
@@ -297,7 +298,7 @@ class _Root extends ContentEdit.Node {
         this._resizingParentWidth = null;
 
         // Remove resizing class from body
-        return ContentEdit.removeCSSClass(document.body, 'ce--resizing');
+        return rootContext().setGlobalState('resizing', false);
     }
 }
 

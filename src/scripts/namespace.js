@@ -1,3 +1,5 @@
+import {rootContext} from '../core/root-context.js';
+
 /*
  * decaffeinate suggestions:
  * DS101: Remove unnecessary use of Array.from
@@ -131,7 +133,7 @@ Your changes have not been saved, do you really want to lose them?\
             };
 
         // Parse the URL into components
-        const parser = document.createElement('a');
+        const parser = rootContext().createElement('a');
         parser.href = url;
 
         const netloc = parser.hostname.toLowerCase();
@@ -242,22 +244,10 @@ Your changes have not been saved, do you really want to lose them?\
     },
 
     getScrollPosition() {
-        // Return the current scroll position in a cross-browser compatible way
-        const supportsPageOffset = window.pageXOffset !== undefined;
-        const isCSS1Compat = (document.compatMode || 4) === 4;
-
-        if (supportsPageOffset) {
-            return [window.pageXOffset, window.pageYOffset];
-
-        } else if (isCSS1Compat) {
-            return [
-                document.documentElement.scrollLeft,
-                document.documentElement.scrollTop
-                ];
-
-        } else {
-            return [document.body.scrollLeft, document.body.scrollTop];
-        }
+        // Return the current scroll position in a cross-browser compatible
+        // way. The branching moved into the RootContext, alongside the rest
+        // of the host-environment geometry.
+        return rootContext().scrollPosition();
     }
 };
 

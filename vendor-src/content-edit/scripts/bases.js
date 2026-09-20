@@ -1,4 +1,5 @@
 import ContentEdit from './namespace.js';
+import {rootContext} from '../../../src/core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -659,7 +660,7 @@ let Cls$bases = (ContentEdit.Element = class Element extends ContentEdit.Node {
 
     clone() {
         // Clone this element
-        const wrapper = document.createElement('div');
+        const wrapper = rootContext().createElement('div');
         wrapper.innerHTML = this.html();
         return this.constructor.fromDOMElement(wrapper.children[0]);
     }
@@ -671,7 +672,7 @@ let Cls$bases = (ContentEdit.Element = class Element extends ContentEdit.Node {
             return;
         }
 
-        const helper = document.createElement('div');
+        const helper = rootContext().createElement('div');
         helper.setAttribute(
             'class',
             `ce-drag-helper ce-drag-helper--type-${ this.cssTypeName() }`
@@ -807,7 +808,7 @@ let Cls$bases = (ContentEdit.Element = class Element extends ContentEdit.Node {
         // This check enables `mount()` to be called directly against the Element
         // class, however this is not the expected behaviour.
         if (!this._domElement) {
-            this._domElement = document.createElement(this.tagName());
+            this._domElement = rootContext().createElement(this.tagName());
         }
 
         const sibling = this.nextSibling();
@@ -1199,7 +1200,7 @@ let Cls$bases = (ContentEdit.Element = class Element extends ContentEdit.Node {
     static _dropVert(element, target, placement) {
         // Drop an element above or below another element
 
-        if (ContentEdit.ENABLE_DRAG_CLONING && window.event.altKey) {
+        if (ContentEdit.ENABLE_DRAG_CLONING && rootContext().currentEvent().altKey) {
             // Clone the element rather than move it
             element = element.clone();
 
@@ -1223,7 +1224,7 @@ let Cls$bases = (ContentEdit.Element = class Element extends ContentEdit.Node {
     static _dropBoth(element, target, placement) {
         // Drop an element above, below, left or right of another element
 
-        if (ContentEdit.ENABLE_DRAG_CLONING && window.event.altKey) {
+        if (ContentEdit.ENABLE_DRAG_CLONING && rootContext().currentEvent().altKey) {
             // Clone the element rather than move it
             element = element.clone();
 
@@ -1401,7 +1402,7 @@ Cls$bases = (ContentEdit.ElementCollection = class ElementCollection extends Con
         // Mount the element on to the DOM
 
         // Create the DOM element to mount
-        this._domElement = document.createElement(this._tagName);
+        this._domElement = rootContext().createElement(this._tagName);
 
         // Set the attributes
         for (var name in this._attributes) {

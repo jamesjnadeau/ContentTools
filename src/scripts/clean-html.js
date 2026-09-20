@@ -1,4 +1,5 @@
 import ContentTools from './namespace.js';
+import {rootContext} from '../core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -88,7 +89,7 @@ const Cls$clean_html = (ContentTools.HTMLCleaner = class HTMLCleaner {
             ' '
         );
 
-        const sandbox = document.implementation.createHTMLDocument();
+        const sandbox = rootContext().createSandboxDocument();
         const wrapper = sandbox.createElement('div');
         wrapper.innerHTML = html;
 

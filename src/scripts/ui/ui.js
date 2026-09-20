@@ -1,5 +1,6 @@
 import ContentEdit from '../../../vendor-src/content-edit/scripts/namespace.js';
 import ContentTools from '../namespace.js';
+import {rootContext} from '../../core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -208,7 +209,7 @@ ContentTools.ComponentUI = class ComponentUI {
         // including the initial CSS class names, attributes and content.
 
         // Create the element
-        const domElement = document.createElement('div');
+        const domElement = rootContext().createElement('div');
 
         // Add the specified CSS classes
         if (classNames && (classNames.length > 0)) {
@@ -308,13 +309,13 @@ ContentTools.WidgetUI = class WidgetUI extends ContentTools.ComponentUI {
 
             // If there's no support for `getComputedStyle` then we fallback to
             // unmounting the widget immediately.
-            if (!window.getComputedStyle) {
+            if (!rootContext().supportsComputedStyle()) {
                 this.unmount();
                 return;
             }
 
             // If the widget is now hidden we unmount it
-            if (parseFloat(window.getComputedStyle(this._domElement).opacity) < 0.01) {
+            if (parseFloat(rootContext().getComputedStyle(this._domElement).opacity) < 0.01) {
                 return this.unmount();
             } else {
                 return this._hideTimeout = setTimeout(monitorForHidden, 250);

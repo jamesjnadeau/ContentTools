@@ -1,5 +1,6 @@
 import FSM from './fsm.js';
 import HTMLString from './namespace.js';
+import {rootContext} from '../../src/core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -802,14 +803,14 @@ const Cls$strings = (HTMLString.String = class String {
 
     static decode(string) {
         // Decode entities within the specified string
-        const textarea = document.createElement('textarea');
+        const textarea = rootContext().createElement('textarea');
         textarea.innerHTML = string;
         return textarea.textContent;
     }
 
     static encode(string) {
         // Encode entities within the specified string
-        const textarea = document.createElement('textarea');
+        const textarea = rootContext().createElement('textarea');
         textarea.textContent = string;
         return textarea.innerHTML;
     }

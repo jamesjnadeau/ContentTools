@@ -1,4 +1,5 @@
 import ContentEdit from './namespace.js';
+import {rootContext} from '../../../src/core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -125,7 +126,7 @@ const Cls$videos = (ContentEdit.Video = class Video extends ContentEdit.Resizabl
         // Mount the element on to the DOM
 
         // Create the DOM element to mount
-        this._domElement = document.createElement('div');
+        this._domElement = rootContext().createElement('div');
 
         // Set the classes for the video, we use the wrapping <a> tag's class if
         // it exists, else we use the class applied to the image.
@@ -161,7 +162,7 @@ const Cls$videos = (ContentEdit.Video = class Video extends ContentEdit.Resizabl
 
         if (this.isFixed()) {
             // Revert the DOM element to an iframe
-            const wrapper = document.createElement('div');
+            const wrapper = rootContext().createElement('div');
             wrapper.innerHTML = this.html();
             const domElement = wrapper.querySelector('iframe');
 

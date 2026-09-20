@@ -1,5 +1,6 @@
 import HTMLString from '../../html-string/namespace.js';
 import ContentEdit from './namespace.js';
+import {rootContext} from '../../../src/core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -109,7 +110,7 @@ const Cls$static = (ContentEdit.Static = class Static extends ContentEdit.Elemen
         // Mount the element on to the DOM
 
         // Create the DOM element to mount
-        this._domElement = document.createElement(this._tagName);
+        this._domElement = rootContext().createElement(this._tagName);
 
         // Set the attributes
         for (var name in this._attributes) {

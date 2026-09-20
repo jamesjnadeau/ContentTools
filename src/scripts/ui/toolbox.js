@@ -1,6 +1,7 @@
 import ContentSelect from '../../../vendor-src/content-select/content-select.js';
 import ContentEdit from '../../../vendor-src/content-edit/scripts/namespace.js';
 import ContentTools from '../namespace.js';
+import {rootContext} from '../../core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -97,7 +98,7 @@ ContentTools.ToolboxUI = class ToolboxUI extends ContentTools.WidgetUI {
         this.tools(this._tools);
 
         // Restore the position of the element (if there's a restore set)
-        const restore = window.localStorage.getItem('ct-toolbox-position');
+        const restore = rootContext().storage().getItem('ct-toolbox-position');
         if (restore && /^\d+,\d+$/.test(restore)) {
             const position = (Array.from(restore.split(',')).map((coord) => parseInt(coord)));
             this._domElement.style.left = `${ position[0] }px`;
@@ -224,7 +225,7 @@ ContentTools.ToolboxUI = class ToolboxUI extends ContentTools.WidgetUI {
             return this._resizeTimeout = setTimeout(containResize, 250);
         };
 
-        window.addEventListener('resize', this._handleResize);
+        rootContext().on('window', 'resize', this._handleResize);
 
         // Set up a timed event to update the status of each tool
         this._updateTools = () => {
@@ -388,7 +389,7 @@ ContentTools.ToolboxUI = class ToolboxUI extends ContentTools.WidgetUI {
             }
         };
 
-        return window.addEventListener('keydown', this._handleKeyDown);
+        return rootContext().on('window', 'keydown', this._handleKeyDown);
     }
 
     _contain() {
@@ -399,12 +400,12 @@ ContentTools.ToolboxUI = class ToolboxUI extends ContentTools.WidgetUI {
 
         let rect = this._domElement.getBoundingClientRect();
 
-        if ((rect.left + rect.width) > window.innerWidth) {
-            this._domElement.style.left = `${ window.innerWidth - rect.width }px`;
+        if ((rect.left + rect.width) > rootContext().viewportSize()[0]) {
+            this._domElement.style.left = `${ rootContext().viewportSize()[0] - rect.width }px`;
         }
 
-        if ((rect.top + rect.height) > window.innerHeight) {
-            this._domElement.style.top = `${ window.innerHeight - rect.height }px`;
+        if ((rect.top + rect.height) > rootContext().viewportSize()[1]) {
+            this._domElement.style.top = `${ rootContext().viewportSize()[1] - rect.height }px`;
         }
 
         if (rect.left < 0) {
@@ -418,7 +419,7 @@ ContentTools.ToolboxUI = class ToolboxUI extends ContentTools.WidgetUI {
         // Save the new position to local storage so we can restore it on
         // remount.
         rect = this._domElement.getBoundingClientRect();
-        return window.localStorage.setItem(
+        return rootContext().storage().setItem(
             'ct-toolbox-position',
             `${ rect.left },${ rect.top }`
             );
@@ -433,10 +434,10 @@ ContentTools.ToolboxUI = class ToolboxUI extends ContentTools.WidgetUI {
         }
 
         // Remove key events
-        window.removeEventListener('keydown', this._handleKeyDown);
+        rootContext().off('window', 'keydown', this._handleKeyDown);
 
         // Remove resize handler
-        window.removeEventListener('resize', this._handleResize);
+        rootContext().off('window', 'resize', this._handleResize);
 
         // Remove timer for updating tools
         return clearInterval(this._updateToolsInterval);
@@ -475,12 +476,12 @@ ContentTools.ToolboxUI = class ToolboxUI extends ContentTools.WidgetUI {
             };
 
         // Setup dragging behaviour for the element
-        document.addEventListener('mousemove', this._onDrag);
-        document.addEventListener('mouseup', this._onStopDragging);
+        rootContext().on('document', 'mousemove', this._onDrag);
+        rootContext().on('document', 'mouseup', this._onStopDragging);
 
         // Add dragging class to the body (this class is defined in ContentEdit
         // it disabled content selection via CSS).
-        return ContentEdit.addCSSClass(document.body, 'ce--dragging');
+        return rootContext().setGlobalState('dragging', true);
     }
 
     _onStopDragging(ev) {
@@ -493,8 +494,8 @@ ContentTools.ToolboxUI = class ToolboxUI extends ContentTools.WidgetUI {
         this._contain();
 
         // Remove dragging behaviour
-        document.removeEventListener('mousemove', this._onDrag);
-        document.removeEventListener('mouseup', this._onStopDragging);
+        rootContext().off('document', 'mousemove', this._onDrag);
+        rootContext().off('document', 'mouseup', this._onStopDragging);
 
         // Reset the dragging offset
         this._draggingOffset = null;
@@ -505,7 +506,7 @@ ContentTools.ToolboxUI = class ToolboxUI extends ContentTools.WidgetUI {
 
         // Remove dragging class from the body (this class is defined in
         // ContentEdit it disabled content selection via CSS).
-        return ContentEdit.removeCSSClass(document.body, 'ce--dragging');
+        return rootContext().setGlobalState('dragging', false);
     }
 };
 

@@ -1,5 +1,6 @@
 import ContentEdit from '../../../../vendor-src/content-edit/scripts/namespace.js';
 import ContentTools from '../../namespace.js';
+import {rootContext} from '../../../core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -37,7 +38,7 @@ ContentTools.VideoDialog = class VideoDialog extends ContentTools.DialogUI {
         this._domControls.appendChild(domControlGroup);
 
         // Input
-        this._domInput = document.createElement('input');
+        this._domInput = rootContext().createElement('input');
         this._domInput.setAttribute('class', 'ct-video-dialog__input');
         this._domInput.setAttribute('name', 'url');
         this._domInput.setAttribute(
@@ -68,7 +69,7 @@ ContentTools.VideoDialog = class VideoDialog extends ContentTools.DialogUI {
         this.clearPreview();
 
         // Insert the preview iframe
-        this._domPreview = document.createElement('iframe');
+        this._domPreview = rootContext().createElement('iframe');
         this._domPreview.setAttribute('frameborder', '0');
         this._domPreview.setAttribute('height', '100%');
         this._domPreview.setAttribute('src', url);

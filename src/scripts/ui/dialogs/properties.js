@@ -1,6 +1,7 @@
 import HTMLString from '../../../../vendor-src/html-string/namespace.js';
 import ContentEdit from '../../../../vendor-src/content-edit/scripts/namespace.js';
 import ContentTools from '../../namespace.js';
+import {rootContext} from '../../../core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -199,7 +200,7 @@ ContentTools.PropertiesDialog = class PropertiesDialog extends ContentTools.Dial
         this._domView.appendChild(this._domCode);
 
         // Add a textarea in which the inner HTML can be edited
-        this._domInnerHTML = document.createElement('textarea');
+        this._domInnerHTML = rootContext().createElement('textarea');
         this._domInnerHTML.setAttribute('class', 'ct-properties-dialog__inner-html');
         this._domInnerHTML.setAttribute('name', 'code');
         this._domInnerHTML.value = this.getElementInnerHTML();
@@ -274,7 +275,7 @@ ContentTools.PropertiesDialog = class PropertiesDialog extends ContentTools.Dial
 
         // Check to see which tab was last active and restore it (defaults to the
         // styles tab).
-        const lastTab = window.localStorage.getItem('ct-properties-dialog-tab');
+        const lastTab = rootContext().storage().getItem('ct-properties-dialog-tab');
         if (lastTab === 'attributes') {
             ContentEdit.addCSSClass(this._domElement,
                 'ct-properties-dialog--attributes');
@@ -463,7 +464,7 @@ ContentTools.PropertiesDialog = class PropertiesDialog extends ContentTools.Dial
                 );
 
             // Remember this tab was last open
-            return window.localStorage.setItem('ct-properties-dialog-tab', selected);
+            return rootContext().storage().setItem('ct-properties-dialog-tab', selected);
         };
 
         // Styles
@@ -649,7 +650,7 @@ class AttributeUI extends ContentTools.AnchoredComponentUI {
         this._domElement = this.constructor.createDiv(['ct-attribute']);
 
         // Name
-        this._domName = document.createElement('input');
+        this._domName = rootContext().createElement('input');
         this._domName.setAttribute('class', 'ct-attribute__name');
         this._domName.setAttribute('name', 'name');
         this._domName.setAttribute('placeholder', ContentEdit._('Name'));
@@ -658,7 +659,7 @@ class AttributeUI extends ContentTools.AnchoredComponentUI {
         this._domElement.appendChild(this._domName);
 
         // Value
-        this._domValue = document.createElement('input');
+        this._domValue = rootContext().createElement('input');
         this._domValue.setAttribute('class', 'ct-attribute__value');
         this._domValue.setAttribute('name', 'value');
         this._domValue.setAttribute('placeholder', ContentEdit._('Value'));

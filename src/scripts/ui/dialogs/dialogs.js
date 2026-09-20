@@ -1,5 +1,6 @@
 import ContentEdit from '../../../../vendor-src/content-edit/scripts/namespace.js';
 import ContentTools from '../../namespace.js';
+import {rootContext} from '../../../core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -76,8 +77,7 @@ ContentTools.AnchoredDialogUI = class AnchoredDialogUI extends ContentTools.Widg
         const halfWidth = ((rect.width / 2) + 5);
 
         // Get the width of the document excluding the scroll bars
-        const pageWidth = document.documentElement.clientWidth ||
-            document.body.clientWidth;
+        const pageWidth = rootContext().pageWidth();
 
         // Adjust the position to be contained (if necessary)
         if ((this._position[0] + halfWidth) > pageWidth) {
@@ -160,15 +160,15 @@ ContentTools.DialogUI = class DialogUI extends ContentTools.WidgetUI {
 
         // Blur the focused element to ensure that it's contents can be edited
         // once the dialog is open.
-        if (document.activeElement) {
-            document.activeElement.blur();
+        if (rootContext().getActiveElement()) {
+            rootContext().getActiveElement().blur();
 
             // HACK: This is a work around for blurring the contenteditable
             // element in webkit, thanks to Marek Suscak's fiddle here:
             // http://jsfiddle.net/mareksuscak/oytdoxy8/
             //
             // ~ Anthony Blackshaw <ant@getme.co.uk>, 28th June 2016
-            window.getSelection().removeAllRanges();
+            rootContext().getSelection().removeAllRanges();
         }
 
         // Create the dialog
@@ -243,7 +243,7 @@ ContentTools.DialogUI = class DialogUI extends ContentTools.WidgetUI {
             }
         };
 
-        document.addEventListener('keyup', this._handleEscape);
+        rootContext().on('document', 'keyup', this._handleEscape);
 
         // Via the close button
         return this._domClose.addEventListener('click', ev => {
@@ -260,6 +260,6 @@ ContentTools.DialogUI = class DialogUI extends ContentTools.WidgetUI {
 
     _removeDOMEventListeners() {
 
-        return document.removeEventListener('keyup', this._handleEscape);
+        return rootContext().off('document', 'keyup', this._handleEscape);
     }
 };

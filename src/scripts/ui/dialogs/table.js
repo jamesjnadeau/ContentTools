@@ -1,5 +1,6 @@
 import ContentEdit from '../../../../vendor-src/content-edit/scripts/namespace.js';
 import ContentTools from '../../namespace.js';
+import {rootContext} from '../../../core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -72,7 +73,7 @@ ContentTools.TableDialog = class TableDialog extends ContentTools.DialogUI {
         domBodyLabel.textContent = ContentEdit._('Table body (columns)');
         this._domBodySection.appendChild(domBodyLabel);
 
-        this._domBodyInput = document.createElement('input');
+        this._domBodyInput = rootContext().createElement('input');
         this._domBodyInput.setAttribute('class', 'ct-section__input');
         this._domBodyInput.setAttribute('maxlength', '2');
         this._domBodyInput.setAttribute('name', 'columns');

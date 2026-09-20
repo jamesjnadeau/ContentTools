@@ -1,5 +1,6 @@
 import ContentEdit from '../../../../vendor-src/content-edit/scripts/namespace.js';
 import ContentTools from '../../namespace.js';
+import {rootContext} from '../../../core/root-context.js';
 
 /*
  * decaffeinate suggestions:
@@ -36,7 +37,7 @@ import ContentTools from '../../namespace.js';
             super.mount();
 
             // Create the input element for the link
-            this._domInput = document.createElement('input');
+            this._domInput = rootContext().createElement('input');
             this._domInput.setAttribute('class', 'ct-anchored-dialog__input');
             this._domInput.setAttribute('name', 'href');
             this._domInput.setAttribute(

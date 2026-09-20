@@ -1,3 +1,5 @@
+import {rootContext} from '../../src/core/root-context.js';
+
 /*
  * decaffeinate suggestions:
  * DS101: Remove unnecessary use of Array.from
@@ -52,7 +54,7 @@ ContentSelect.Range = class Range {
         // Clear any existing selections
         ContentSelect.Range.unselectAll();
 
-        const docRange = document.createRange();
+        const docRange = rootContext().createRange();
 
         // Find the start/end nodes
         const [startNode, startOffset] = Array.from(_getChildNodeAndOffset(element, this._from));
@@ -65,7 +67,7 @@ ContentSelect.Range = class Range {
         docRange.setEnd(endNode, Math.min(endOffset, endNodeLen));
 
         // Select the range
-        return window.getSelection().addRange(docRange);
+        return rootContext().getSelection().addRange(docRange);
     }
 
     set(from, to) {
@@ -100,11 +102,11 @@ ContentSelect.Range = class Range {
             const result = [];
             for (let i = 0; i < selfClosingNodes.length; i++) {
                 var node = selfClosingNodes[i];
-                node.parentNode.insertBefore(document.createTextNode(''), node);
+                node.parentNode.insertBefore(rootContext().createTextNode(''), node);
 
                 if (i < (selfClosingNodes.length - 1)) {
                     result.push(node.parentNode.insertBefore(
-                        document.createTextNode(''),
+                        rootContext().createTextNode(''),
                         node.nextSibling
                         ));
                 } else {
@@ -123,7 +125,7 @@ ContentSelect.Range = class Range {
 
         // Get the first selection
         try {
-            docRange = window.getSelection().getRangeAt(0);
+            docRange = rootContext().getSelection().getRangeAt(0);
         } catch (error) {
             return range;
         }
@@ -163,7 +165,7 @@ ContentSelect.Range = class Range {
         // Get the first selection
         let docRange;
         try {
-            docRange = window.getSelection().getRangeAt(0);
+            docRange = rootContext().getSelection().getRangeAt(0);
         } catch (error) {
             return null;
         }
@@ -174,7 +176,7 @@ ContentSelect.Range = class Range {
 
             // To solve the issue we insert a marker node to query for the rect
             // and then remove it once done.
-            const marker = document.createElement('span');
+            const marker = rootContext().createElement('span');
             docRange.insertNode(marker);
             const rect = marker.getBoundingClientRect();
             marker.parentNode.removeChild(marker);
@@ -188,8 +190,8 @@ ContentSelect.Range = class Range {
 
     static unselectAll() {
         // Unselect all selected content on the page
-        if (window.getSelection()) {
-            return window.getSelection().removeAllRanges();
+        if (rootContext().getSelection()) {
+            return rootContext().getSelection().removeAllRanges();
         }
     }
 };
