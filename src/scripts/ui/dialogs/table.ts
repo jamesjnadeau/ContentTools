@@ -4,7 +4,6 @@ import {rootContext} from '../../../core/root-context.js';
 
 /*
  * decaffeinate suggestions:
- * DS002: Fix invalid constructor
  * DS102: Remove unnecessary code created because of implicit returns
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/main/docs/suggestions.md
  */
@@ -21,14 +20,23 @@ ContentTools.TableDialog = class TableDialog extends ContentTools.DialogUI {
 
     // A dialog to support inserting/update a table
 
-    constructor(table){
-            super('Update table');
+    constructor(table) {
+        /* The caption is picked from the PARAMETER, not from `this.table`.
+           The CoffeeScript read the field because its compiled output
+           assigned it first and then branched between two `super` calls;
+           an ES constructor can do neither -- it cannot touch `this` before
+           super(), and calling super() twice is a ReferenceError.
+
+           decaffeinate produced exactly that: super('Update table') hoisted
+           to the top and super('Insert table') left in the else branch. The
+           update path happened to work, so the tool could still edit a
+           table the caret was already inside, and inserting a new one threw
+           "Super constructor may only be called once" before the dialog
+           existed. `src/spec/ui/dialogs/table.coffee` was 0 bytes upstream,
+           which is why nothing caught it. */
+        super(table ? 'Update table' : 'Insert table');
 
         this.table = table;
-        if (this.table) {
-        } else {
-            super('Insert table');
-        }
     }
 
     // Methods
