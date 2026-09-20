@@ -447,31 +447,96 @@ describe('EditorApp.destroy()', () => {
         expect(fired).toBe(0);
     });
 
-    it('removes every global listener it added', () => {
-        // The editor leaked a visibilitychange listener for years because
-        // removal was hand-written and did not match what was added.
-        //
-        // Counting on `document` rather than through the RootContext is
-        // deliberate: this spec loads the BUNDLED library for its globals, so
-        // importing src/core/root-context.js here would be a second copy of
-        // that module with no context installed.
+    /* Run `body` with document.addEventListener/removeEventListener
+     * recording, and return what was added and what was removed.
+     *
+     * Listeners are recorded as [type, fn] pairs, not just type names: the
+     * leak below is a specific handler outliving the app, and a type-only
+     * count is satisfied by any other listener of the same type.
+     *
+     * Counting on `document` rather than through the RootContext is
+     * deliberate: this spec loads the BUNDLED library for its globals, so
+     * importing src/core/root-context.js here would be a second copy of
+     * that module with no context installed. */
+    function recordDocumentListeners(body) {
         const added = [];
         const removed = [];
         const realAdd = document.addEventListener.bind(document);
         const realRemove = document.removeEventListener.bind(document);
-        document.addEventListener = (type, fn, opts) => { added.push(type); realAdd(type, fn, opts); };
-        document.removeEventListener = (type, fn, opts) => { removed.push(type); realRemove(type, fn, opts); };
+        document.addEventListener = (type, fn, opts) => { added.push([type, fn]); realAdd(type, fn, opts); };
+        document.removeEventListener = (type, fn, opts) => { removed.push([type, fn]); realRemove(type, fn, opts); };
 
         try {
-            boot();
-            editor.destroy();
-            editor = null;
-            expect(added.length).toBeGreaterThan(0);
-            expect(removed.slice().sort()).toEqual(added.slice().sort());
+            body();
         } finally {
             document.addEventListener = realAdd;
             document.removeEventListener = realRemove;
         }
+        return {added, removed};
+    }
+
+    /** The types of every added listener that was never removed by identity. */
+    function leaked({added, removed}) {
+        return added
+            .filter(([type, fn]) =>
+                !removed.some(([rType, rFn]) => rType === type && rFn === fn))
+            .map(([type]) => type)
+            .sort();
+    }
+
+    it('removes every global listener it added', () => {
+        // The editor leaked a visibilitychange listener for years because
+        // removal was hand-written and did not match what was added.
+        const record = recordDocumentListeners(() => {
+            boot();
+            editor.destroy();
+            editor = null;
+        });
+
+        expect(record.added.length).toBeGreaterThan(0);
+        expect(leaked(record)).toEqual([]);
+    });
+
+    it('removes every global listener it added when already unmounted', () => {
+        // destroy() delegates its listener teardown to unmount(), and
+        // unmount() returns early when the app is not mounted. Being
+        // unmounted first must not leave anything behind.
+        //
+        // It does not, because unmount() removes the listeners on its way
+        // out, so by the time the early return can fire there is nothing
+        // left to remove. That is worth pinning: it is the reason destroy()
+        // is allowed to delegate teardown to a method that can no-op.
+        const record = recordDocumentListeners(() => {
+            boot();
+            editor.unmount();
+            editor.destroy();
+            editor = null;
+        });
+
+        expect(record.added.length).toBeGreaterThan(0);
+        expect(leaked(record)).toEqual([]);
+    });
+
+    it('removes every global listener it added across a re-init', () => {
+        // init() mounts unconditionally, and mounting registers the handlers
+        // as fresh closures assigned over the previous ones. Without
+        // removing the old set first the first set is stranded on the
+        // document with nothing referencing it, so destroy() can never
+        // remove it.
+        //
+        // Re-initializing without destroying in between is ordinary host
+        // behaviour -- the editable regions on the page changed, a SPA
+        // re-rendered the view -- and is the 1.6.x re-init shape that
+        // `_claim()` exists to support.
+        const record = recordDocumentListeners(() => {
+            boot();
+            boot();
+            editor.destroy();
+            editor = null;
+        });
+
+        expect(record.added.length).toBeGreaterThan(0);
+        expect(leaked(record)).toEqual([]);
     });
 });
 
