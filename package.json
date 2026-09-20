@@ -17,8 +17,6 @@
   "devDependencies": {
     "@playwright/test": "^1.49.0",
     "@vitest/browser": "^3.2.7",
-    "coffee-script": "^1.7.1",
-    "coffeescript": "^1.12.7",
     "decaffeinate": "^8.1.4",
     "sass": "^1.104.1",
     "vite": "^6.4.3",

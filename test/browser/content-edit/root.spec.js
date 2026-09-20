@@ -1,3 +1,10 @@
+/* NOTE: the CoffeeScript specs wrote `new ContentEdit.X.get()`. That worked
+ * only because CoffeeScript compiled `get` to a plain function, and `new` on a
+ * function returning an object yields that object -- so it was always just a
+ * verbose way of writing `ContentEdit.X.get()`. As an ES static method `get`
+ * is not constructible, so the redundant `new` is dropped. Same singleton,
+ * same assertions.
+ */
 /*
  * decaffeinate suggestions:
  * DS102: Remove unnecessary code created because of implicit returns
@@ -6,7 +13,7 @@
 // Root
 
 describe('`ContentEdit.Root.get()`', () => it('should return a singleton instance of Root`', function() {
-    const root = new ContentEdit.Root.get();
+    const root = ContentEdit.Root.get();
 
     // Check the instance returned is a singleton
     return expect(root).toBe(ContentEdit.Root.get());
@@ -22,7 +29,7 @@ focus`, function() {
     region.attach(element);
 
     // Clear any existing focused element
-    const root = new ContentEdit.Root.get();
+    const root = ContentEdit.Root.get();
     if (root.focused()) {
         root.focused().blur();
     }
@@ -43,7 +50,7 @@ is being dragged`, function() {
     const element = new ContentEdit.Element('div');
     region.attach(element);
 
-    const root = new ContentEdit.Root.get();
+    const root = ContentEdit.Root.get();
 
     // Start dragging the element
     element.drag(0, 0);
@@ -65,7 +72,7 @@ describe('`ContentEdit.Root.dropTarget()`', () => it('should return the element 
     const elementB = new ContentEdit.Text('p');
     region.attach(elementB);
 
-    const root = new ContentEdit.Root.get();
+    const root = ContentEdit.Root.get();
 
     // Start dragging element A
     elementA.drag(0, 0);
@@ -86,7 +93,7 @@ describe('`ContentEdit.Root.dropTarget()`', () => it('should return the element 
 
 
 describe('`ContentEdit.Root.type()`', () => it('should return \'Region\'', function() {
-    const root = new ContentEdit.Root.get();
+    const root = ContentEdit.Root.get();
     return expect(root.type()).toBe('Root');
 }));
 
@@ -99,7 +106,7 @@ describe('`ContentEdit.Root.startDragging()`', () => it('should start a drag int
     region.attach(element);
 
     // Start dragging the element
-    const root = new ContentEdit.Root.get();
+    const root = ContentEdit.Root.get();
     root.startDragging(element, 0, 0);
 
     // Check the element has being marked as dragging
@@ -127,7 +134,7 @@ describe('`ContentEdit.Root.cancelDragging()`', () => it('should cancel a drag i
     const element = new ContentEdit.Element('div');
     region.attach(element);
 
-    const root = new ContentEdit.Root.get();
+    const root = ContentEdit.Root.get();
     if (root.dragging()) {
         root.cancelDragging();
     }
@@ -151,7 +158,7 @@ is being resized`, function() {
     region.attach(element);
 
     // Start resizing the element
-    const root = new ContentEdit.Root.get();
+    const root = ContentEdit.Root.get();
     element.resize(['top', 'left'], 0, 0);
     expect(root.resizing()).toBe(element);
 
@@ -168,7 +175,7 @@ describe('`ContentEdit.Root.startResizing()`', () => it('should start a resize i
     region.attach(element);
 
     // Start dragging the element
-    const root = new ContentEdit.Root.get();
+    const root = ContentEdit.Root.get();
     root.startResizing(element, ['top', 'left'], 0, 0, true);
 
     // Check the element has being marked as

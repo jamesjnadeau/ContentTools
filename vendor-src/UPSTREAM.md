@@ -77,3 +77,10 @@ is the main payment for absorbing ContentEdit.
 
 Upstream bug to preserve awareness of: ContentEdit's `Gruntfile.coffee` lists `src/spec/bases.coffee`
 **twice** in `coffee.spec`. Harmless under Jasmine; do not replicate when porting.
+
+## After the JavaScript conversion
+
+The `.coffee` sources under `vendor-src/` were converted to JavaScript in Phase 2 and removed;
+`verify-provenance.sh` fetches them from upstream at the pinned commits above, so it keeps
+working and remains the record that nothing was locally patched before conversion. The converted
+JavaScript is what the build now uses, and the ported spec suites are what verify it.

@@ -25,11 +25,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: JS output still matches the frozen v1.6.16 artifact
-        # Phase 1 is a toolchain change only. Until Phase 2 decaffeinates the
-        # source, the built JS must stay byte-identical to build/content-tools.js.
-        run: diff dist/content-tools.js build/content-tools.js
-
       - name: Install browser
         run: npx playwright install --with-deps chromium
 
