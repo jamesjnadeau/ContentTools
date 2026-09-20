@@ -72,6 +72,11 @@ jobs:
       - name: Element equivalence, on chromium + firefox + webkit
         run: npm run test:element:golden
 
+      - name: Markdown mode against the BUILT dist/markdown.js
+        run: npm run test:markdown:dist
+        env:
+          CHROMIUM_PATH: ''
+
       - name: Visual regression (rebuilt CSS vs legacy stylesheet)
         run: npx playwright test --config test/golden/playwright.config.mjs visual.spec.mjs
         env:

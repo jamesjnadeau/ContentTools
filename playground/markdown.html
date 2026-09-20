@@ -1,0 +1,167 @@
+<!DOCTYPE HTML>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Markdown mode playground</title>
+        <!--
+          Mode A again: the chrome comes from the element's shadow root, so
+          only the CONTENT half of the stylesheet is linked here.
+        -->
+        <link rel="stylesheet" href="../dist/content-tools-content.css">
+        <style>
+            :root { color-scheme: light dark; }
+            body {
+                margin: 0;
+                font: 14px/1.6 system-ui, sans-serif;
+                display: grid;
+                grid-template-rows: auto 1fr;
+                height: 100vh;
+            }
+            .controls {
+                padding: 8px 12px; background: #222; color: #eee;
+                display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+            }
+            .controls output { opacity: .8; margin-left: auto; }
+            .panes { display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
+            .pane { overflow: auto; padding: 16px 20px; min-width: 0; }
+            .pane + .pane { border-left: 1px solid #ccc; background: #fafafa; }
+            .pane h2 {
+                font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+                opacity: .6; margin: 0 0 12px;
+            }
+            pre.diff {
+                margin: 0; white-space: pre-wrap; word-break: break-word;
+                font: 12px/1.5 ui-monospace, monospace;
+            }
+            pre.diff span { display: block; padding: 0 4px; }
+            pre.diff span.changed { background: #fff2a8; }
+            .note { font-size: 12px; opacity: .7; margin: 0 0 12px; }
+            @media (prefers-color-scheme: dark) {
+                body { background: #14161a; color: #e6e6e6; }
+                .pane + .pane { background: #1b1e24; border-left-color: #333; }
+                pre.diff span.changed { background: #55490f; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="controls">
+            <label>file
+                <select id="file"></select>
+            </label>
+            <label>mode
+                <select id="mode">
+                    <option value="markdown">markdown</option>
+                    <option value="html">html</option>
+                </select>
+            </label>
+            <button id="start">start</button>
+            <button id="stop">stop + save</button>
+            <output id="status">-</output>
+        </div>
+
+        <div class="panes">
+            <div class="pane" id="host"></div>
+            <div class="pane">
+                <h2>Saved markdown</h2>
+                <p class="note">
+                    Highlighted lines are the ones that differ from the file on
+                    disk. Edit a paragraph and exactly one line should light up
+                    &mdash; everything else is spliced back from the original
+                    bytes, never re-serialized.
+                </p>
+                <pre class="diff" id="out"></pre>
+            </div>
+        </div>
+
+        <script type="module">
+            import '../dist/element.js';
+            import {MarkdownDocument} from '../dist/markdown.js';
+
+            /* The corpus doubles as the sample set: these are the same files
+               the byte-identity property test runs against, so anything that
+               looks wrong here is a failing test somewhere. */
+            const FILES = [
+                'basic.md', 'nested.md', 'awkward.md',
+                'static-blocks.md', 'shortcodes.md', 'empty-ish.md'
+            ];
+
+            const host = document.getElementById('host');
+            const out = document.getElementById('out');
+            const status = document.getElementById('status');
+            const filePicker = document.getElementById('file');
+            const modePicker = document.getElementById('mode');
+
+            for (const name of FILES) {
+                filePicker.add(new Option(name, name));
+            }
+
+            let doc = null;
+            let editor = null;
+
+            /** Render `text`, marking the lines that differ from `source`. */
+            function render(text, source) {
+                const want = source.split('\n');
+                out.replaceChildren(...text.split('\n').map((line, i) => {
+                    const span = document.createElement('span');
+                    span.textContent = line || ' ';
+                    if (line !== want[i]) {
+                        span.className = 'changed';
+                    }
+                    return span;
+                }));
+            }
+
+            function save() {
+                /* `update()` takes exactly the HTML a consumer gets in
+                   `ct-saved` -- the markdown entry never touches the
+                   editor. */
+                const regions = editor.editorApp.regions();
+                render(doc.update(regions.body.html()), doc.source());
+            }
+
+            async function load() {
+                const name = filePicker.value;
+                const source = await (
+                    await fetch(`../test/markdown/corpus/${name}`)).text();
+                doc = MarkdownDocument.parse(source);
+
+                /* Built here rather than left in the markup, because the
+                   region's content is the parsed document and the element
+                   boots the moment it is connected. */
+                const next = document.createElement('content-tools-editor');
+                next.setAttribute('regions', '[data-editable]');
+                next.setAttribute('naming-prop', 'data-name');
+                next.setAttribute('mode', modePicker.value);
+                next.innerHTML =
+                    `<div data-editable data-name="body">${doc.toHTML()}</div>`;
+
+                host.replaceChildren(next);
+                editor = next;
+
+                /* Composed events, so one listener on the document sees
+                   everything the editor does inside its shadow root. */
+                next.addEventListener('ct-saved', save);
+                next.addEventListener('ct-started', report);
+                next.addEventListener('ct-stopped', report);
+
+                render(source, source);
+                report();
+            }
+
+            function report() {
+                status.textContent =
+                    `${filePicker.value} · ${modePicker.value} · ` +
+                    `state: ${editor ? editor.state : '-'} · ` +
+                    `${doc ? doc.blocks().length : 0} blocks, ` +
+                    `${doc ? doc.blocks().filter(b => !b.editable).length : 0} read-only`;
+            }
+
+            filePicker.onchange = load;
+            modePicker.onchange = load;
+            document.getElementById('start').onclick = () => editor.start();
+            document.getElementById('stop').onclick = () => editor.stop(true);
+
+            load();
+        </script>
+    </body>
+</html>

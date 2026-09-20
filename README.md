@@ -98,6 +98,7 @@ Full attribute, property, method and event reference:
 
 - [Migrating from 1.6.x](docs/migrating-from-1.6.md)
 - [`<content-tools-editor>`](docs/element.md)
+- [Markdown mode](docs/markdown-mode.md)
 - [Content scope: Mode A and Mode B](docs/content-scope.md)
 - [`RootContext` — the host seam](docs/root-context.md)
 
