@@ -172,7 +172,7 @@ carry `detail` as a *property*. No object serves both.
 ```sh
 npm install
 npm run build        # dist/: IIFE, minified IIFE, ESM, CSS + images
-npm test             # lint, typecheck, 546 browser tests, golden master, visual
+npm test             # lint, typecheck, 662 browser tests, golden master, equivalence, visual
 npm run test:coverage
 ```
 
@@ -200,6 +200,22 @@ Three suites, deliberately covering different things:
   tag registration tree-shaken away, two ESM entries carrying separate copies
   of the library and therefore separate singletons, or a missing side-effect
   import. It has already caught one of those.
+- **`test/golden/element-golden.spec.mjs`** — the equivalence proof. It runs
+  the golden-master scenarios a second time through
+  `<content-tools-editor>` and compares the element-driven page against the
+  imperative one *live, in the same test*: same regions, same saved payloads,
+  same event order, same serialized chrome. The observation code is shared
+  between the two pages (`fixtures/driver-core.js`), so a difference it sees
+  is a difference in the element.
+
+  This is also the only suite that runs on **three engines**.
+  `ShadowRootContext.getRange()` is a feature-detected chain — Chromium's
+  `ShadowRoot.getSelection()`, then `Selection.getComposedRanges()`, then
+  Firefox's non-retargeting document selection — and each engine takes a
+  different branch, so a Chromium-only run leaves two thirds of it
+  unexecuted. CI installs all three; locally Chromium is the default and
+  `CT_ENGINES=firefox,webkit npm run test:element:golden` adds the others
+  (`npx playwright install --with-deps firefox webkit` first).
 
 `build/` holds the frozen v1.6.16 artifacts as the reference those suites
 compare against. Do not rebuild them.
@@ -222,6 +238,10 @@ changes behaviour and needs verifying on its own:
   custom test persists for every later caller.
 
 ## Roadmap
+
+Milestone 1b is complete: the editor runs as `<content-tools-editor>` with
+its chrome in a shadow root, and the element-driven page is proven to behave
+identically to the imperative one on Chromium, Firefox and WebKit.
 
 Next: markdown round-tripping and de-singletoning the editor, then a git/PR
 backend over Octokit, pluggable auth, and the CMS shell — collection browser,

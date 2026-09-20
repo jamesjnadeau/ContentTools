@@ -1,0 +1,73 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>ContentTools element characterisation fixture</title>
+<!-- Mode A: the chrome sheet is adopted into the shadow root by the element
+     itself, but the CONTENT rules have to reach the document, because the
+     content stays in the light DOM. That is the whole Mode A bargain, and
+     linking the content sheet here is how a real integration pays for it. -->
+<link rel="stylesheet" href="/dist/content-tools-content.css">
+<style>*,*::before,*::after{transition:none !important;animation:none !important}</style>
+<style>
+  body { margin: 0; font-family: Georgia, serif; }
+  .article { width: 720px; margin: 0 auto; padding: 32px; }
+  .image-fixture { width: 200px; height: 120px; background-size: cover; }
+</style>
+</head>
+<body>
+<!-- The markup below must stay character-for-character identical to
+     page.html's <article>; element-golden.spec.mjs asserts exactly that, so
+     a drift here fails the suite rather than quietly weakening it.
+
+     `ignition` is present because the imperative init() defaults
+     withIgnition to true and the element defaults it to off -- the element
+     is normally driven by a shell. Matching it is what makes the serialized
+     chrome comparable. -->
+<content-tools-editor regions="[data-editable], [data-fixture]"
+                      naming-prop="data-name" ignition>
+<article class="article">
+  <section class="article__content">
+
+    <h1 data-fixture data-name="title">5 rules for naming variables</h1>
+
+    <a data-ce-tag="p" data-fixture data-name="link" href="/test">Test link fixture</a>
+
+    <div data-ce-tag="img-fixture" data-fixture data-name="author-pic"
+         class="image-fixture" style="background-image: url('author-pic.jpg');">
+      <img src="author-pic.jpg" alt="Author">
+    </div>
+
+    <div data-editable data-name="body">
+      <p class="article__by-line">by <b>Anthony Blackshaw</b> &middot; 18th January 2015</p>
+      <blockquote>Writing poor quality code will dramatically reduce the time you get to spend doing things you love.</blockquote>
+      <img src="image.png" alt="Example of bad variable names">
+      <p class="article__caption"><b>Above:</b> a <i>live</i> project with <a href="#test" class="foo" target="_blank">bad names</a>.</p>
+      <h2>Be descriptive and concise</h2>
+      <p>The names we devise will determine how easily someone else can read what we wrote.</p>
+      <pre class="example  example--bad">design_inspiration_competition_promotion_code_list</pre>
+      <ul><li>First item</li><li>Second item</li></ul>
+      <ol><li>Step one</li><li>Step two</li></ol>
+      <table>
+        <thead><tr><th>Name</th><th>Scope</th></tr></thead>
+        <tbody><tr><td>promo_codes</td><td>module</td></tr><tr><td>codes</td><td>function</td></tr></tbody>
+      </table>
+      <iframe width="400" height="300" src="https://www.youtube.com/embed/I9jSKFk5Zp0" frameborder="0"></iframe>
+      <div data-ce-tag="static"><p>Static, non-editable content</p></div>
+    </div>
+
+    <div data-editable data-name="sidebar">
+      <p>Sidebar paragraph.</p>
+    </div>
+
+    <div data-editable data-name="empty"></div>
+
+  </section>
+</article>
+</content-tools-editor>
+
+<!-- Classic first, so the factory is on `window` before the module runs. -->
+<script src="/test/golden/fixtures/driver-core.js"></script>
+<script type="module" src="/test/golden/fixtures/element-driver.js"></script>
+</body>
+</html>

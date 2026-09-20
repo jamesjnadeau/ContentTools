@@ -15,5 +15,6 @@
     // document.write keeps these strictly ordered and synchronous during parse,
     // so the driver can rely on window.ContentTools already existing.
     document.write('<script src="' + bundle + '"><\/script>');
+    document.write('<script src="/test/golden/fixtures/driver-core.js"><\/script>');
     document.write('<script src="/test/golden/fixtures/driver.js"><\/script>');
 })();

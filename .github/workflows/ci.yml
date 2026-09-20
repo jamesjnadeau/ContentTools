@@ -31,8 +31,14 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Install browser
-        run: npx playwright install --with-deps chromium
+      - name: Install browsers
+        # Three engines, because ShadowRootContext.getRange() is a
+        # feature-detected chain and each of them takes a different branch.
+        # Only element-golden.spec.mjs runs on all three; everything else is
+        # Chromium-only, either because it compares snapshots (which are not
+        # portable between engines) or because it tests the build rather than
+        # the browser.
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Suites + coverage floor (real browser)
         run: npm run test:coverage
@@ -57,6 +63,9 @@ jobs:
         run: npm run test:element:dist
         env:
           CHROMIUM_PATH: ''
+
+      - name: Element equivalence, on chromium + firefox + webkit
+        run: npm run test:element:golden
 
       - name: Visual regression (rebuilt CSS vs legacy stylesheet)
         run: npx playwright test --config test/golden/playwright.config.mjs visual.spec.mjs
