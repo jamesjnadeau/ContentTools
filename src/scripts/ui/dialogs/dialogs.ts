@@ -181,7 +181,7 @@ ContentTools.DialogUI = class DialogUI extends ContentTools.WidgetUI {
             // http://jsfiddle.net/mareksuscak/oytdoxy8/
             //
             // ~ Anthony Blackshaw <ant@getme.co.uk>, 28th June 2016
-            rootContext().getSelection().removeAllRanges();
+            rootContext().clearSelection();
         }
 
         // Create the dialog

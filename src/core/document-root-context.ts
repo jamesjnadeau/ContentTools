@@ -75,6 +75,44 @@ export default class DocumentRootContext {
         return this.window.getSelection();
     }
 
+    /**
+     * The first selected range, as a LIVE Range, or null if nothing is
+     * selected.
+     *
+     * Callers rely on it being live: ContentSelect.Range.rect() measures a
+     * collapsed caret by inserting a marker span into the range, which a
+     * StaticRange cannot do. A shadow-backed context reads StaticRanges from
+     * getComposedRanges() and has to rebuild a live Range before returning
+     * it -- doing that here, once, is why no call site has to care which
+     * engine it is running on.
+     */
+    getRange() {
+        const selection = this.getSelection();
+        if (!selection || selection.rangeCount === 0) {
+            return null;
+        }
+        return selection.getRangeAt(0);
+    }
+
+    /**
+     * Select the given range.
+     *
+     * setBaseAndExtent rather than addRange: addRange is unreliable in WebKit
+     * once shadow-tree nodes are involved, and this is the method a
+     * ShadowRootContext needs, so the two implementations stay the same shape.
+     * In light DOM the two are equivalent here because every caller clears the
+     * selection first.
+     */
+    selectRange(range) {
+        const selection = this.getSelection();
+        if (!selection) {
+            return;
+        }
+        selection.setBaseAndExtent(
+            range.startContainer, range.startOffset,
+            range.endContainer, range.endOffset);
+    }
+
     clearSelection() {
         const selection = this.getSelection();
         if (selection) selection.removeAllRanges();

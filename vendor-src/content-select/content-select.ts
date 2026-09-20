@@ -74,7 +74,7 @@ ContentSelect.Range = class Range {
         docRange.setEnd(endNode, Math.min(endOffset, endNodeLen));
 
         // Select the range
-        return rootContext().getSelection().addRange(docRange);
+        return rootContext().selectRange(docRange);
     }
 
     set(from, to) {
@@ -127,13 +127,11 @@ ContentSelect.Range = class Range {
     static query(element) {
         // Return a range for the content selected within the specified element
 
-        let docRange;
         const range = new ContentSelect.Range(0, 0);
 
         // Get the first selection
-        try {
-            docRange = rootContext().getSelection().getRangeAt(0);
-        } catch (error) {
+        const docRange = rootContext().getRange();
+        if (!docRange) {
             return range;
         }
 
@@ -170,10 +168,8 @@ ContentSelect.Range = class Range {
         // Return a bounding rectangle for the currently selected range
 
         // Get the first selection
-        let docRange;
-        try {
-            docRange = rootContext().getSelection().getRangeAt(0);
-        } catch (error) {
+        const docRange = rootContext().getRange();
+        if (!docRange) {
             return null;
         }
 
@@ -197,9 +193,7 @@ ContentSelect.Range = class Range {
 
     static unselectAll() {
         // Unselect all selected content on the page
-        if (rootContext().getSelection()) {
-            return rootContext().getSelection().removeAllRanges();
-        }
+        return rootContext().clearSelection();
     }
 };
 
