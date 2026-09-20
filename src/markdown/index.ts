@@ -7,6 +7,8 @@
  * the root entry instead.
  */
 
+export {MarkdownDocument} from './document.js';
+
 export {parseMarkdown} from './parse.js';
 export type {ParsedMarkdown, Frontmatter} from './parse.js';
 
