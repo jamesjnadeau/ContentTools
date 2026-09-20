@@ -1,5 +1,6 @@
 import {defineConfig} from 'vite';
 import {resolve} from 'node:path';
+import dts from 'vite-plugin-dts';
 
 /* Artifacts, each from its own mode:
  *
@@ -40,6 +41,8 @@ export default defineConfig(({mode}) => {
 
     if (mode === 'esm') {
         return {
+            // Declarations ship with the ESM build so consumers get types.
+            plugins: [dts({include: ['src', 'vendor-src'], rollupTypes: false})],
             build: {
                 ...shared,
                 lib: {

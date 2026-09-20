@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    // Match the semantics this code was written against: plain assignment,
+    // not defineProperty. Under ES2022 field semantics a declared-but-
+    // uninitialised field emits `= undefined` at construction and clobbers
+    // whatever a parent constructor already set -- that broke 118 tests
+    // before the generated declarations were made `declare`-only.
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+
+    // Vite/esbuild does the transpiling; tsc is here purely as a type gate.
+    "noEmit": true,
+    "allowJs": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // Phase 5 starts permissive and ratchets per directory. Turning
+    // everything on at once against ~13k lines of freshly converted code
+    // produces noise rather than signal.
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.js", "vendor-src/**/*.ts", "vendor-src/**/*.js"],
+  "exclude": ["vendor-src/**/spec/**", "node_modules", "dist"]
+}

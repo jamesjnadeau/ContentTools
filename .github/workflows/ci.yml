@@ -25,6 +25,9 @@ jobs:
       - name: Lint (no bare document/window outside the RootContext seam)
         run: npm run lint
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Build
         run: npm run build
 
