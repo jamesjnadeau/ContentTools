@@ -47,7 +47,7 @@
     "test:styles": "playwright test --config test/golden/playwright.config.mjs styles.spec.mjs",
     "test:element:dist": "playwright test --config test/golden/playwright.config.mjs element-dist.spec.mjs",
     "test:element:golden": "playwright test --config test/golden/playwright.config.mjs element-golden.spec.mjs",
-    "test:size": "size-limit"
+    "test:size": "npm run build && size-limit"
   },
   "repository": {
     "type": "git",
@@ -72,6 +72,10 @@
       "types": "./dist/src/element/index.d.ts",
       "default": "./dist/element.js"
     },
+    "./markdown": {
+      "types": "./dist/src/markdown/index.d.ts",
+      "default": "./dist/markdown.js"
+    },
     "./global": "./dist/content-tools.js",
     "./style.css": "./dist/content-tools.css",
     "./style.min.css": "./dist/content-tools.min.css",
@@ -86,5 +90,14 @@
     "./vendor-src/**",
     "./dist/element.js"
   ],
-  "types": "dist/src/index.d.ts"
+  "types": "dist/src/index.d.ts",
+  "dependencies": {
+    "mdast-util-from-markdown": "^2.0.3",
+    "mdast-util-frontmatter": "^2.0.1",
+    "mdast-util-gfm": "^3.1.0",
+    "mdast-util-to-markdown": "^2.1.2",
+    "micromark-extension-frontmatter": "^2.0.0",
+    "micromark-extension-gfm": "^3.0.0",
+    "yaml": "^2.9.1"
+  }
 }

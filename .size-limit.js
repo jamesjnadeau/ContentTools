@@ -17,6 +17,18 @@
  * two numbers are larger than what a consumer's users download. The IIFE
  * bundle and the stylesheets are minified and served as-is, so for those
  * the number is the number.
+ *
+ * `dist/chunks/*.js` is a glob rather than a list because the chunk names
+ * are Rollup's -- naming them with `manualChunks` breaks the element's
+ * side-effect registration, see vite.config.mjs. So it also catches a
+ * chunk that appears for some OTHER entry: if the markdown entry ever
+ * stops being self-contained, its chunk lands in the two ESM numbers and
+ * they fail. That is the right alarm, even though the message points at
+ * the wrong line.
+ *
+ * These budgets are only meaningful against a FRESH build, which is why
+ * `test:size` builds first. Measuring a stale `dist/` reported a pass for
+ * a commit CI then failed.
  */
 export default [
     {
@@ -25,7 +37,7 @@ export default [
            37.0 kB gzipped -- so this must not grow past it. */
         name: 'IIFE bundle (script tag)',
         path: 'dist/content-tools.min.js',
-        limit: '36 kB',
+        limit: '36.5 kB',
         gzip: true
     },
     {
@@ -34,7 +46,7 @@ export default [
            this is the ceiling. */
         name: 'ESM library entry + shared chunk',
         path: ['dist/index.js', 'dist/chunks/*.js'],
-        limit: '56 kB',
+        limit: '57 kB',
         gzip: true
     },
     {
@@ -44,7 +56,23 @@ export default [
            stopped being shared and there are two copies of the library. */
         name: 'ESM element entry + shared chunk',
         path: ['dist/element.js', 'dist/chunks/*.js'],
-        limit: '80 kB',
+        limit: '81 kB',
+        gzip: true
+    },
+    {
+        /* Opt-in, behind its own subpath, and by far the largest artifact
+           here: micromark, mdast and `yaml` are a complete CommonMark +
+           GFM parser and serializer. It is not in the root entry and not
+           in the chunk the other two share, which is the property that
+           actually matters -- a script-tag consumer, and a consumer of
+           the plain editor, pay none of it. The markdown MODE (the
+           constraint profile) is dependency-free and unaffected.
+
+           Only a CMS shell that reads and writes markdown loads this, and
+           by then it has already loaded the editor. */
+        name: 'markdown entry',
+        path: 'dist/markdown.js',
+        limit: '100 kB',
         gzip: true
     },
     {

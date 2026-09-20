@@ -49,8 +49,17 @@ describe('ContentTools.Event', function() {
 
     describe('ContentTools.Event.propagationStopped()', () => it('should return a timestamp of when the event was created', function() {
 
+        /* Bracketed, not `toBeCloseTo`. The ported assertion read
+           `toBeCloseTo(Date.now(), 100)`, and a precision of 100 is a
+           tolerance of 0.5e-100 -- exact equality between two millisecond
+           clock reads taken microseconds apart. It passed until a run
+           happened to straddle a tick, then failed in CI with "expected
+           1789925900406 to be close to 1789925900407". */
+        const before = Date.now();
         const ev = new ContentTools.Event('test');
-        return expect(ev.timeStamp()).toBeCloseTo(Date.now(), 100);
+        const after = Date.now();
+        expect(ev.timeStamp()).toBeGreaterThanOrEqual(before);
+        return expect(ev.timeStamp()).toBeLessThanOrEqual(after);
     }));
 
 

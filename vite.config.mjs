@@ -80,7 +80,14 @@ export default defineConfig(({mode}) => {
                 lib: {
                     entry: {
                         index: resolve(__dirname, 'src/index.js'),
-                        element: resolve(__dirname, 'src/element/index.js')
+                        element: resolve(__dirname, 'src/element/index.js'),
+                        /* In the SAME build as the other two, not its own.
+                           It imports `rootContext`, which is a module-level
+                           singleton -- a separate build would give it a
+                           second copy and therefore a second context. The
+                           mdast dependencies still land in their own
+                           chunk, because nothing else imports them. */
+                        markdown: resolve(__dirname, 'src/markdown/index.js')
                     },
                     formats: ['es']
                 },
