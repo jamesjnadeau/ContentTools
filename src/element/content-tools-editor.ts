@@ -16,12 +16,18 @@
  * branch where a selection outside the root reads as null. Ship light,
  * offer shadow.
  */
-// Installs the document-backed RootContext. Must precede the library
-// imports, and is also what the element restores on teardown.
-import '../core/install-default.js';
+/* The WHOLE library, through the public entry, not the ContentTools barrel
+ * alone. `src/index.ts` also fixes the evaluation order -- install-default
+ * first, then HTMLString, ContentSelect, ContentEdit, ContentTools -- and
+ * the leaves matter: `ContentEdit.Text`'s constructor does
+ * `content instanceof HTMLString.String`, and nothing in the ContentTools
+ * or ContentEdit barrels imports the module that attaches `String` to that
+ * namespace. Importing less here builds a `dist/element.js` that throws
+ * "Right-hand side of 'instanceof' is not an object" the moment anyone
+ * calls start() -- which is exactly what the built-artifact smoke test
+ * caught, because every source-level test loads the full library anyway. */
+import {ContentTools, ContentEdit} from '../index.js';
 
-import ContentTools from '../scripts/index.js';
-import ContentEdit from '../../vendor-src/content-edit/scripts/index.js';
 import ShadowRootContext from '../core/shadow-root-context.js';
 import {rootContext, setRootContext} from '../core/root-context.js';
 import {chromeStyles, hostStyles, chromeStyleSheet, hostStyleSheet} from './styles.js';

@@ -34,7 +34,7 @@
     "build:playground": "node scripts/build-playground.mjs",
     "dev": "node scripts/build.mjs && node test/golden/server.mjs",
     "test:visual": "playwright test --config test/golden/playwright.config.mjs visual.spec.mjs",
-    "test": "npm run lint && npm run typecheck && npm run test:unit && npm run test:golden && npm run test:golden:dist && npm run test:styles && npm run test:visual",
+    "test": "npm run lint && npm run typecheck && npm run test:unit && npm run test:golden && npm run test:golden:dist && npm run test:styles && npm run test:element:dist && npm run test:visual",
     "test:unit": "vitest run --config vitest.config.mjs",
     "build:esm": "vite build --mode esm",
     "build:min": "vite build --mode min",
@@ -42,7 +42,8 @@
     "typecheck": "tsc --noEmit",
     "test:coverage": "vitest run --config vitest.config.mjs --coverage",
     "test:golden:dist": "CT_BUNDLE=/dist/content-tools.js playwright test --config test/golden/playwright.config.mjs golden.spec.mjs",
-    "test:styles": "playwright test --config test/golden/playwright.config.mjs styles.spec.mjs"
+    "test:styles": "playwright test --config test/golden/playwright.config.mjs styles.spec.mjs",
+    "test:element:dist": "playwright test --config test/golden/playwright.config.mjs element-dist.spec.mjs"
   },
   "repository": {
     "type": "git",
@@ -63,6 +64,10 @@
       "types": "./dist/src/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./element": {
+      "types": "./dist/src/element/index.d.ts",
+      "default": "./dist/element.js"
+    },
     "./global": "./dist/content-tools.js",
     "./style.css": "./dist/content-tools.css",
     "./content.css": "./dist/content-tools-content.css",
@@ -72,7 +77,8 @@
     "**/*.css",
     "**/*.scss",
     "./src/**",
-    "./vendor-src/**"
+    "./vendor-src/**",
+    "./dist/element.js"
   ],
   "types": "dist/src/index.d.ts"
 }

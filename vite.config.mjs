@@ -6,7 +6,7 @@ import dts from 'vite-plugin-dts';
  *
  *   (default)  dist/content-tools.js       IIFE, five browser globals, readable
  *   min        dist/content-tools.min.js   the same, minified
- *   esm        dist/index.js               ESM, for consumers with a bundler
+ *   esm        dist/index.js + element.js  ESM, sharing one library chunk
  *   style      dist/content-tools.css      stylesheet + dist/images/
  *
  * The stylesheet is deliberately NOT built in library mode. Vite's lib mode
@@ -52,15 +52,40 @@ export default defineConfig(({mode}) => {
     }
 
     if (mode === 'esm') {
+        /* TWO entries, ONE copy of the library.
+         *
+         * `dist/index.js` stops being a single standalone file and that is
+         * an accepted, visible change to a published artifact. The
+         * alternative -- building the entries separately -- gives a
+         * consumer who imports both two copies of every module, and
+         * therefore two ContentTools.EditorApp singletons and two
+         * ContentEdit.Roots. That failure presents as "my addEventListener
+         * never fires", with nothing in any stack trace to suggest why.
+         */
         return {
             // Declarations ship with the ESM build so consumers get types.
             plugins: [dts({include: ['src', 'vendor-src'], rollupTypes: false})],
             build: {
                 ...shared,
                 lib: {
-                    entry: resolve(__dirname, 'src/index.js'),
-                    formats: ['es'],
-                    fileName: () => 'index.js'
+                    entry: {
+                        index: resolve(__dirname, 'src/index.js'),
+                        element: resolve(__dirname, 'src/element/index.js')
+                    },
+                    formats: ['es']
+                },
+                rollupOptions: {
+                    output: {
+                        entryFileNames: '[name].js',
+                        /* The chunk name is Rollup's, not ours. Forcing
+                           one with `manualChunks` also sweeps the element
+                           entry's own body into it, which moves the
+                           `customElements.define` call out of the file
+                           `package.json` lists in `sideEffects` -- the
+                           build assertion in scripts/build.mjs catches
+                           exactly that, and did. */
+                        chunkFileNames: 'chunks/[name]-[hash].js'
+                    }
                 }
             }
         };

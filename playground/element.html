@@ -1,0 +1,123 @@
+<!DOCTYPE HTML>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>&lt;content-tools-editor&gt; playground</title>
+        <link rel="stylesheet" href="playground.css">
+        <!--
+          Mode A: the CHROME comes from the element's shadow root, so there is
+          no link to content-tools.css here. What the page still has to load
+          is the content half -- .ce-element, the drop indicators, the drag
+          and resize cursors -- because in Mode A the content stays in the
+          light DOM where a shadow stylesheet cannot reach it.
+        -->
+        <link rel="stylesheet" href="../dist/content-tools-content.css">
+        <style>
+            .controls {
+                position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+                padding: 8px 12px; background: #222; color: #eee;
+                font: 13px/1.6 system-ui, sans-serif;
+            }
+            .controls button { margin-right: 4px; }
+            .controls output { margin-left: 12px; opacity: .8; }
+            body { padding-top: 48px; }
+        </style>
+    </head>
+    <body>
+        <div class="controls">
+            <button id="start">start</button>
+            <button id="save">save (passive)</button>
+            <button id="stop">stop + save</button>
+            <button id="revert">stop + revert</button>
+            <button id="refresh">refresh</button>
+            <output id="status">state: -</output>
+        </div>
+
+        <article class="article">
+            <section class="article__content">
+                <content-tools-editor
+                    id="editor"
+                    regions="[data-editable], [data-fixture]"
+                    naming-prop="data-name"
+                    ignition
+                    >
+                    <h1 data-fixture data-name="article-title">
+                        5 rules for naming variables
+                    </h1>
+
+                    <a data-ce-tag="p" data-fixture data-name="article-link"
+                       href="/test">Test link fixture</a>
+
+                    <div data-editable data-name="article">
+                        <p class="article__by-line">
+                            by <b>Anthony Blackshaw</b> &middot; 18th January 2015
+                        </p>
+                        <blockquote>
+                            Writing poor quality code will dramatically reduce
+                            the time you get to spend doing things you love.
+                        </blockquote>
+                        <p>
+                            The <a href="#test">names</a> we devise for folders,
+                            files, variables, functions and classes will, for
+                            the most part, determine how easily someone else
+                            can pick the work up.
+                        </p>
+                        <ul>
+                            <li>Be consistent</li>
+                            <li>Be descriptive</li>
+                            <li>Be brief</li>
+                        </ul>
+                    </div>
+
+                    <div data-editable data-name="aside">
+                        <p>A second region, to show region ordering.</p>
+                    </div>
+                </content-tools-editor>
+            </section>
+        </article>
+
+        <script type="module">
+            /* The whole integration: one import and one tag. No global, no
+               EditorApp.get(), no init() -- the element reads its own
+               attributes. */
+            import '../dist/element.js';
+
+            const editor = document.getElementById('editor');
+            const status = document.getElementById('status');
+
+            const show = () => {
+                status.textContent =
+                    `state: ${editor.state}${editor.busy ? ' (busy)' : ''}`;
+            };
+
+            /* Every ct-* event is composed, so listening on the document
+               works even though the editor's chrome is inside a shadow
+               root. This is the contract a CMS shell is built on. */
+            for (const name of ['ct-started', 'ct-stopped', 'ct-busy', 'ct-saved']) {
+                document.addEventListener(name, show);
+            }
+            document.addEventListener('ct-saved', ev => {
+                console.log('ct-saved', ev.detail.regions);
+            });
+            /* ct-start / ct-stop / ct-save / ct-revert are cancelable, and
+               a preventDefault() here aborts the action inside the editor. */
+            document.addEventListener('ct-save', ev => {
+                console.log('ct-save (cancelable)', ev.detail);
+            });
+
+            document.getElementById('start').onclick = () => editor.start();
+            document.getElementById('save').onclick = () => editor.save(true);
+            document.getElementById('stop').onclick = () => editor.stop(true);
+            document.getElementById('revert').onclick = () => editor.stop(false);
+            document.getElementById('refresh').onclick = () => editor.refresh();
+
+            /* Restyling the chrome. The editor's own sheet sits in
+               `@layer ct-chrome`, so this UNLAYERED rule wins at equal
+               specificity -- no !important, and it does not matter that the
+               chrome sheet was adopted first. */
+            editor.adoptStyles('.ct-toolbox__grip { background: #1d6f42; }');
+
+            show();
+        </script>
+    </body>
+</html>

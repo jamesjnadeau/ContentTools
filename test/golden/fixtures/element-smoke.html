@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>content-tools-editor: built artifact smoke test</title>
+<!--
+  The BUILT dist/element.js, loaded exactly as a consumer would: one module
+  script and one tag. Nothing else on the page -- no chrome stylesheet link,
+  no icon font, no bundle loader -- because "drop-in" is the claim being
+  tested. The vitest suite runs against source, so a tree-shaking or
+  bundling regression can only surface here.
+-->
+<link rel="stylesheet" href="/dist/content-tools-content.css">
+</head>
+<body>
+<content-tools-editor regions="[data-editable], [data-fixture]" ignition>
+    <h1 data-fixture data-name="title">Title</h1>
+    <div data-editable data-name="body"><p>body one</p><p>body two</p></div>
+</content-tools-editor>
+<script type="module" src="/dist/element.js"></script>
+</body>
+</html>
