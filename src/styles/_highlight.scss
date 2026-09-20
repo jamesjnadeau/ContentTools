@@ -1,0 +1,28 @@
+@use "config" as *;
+
+/**
+ * The highlight class below is used to highlight editable regions within the
+ * page to users to help them see what they can edit. It's slightly unusual in
+ * that it's specified as a modifier of `ct`.
+ */
+
+@keyframes highlight {
+    0% {
+        outline-color: rgba(white, 0);
+    }
+    25% {
+        outline-color: $highlight-color;
+    }
+    50% {
+        outline-color: $highlight-color;
+    }
+    100% {
+        outline-color: rgba(white, 0);
+    }
+}
+
+@mixin animation--highlight() {
+    animation: highlight 0.5s ease-in;
+    animation-iteration-count: infinite;
+    animation-fill-mode: forwards;
+}

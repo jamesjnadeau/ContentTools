@@ -1,0 +1,14 @@
+// The root of the editor's chrome. In the shadow build this is the only one
+// of the four trailing rule blocks that belongs INSIDE the shadow root; the
+// other three have to reach the document, which is why they are separate.
+.ct-app {
+    box-sizing: border-box;
+
+    * {
+        &,
+        &:before,
+        &:after {
+          box-sizing: border-box;
+        }
+    }
+}

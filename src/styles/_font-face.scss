@@ -1,0 +1,15 @@
+@use "config" as *;
+
+// The icon font (courtesy of http://icomoon.io), used by every toolbox and
+// inspector glyph.
+//
+// Kept apart from the rules that use it because of where it has to live.
+// @font-face inside a shadow root is ignored in Chromium and WebKit, so the
+// chrome sheet adopted into the shadow root must NOT carry it and the
+// document-level sheet must. Miss that and every icon renders as a tofu box.
+@font-face {
+    font-family: 'icon';
+    src: url($image-path-prefix + 'icons.woff');
+    font-weight: normal;
+    font-style: normal;
+}

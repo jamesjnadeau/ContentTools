@@ -17,22 +17,34 @@ import dts from 'vite-plugin-dts';
 const shared = {emptyOutDir: false, cssMinify: false, minify: false};
 
 export default defineConfig(({mode}) => {
-    if (mode === 'style') {
+    if (mode === 'style' || mode === 'style-content') {
+        // Both stylesheets are built the same way and differ only in entry and
+        // output name. The content sheet is a strict SUBSET of the full one --
+        // the rules that must reach the document rather than the shadow root --
+        // so it references the same five assets and must emit them to the same
+        // `images/` path.
+        const content = mode === 'style-content';
         return {
             base: './',
             build: {
                 ...shared,
                 assetsInlineLimit: 0,
                 rollupOptions: {
-                    input: resolve(__dirname, 'src/styles-entry.js'),
+                    input: resolve(__dirname, content
+                        ? 'src/styles-content-entry.js'
+                        : 'src/styles-entry.js'),
                     output: {
                         assetFileNames: info =>
                             info.name && info.name.endsWith('.css')
-                                ? 'content-tools.css'
+                                ? (content
+                                    ? 'content-tools-content.css'
+                                    : 'content-tools.css')
                                 : 'images/[name][extname]',
                         // The entry exists only to pull in the stylesheet; its
                         // JS output is empty and the build script removes it.
-                        entryFileNames: '.styles-entry.js'
+                        entryFileNames: content
+                            ? '.styles-content-entry.js'
+                            : '.styles-entry.js'
                     }
                 }
             }

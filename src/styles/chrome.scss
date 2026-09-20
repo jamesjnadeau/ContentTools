@@ -1,0 +1,18 @@
+@charset "UTF-8";
+
+// The SHADOW-ROOT stylesheet, imported with `?inline` and adopted via
+// adoptedStyleSheets.
+//
+// The complement of content.scss: the editor's own furniture -- toolbox,
+// inspector, dialogs, modal, flashes, ignition -- plus the `.ct-app` root.
+// It deliberately omits @font-face (ignored inside a shadow root; content.scss
+// carries it) and every rule that targets page content or <body>.
+//
+// None of these partials reference an asset, so this compiles to a
+// self-contained string with no url() to resolve -- which is what makes
+// inlining it safe.
+
+@use "config" as *;
+
+@use "ui/ui";
+@use "app";

@@ -13,71 +13,11 @@
 /* Mixins + settings */
 @use "mixins" as *;
 @use "settings" as *;
+@use "font-face";
 
 /* UI */
 @use "ui/ui";
-
-/**
- * The highlight class below is used to highlight editable regions within the
- * page to users to help them see what they can edit. It's slightly unusual in
- * that it's specified as a modifier of `ct`.
- */
-
-@keyframes highlight {
-    0% {
-        outline-color: rgba(white, 0);
-    }
-    25% {
-        outline-color: $highlight-color;
-    }
-    50% {
-        outline-color: $highlight-color;
-    }
-    100% {
-        outline-color: rgba(white, 0);
-    }
-}
-
-@mixin animation--highlight() {
-    animation: highlight 0.5s ease-in;
-    animation-iteration-count: infinite;
-    animation-fill-mode: forwards;
-}
-
-.ct-app {
-    box-sizing: border-box;
-
-    * {
-        &,
-        &:before,
-        &:after {
-          box-sizing: border-box;
-        }
-    }
-}
-
-.ct--highlight {
-    outline: 4px solid $highlight-color;
-    @include animation--highlight();
-}
-
-/**
- * When applied to the `body` this class prevents the page from scrolling. This
- * can be a useful trait when overlaying content such as a dialog where
- * scrolling is either undesirable or relevant only to the overlayed content.
- */
-.ct--no-scroll {
-    overflow: hidden;
-}
-
-/**
- * Sometimes it necessary to take focus from an element such as when asking a
- * user to provide a URL for a link. To provide an indication of the element's
- * selection before focus was list this class can be applied to a `span`
- * surrounding the element's selection.
- *
- * Once focus is returned to the element the class should be removed.
- */
-.ct--pseudo-select {
-    background: rgba(black, 0.1);
-}
+// Rules, in the order they must be emitted
+@use "highlight";
+@use "app";
+@use "document";

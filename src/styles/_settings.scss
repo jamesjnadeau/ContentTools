@@ -84,13 +84,10 @@ $muted-action-color: #646464 !default;
  *
  */
 
-// Icon font-face
-@font-face {
-    font-family: 'icon';
-    src: url($image-path-prefix + 'icons.woff');
-    font-weight: normal;
-    font-style: normal;
-}
+// The icon @font-face lives in _font-face.scss. It is the one rule here that
+// produces output, and it must reach the DOCUMENT -- @font-face declared
+// inside a shadow root is ignored by Chromium and WebKit, so the shadow
+// chrome sheet deliberately does not carry it.
 
 // Text colours
 $icon-color: #464646 !default;

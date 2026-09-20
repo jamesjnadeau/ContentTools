@@ -1,0 +1,26 @@
+@charset "UTF-8";
+
+// The DOCUMENT-level stylesheet.
+//
+// Everything here has to be in the page's own stylesheet rather than in the
+// shadow root, for three different reasons:
+//
+//   - `.ce-element` and the drop indicators target the editable CONTENT,
+//     which stays in light DOM in Mode A (the host page styles it, which is
+//     what makes preview fidelity free).
+//   - `.ce--dragging` / `.ce--resizing` / `.ct--no-scroll` are written to
+//     <body>.
+//   - `@font-face` declared inside a shadow root is ignored in Chromium and
+//     WebKit, so the icon font has to be registered on the document even
+//     though only the shadow chrome draws with it.
+//
+// Every rule here is also present in content-tools.css, which remains the
+// single complete stylesheet for consumers who are not using the element.
+// This is a subset, not a replacement.
+
+@use "config" as * with ($image-path-prefix: "../assets/");
+
+@use "vendor/content-edit";
+@use "font-face";
+@use "highlight";
+@use "document";

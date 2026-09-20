@@ -1,0 +1,34 @@
+@use "config" as *;
+@use "highlight" as *;
+
+// Rules that must live in the DOCUMENT rather than the shadow root.
+//
+// `.ct--highlight` is applied to the editable regions themselves, which stay
+// in light DOM in Mode A. `.ct--no-scroll` goes on <body>. `.ct--pseudo-select`
+// is injected into element content. None of them can be reached from a
+// stylesheet adopted into the shadow root.
+.ct--highlight {
+    outline: 4px solid $highlight-color;
+    @include animation--highlight();
+}
+
+/**
+ * When applied to the `body` this class prevents the page from scrolling. This
+ * can be a useful trait when overlaying content such as a dialog where
+ * scrolling is either undesirable or relevant only to the overlayed content.
+ */
+.ct--no-scroll {
+    overflow: hidden;
+}
+
+/**
+ * Sometimes it necessary to take focus from an element such as when asking a
+ * user to provide a URL for a link. To provide an indication of the element's
+ * selection before focus was list this class can be applied to a `span`
+ * surrounding the element's selection.
+ *
+ * Once focus is returned to the element the class should be removed.
+ */
+.ct--pseudo-select {
+    background: rgba(black, 0.1);
+}
