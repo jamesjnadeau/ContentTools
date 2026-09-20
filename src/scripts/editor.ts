@@ -1267,6 +1267,21 @@ class _EditorApp extends ContentTools.ComponentUI {
     _addDOMEventListeners() {
         // Add DOM event listeners for the widget
 
+        // Adding a set of listeners always supersedes the previous set.
+        //
+        // Every handler below is stored on `this`, and removal is by function
+        // identity, so re-assigning them without removing the old ones first
+        // strands the previous set on the document with nothing left pointing
+        // at it -- unremovable for the life of the page. `init()` calls
+        // `mount()` unconditionally, so any host that re-initializes the
+        // editor (the regions on the page changed, a SPA re-rendered the view)
+        // leaked a keydown, keyup, visibilitychange, beforeunload and unload
+        // listener on every call.
+        //
+        // On the first mount the handles are all undefined and every `off`
+        // here is a no-op, so this is safe to run unconditionally.
+        this._removeDOMEventListeners();
+
         // If the user holds the shift key down for a set period we highlight
         // editable regions on the page (for example by flashing them).
         //
