@@ -424,6 +424,23 @@ class _EditorApp extends ContentTools.ComponentUI {
     destroy() {
         // Destroy the editor application
 
+        // Stop watching the document for changes. `start()` builds the
+        // history stack and its 50ms watch interval and only `stop()` clears
+        // it, so destroying a live editor used to leave an interval running
+        // whose closure holds the app and every region it was editing.
+        if (this.history) {
+            this.history.stopWatching();
+            this.history = null;
+        }
+
+        // Cancel the shift-to-highlight timer. It is the sharper of the two:
+        // it calls `highlightRegions(true)`, which iterates `_domRegions`,
+        // from a timeout with no stack pointing anywhere useful.
+        if (this._highlightTimeout) {
+            clearTimeout(this._highlightTimeout);
+            this._highlightTimeout = null;
+        }
+
         // Remove any events bound to the ContentEdit Root
         ContentEdit.Root.get().unbind('detach', this._handleDetach);
         ContentEdit.Root.get().unbind('attach', this._handleAttach);

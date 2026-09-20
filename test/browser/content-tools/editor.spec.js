@@ -417,6 +417,41 @@ describe('EditorApp.syncRegions()', () => {
 
 describe('EditorApp.destroy()', () => {
 
+    it('stops the history watch', () => {
+        /* `start()` builds the history stack and a 50ms interval; only
+           `stop()` used to clear it, so destroying a live editor left an
+           interval running whose closure holds the app and every region it
+           was editing. A leak, not an untidiness. */
+        boot();
+        editor.start();
+
+        const history = editor.history;
+        expect(history._watchInterval).toBeTruthy();
+        const stop = vi.spyOn(history, 'stopWatching');
+
+        editor.destroy();
+
+        expect(stop).toHaveBeenCalled();
+        expect(editor.history).toBe(null);
+    });
+
+    it('cancels the shift-to-highlight timer', async () => {
+        /* The sharper of the two: the timer calls highlightRegions(), which
+           iterates _domRegions, from a timeout with no stack pointing
+           anywhere useful. */
+        boot();
+        let fired = 0;
+        editor._highlightTimeout = setTimeout(() => { fired += 1; }, 5);
+
+        editor.destroy();
+        expect(editor._highlightTimeout).toBe(null);
+
+        // Observing the callback, not just the field: nulling the handle
+        // without clearing the timer leaves it to fire regardless.
+        await new Promise(resolve => setTimeout(resolve, 30));
+        expect(fired).toBe(0);
+    });
+
     it('removes every global listener it added', () => {
         // The editor leaked a visibilitychange listener for years because
         // removal was hand-written and did not match what was added.

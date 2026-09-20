@@ -106,29 +106,24 @@ export function leaseOwner(): unknown {
  * defensible: the field list below is the `_EditorApp` constructor's, in its
  * order, and a divergence is a bug in one place or the other rather than an
  * omission nobody can detect. `destroy()` is not enough on its own -- it
- * unbinds the ContentEdit.Root handlers, unmounts, and clears the listeners,
- * but leaves `_state`, `_regions`, `_regionQuery`, `_namingProp` and a
- * running history interval exactly as they were. A second boot onto that
- * would find itself already `editing`.
+ * disposes the history and the highlight timer, unbinds the ContentEdit.Root
+ * handlers, unmounts, and clears the listeners, but leaves `_state`,
+ * `_regions`, `_regionQuery` and `_namingProp` exactly as they were. A second
+ * boot onto that would find itself already `editing`.
  *
  * Call it AFTER `destroy()`: the widget handles this nulls are the ones
  * `unmount()` sets, and running them first would make `destroy()`'s own
  * `unmount()` a no-op and leave `.ct-app` in the page.
  *
- * Two things are cleared that the constructor does not assign, because a
- * fresh app has neither and both outlive teardown: the history watch
- * interval and the shift-to-highlight timer. The timer is the sharper one --
- * it fires `highlightRegions(true)`, which iterates `_domRegions`, and would
- * throw on the null this function installs.
+ * Three fields below are not constructor fields, and are assigned because a
+ * fresh app does not have them at all: `_highlightTimeout`, `_ctrlDown` and
+ * `_shiftDown`. The timers behind the first are `destroy()`'s to dispose,
+ * not this function's -- an app can be reset without ever being destroyed.
  */
 export function resetEditorApp(): void {
     const app = ContentTools.EditorApp.get() as any;
 
-    if (app.history) {
-        app.history.stopWatching();
-    }
     app.history = null;
-
     app._state = 'dormant';
     app._busy = false;
     app._namingProp = null;
@@ -146,9 +141,6 @@ export function resetEditorApp(): void {
     app._profile = HTML_PROFILE;
 
     // Not constructor fields; see the note above.
-    if (app._highlightTimeout) {
-        clearTimeout(app._highlightTimeout);
-    }
     app._highlightTimeout = null;
     app._ctrlDown = undefined;
     app._shiftDown = undefined;

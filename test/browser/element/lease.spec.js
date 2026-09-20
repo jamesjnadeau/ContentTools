@@ -180,48 +180,6 @@ describe('resetEditorApp', () => {
         expect(app._fixtureTest(fixture)).toBe(true);
     });
 
-    it('stops the history interval that destroy() leaves running', () => {
-        /* `stop()` disposes the history itself, so the spy has to go on
-           AFTER destroy or it would be satisfied by a call the reset had
-           nothing to do with. The interval is a real one -- `watch()` runs
-           every 50ms and holds the region tree alive -- so leaving it is a
-           leak, not an untidiness. */
-        const app = ContentTools.EditorApp.get();
-        app.init('[data-editable]', 'data-name', null, false);
-        app.start();
-        app.destroy();
-
-        const history = app.history;
-        expect(history).not.toBe(null);
-        expect(history._watchInterval).toBeTruthy();
-        const stop = vi.spyOn(history, 'stopWatching');
-
-        resetEditorApp();
-
-        expect(stop).toHaveBeenCalled();
-        expect(app.history).toBe(null);
-    });
-
-    it('cancels the shift-to-highlight timer', () => {
-        /* Not a constructor field, and the sharpest thing teardown leaves
-           behind: the timer calls highlightRegions(), which iterates
-           _domRegions -- null after a reset -- and would throw from a
-           timeout with no stack pointing anywhere useful. */
-        const app = ContentTools.EditorApp.get();
-        app.init('[data-editable]', 'data-name', null, false);
-        let fired = 0;
-        app._highlightTimeout = setTimeout(() => { fired += 1; }, 5);
-
-        app.destroy();
-        resetEditorApp();
-        expect(app._highlightTimeout).toBe(null);
-
-        // Observing the callback, not just the field: nulling the handle
-        // without clearing the timer leaves it to fire regardless.
-        return new Promise(resolve => setTimeout(resolve, 30))
-            .then(() => { expect(fired).toBe(0); });
-    });
-
     it('is safe to call on an app that was never initialised', () => {
         expect(() => resetEditorApp()).not.toThrow();
         expect(ContentTools.EditorApp.get().getState()).toBe('dormant');
