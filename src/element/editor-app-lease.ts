@@ -30,17 +30,19 @@ let owner: unknown = null;
  *
  * This is why there is no waiting list and no promotion machinery -- the one
  * case those would serve is exactly the case this covers.
+ *
+ * There is no withdraw. A teardown that re-checks `isConnected` before
+ * acting is a property rather than a protocol: it stays correct however the
+ * flush is reached, whereas an element cancelling its own pending teardown
+ * on reconnect is a second mechanism for the same thing that only works if
+ * it is the one doing the flushing. Mutation testing showed them redundant,
+ * so the weaker one went.
  */
 let pendingTeardown: (() => void) | null = null;
 
 /** Defer `fn` until a claimant flushes it or the owner cancels it. */
 export function setPendingTeardown(fn: () => void): void {
     pendingTeardown = fn;
-}
-
-/** Withdraw a deferred teardown -- the element reconnected after a move. */
-export function clearPendingTeardown(): void {
-    pendingTeardown = null;
 }
 
 /**

@@ -1,6 +1,6 @@
 import {
     claimLease, releaseLease, leaseOwner, resetEditorApp,
-    setPendingTeardown, clearPendingTeardown, flushPendingTeardown
+    setPendingTeardown, flushPendingTeardown
 } from '../../../src/element/editor-app-lease.js';
 import {
     snapshotGlobals, applyGlobals, restoreGlobals, setStylePalette
@@ -19,7 +19,7 @@ describe('the editor-app lease', () => {
     const B = {name: 'b'};
 
     afterEach(() => {
-        clearPendingTeardown();
+        flushPendingTeardown();
         releaseLease(A);
         releaseLease(B);
     });
@@ -75,14 +75,6 @@ describe('the editor-app lease', () => {
         flushPendingTeardown();
         flushPendingTeardown();
         expect(ran).toBe(1);
-    });
-
-    it('withdraws a deferred teardown on reconnect', () => {
-        let ran = 0;
-        setPendingTeardown(() => { ran += 1; });
-        clearPendingTeardown();
-        flushPendingTeardown();
-        expect(ran).toBe(0);
     });
 });
 
