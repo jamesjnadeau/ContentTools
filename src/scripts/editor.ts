@@ -655,8 +655,13 @@ class _EditorApp extends ContentTools.ComponentUI {
         // Filter out any blank (whitespace only) lines
         lines = lines.filter(line => line.trim() !== '');
 
-        // Check there's something to paste
-        if (!lines) {
+        // Check there's something to paste.
+        //
+        // This read `if (!lines)`, which never fires: `lines` is an array and
+        // an empty array is truthy. Pasting whitespace-only content therefore
+        // fell through with nothing to paste and threw. A crash is not
+        // behaviour anyone depends on, so the guard now does what it says.
+        if (!lines.length) {
             return;
         }
 

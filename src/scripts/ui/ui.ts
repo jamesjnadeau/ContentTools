@@ -315,6 +315,15 @@ ContentTools.WidgetUI = class WidgetUI extends ContentTools.ComponentUI {
         var monitorForHidden = () => {
             this._hideTimeout = null;
 
+            // The widget can be unmounted between ticks -- a dialog closed,
+            // the editor stopped -- leaving this timer holding a null
+            // element. getComputedStyle(null) throws, which surfaced as 20
+            // unhandled errors across the suite: harmless individually, but
+            // exactly the kind of noise that hides a real failure.
+            if (!this.isMounted()) {
+                return;
+            }
+
             // If there's no support for `getComputedStyle` then we fallback to
             // unmounting the widget immediately.
             if (!rootContext().supportsComputedStyle()) {

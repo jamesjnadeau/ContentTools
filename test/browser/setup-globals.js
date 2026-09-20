@@ -6,10 +6,13 @@
  */
 import {vi, beforeEach} from 'vitest';
 
-/* The suites were written against the browser globals the built bundle
-   installs (FSM, HTMLString, ContentSelect, ContentEdit, ContentTools), so it
-   is loaded for its side effects rather than for named exports. */
-import '../../dist/content-tools.js';
+/* The suites were written against browser globals (FSM, HTMLString,
+   ContentSelect, ContentEdit, ContentTools), which src/global.ts attaches.
+   Importing the SOURCE rather than dist/content-tools.js is deliberate: it
+   is what lets coverage attribute anything at all, since instrumenting a
+   pre-bundled file cannot map back to source. The shipped bundle is still
+   exercised end to end -- that is what the golden-master suite loads. */
+import '../../src/global.ts';
 
 /**
  * Jasmine's `spyOn` replaces the method with a stub that returns undefined;

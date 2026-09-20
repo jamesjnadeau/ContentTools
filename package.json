@@ -17,6 +17,7 @@
   "devDependencies": {
     "@playwright/test": "^1.49.0",
     "@vitest/browser": "^3.2.7",
+    "@vitest/coverage-istanbul": "^3.2.7",
     "decaffeinate": "^8.1.4",
     "eslint": "^9.39.5",
     "sass": "^1.104.1",
@@ -38,7 +39,8 @@
     "build:esm": "vite build --mode esm",
     "build:min": "vite build --mode min",
     "lint": "eslint src vendor-src",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:coverage": "vitest run --config vitest.config.mjs --coverage"
   },
   "repository": {
     "type": "git",

@@ -48,6 +48,10 @@ export interface ContentEditNamespace {
     RESIZE_CORNER_SIZE: number;
     TRIM_WHITESPACE: boolean;
 
+    // Strictly increasing modification stamp; see Node.taint().
+    _lastModifiedStamp: number;
+    _nextModifiedStamp: () => number;
+
     // Helpers
     _: (s: string) => string;
     _translations: Record<string, Record<string, string>>;

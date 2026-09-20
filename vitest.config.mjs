@@ -19,6 +19,29 @@ export default defineConfig({
            doing nothing in a file that passes on its own. */
         isolate: true,
         fileParallelism: false,
+        coverage: {
+            // istanbul, not v8: the suites exercise the BUILT bundle for its
+            // browser globals, and v8 coverage cannot map that back to source.
+            provider: 'istanbul',
+            include: ['src/scripts/**', 'src/core/**'],
+            reporter: ['text-summary', 'json-summary'],
+            // editor.ts owns the save/region contract the CMS milestones are
+            // built on, and had ZERO coverage until Phase 6. It is now at
+            // ~69% lines.
+            //
+            // The target is 80 and this floor is set at what is actually
+            // reached, as a ratchet: it prevents regression without leaving
+            // a red gate everyone learns to ignore. Raise it as the gap
+            // closes. What is still uncovered, and why:
+            //   - revertToSnapshot and the deeper history paths
+            //   - the delayed shift-to-highlight timer
+            //   - the visibilitychange handler, which needs a genuinely
+            //     hidden page rather than a dispatched event
+            //   - parts of pasteHTML's per-element-type branching
+            thresholds: {
+                'src/scripts/editor.ts': {lines: 69, statements: 69}
+            }
+        },
         browser: {
             enabled: true,
             provider: 'playwright',

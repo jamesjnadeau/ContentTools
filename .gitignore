@@ -8,3 +8,4 @@ playwright-report
 .DS_Store
 dist
 test/browser/**/__screenshots__
+coverage

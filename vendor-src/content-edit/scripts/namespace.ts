@@ -13,6 +13,19 @@ import type {ContentEditNamespace} from '../../../src/core/namespaces.js';
 // lets every other module see the full member list.
 const ContentEdit = {
 
+    // Strictly increasing modification stamp. See Node.taint().
+    _lastModifiedStamp: 0,
+
+    _nextModifiedStamp() {
+        const now = Date.now();
+        ContentEdit._lastModifiedStamp =
+            now > ContentEdit._lastModifiedStamp
+                ? now
+                : ContentEdit._lastModifiedStamp + 1;
+        return ContentEdit._lastModifiedStamp;
+    },
+
+
     // Global settings
 
     // The CSS class names used when an element is drag aligned to the left or

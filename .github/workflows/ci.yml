@@ -34,8 +34,8 @@ jobs:
       - name: Install browser
         run: npx playwright install --with-deps chromium
 
-      - name: Ported suites + surface test (461 tests, real browser)
-        run: npm run test:unit
+      - name: Suites + coverage floor (real browser)
+        run: npm run test:coverage
 
       - name: Golden master (against the frozen legacy bundle)
         run: npx playwright test --config test/golden/playwright.config.mjs golden.spec.mjs
