@@ -1,4 +1,4 @@
-# Upstream provenance of `external/scripts/content-edit.js`
+# Upstream provenance of the vendored ContentEdit bundle
 
 **Status: VERIFIED — the vendored bundle is byte-identical to upstream and contains no local
 patches.** Established during Phase 0 of the 2.0 modernization. This closes the "Critical" risk
@@ -7,8 +7,12 @@ that absorbing ContentEdit would silently discard a local fix.
 ## Result
 
 ```
-md5(external/scripts/content-edit.js) = 02110d6c67fcec34a8ce13d68241be10
+md5(first 5560 lines of build/content-tools.js) = 02110d6c67fcec34a8ce13d68241be10
 ```
+
+Those bytes used to be duplicated at `external/scripts/content-edit.js`. The build now compiles
+them from `vendor-src/`, so the duplicate is gone; the frozen v1.6.16 artifact still carries them
+verbatim and is what the check compares against.
 
 The same md5 is produced by (a) upstream `GetmeUK/ContentEdit@1.3.5`'s committed
 `build/content-edit.js`, and (b) a from-source rebuild using the recipe below. Reproducing from
@@ -62,7 +66,7 @@ ContentSelect: content-select                           (single file)
 ```
 
 Clones the three tags, compiles with CoffeeScript 1.7.1, reassembles, and diffs against
-`external/scripts/content-edit.js`. Exits non-zero on any mismatch.
+the vendored section of the frozen artifact. Exits non-zero on any mismatch.
 
 ## Inherited test suite
 

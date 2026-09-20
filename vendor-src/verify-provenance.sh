@@ -4,14 +4,19 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET="$REPO_ROOT/external/scripts/content-edit.js"
+# The vendored bundle used to live at external/scripts/content-edit.js. The
+# build now compiles it from vendor-src/, so that duplicate is gone -- but the
+# identical bytes are the first 5560 lines of the frozen v1.6.16 artifact,
+# which is what this check now compares against.
+TARGET="$(mktemp)"; trap 'rm -f "$TARGET"' EXIT
+head -5560 "$REPO_ROOT/build/content-tools.js" > "$TARGET"
 EXPECTED_MD5="02110d6c67fcec34a8ce13d68241be10"
 
 CE_SHA="8176f1d02ce083b7d23ef0b6249515324fa3a8da"   # ContentEdit 1.3.5
 CS_SHA="3857dd67a96891a1bdb283d3a554a5b603883810"   # ContentSelect 1.0.3
 HS_SHA="8ca1028b8f00c0ae20e25887e57999c7eb6fb03b"   # HTMLString 1.0.6
 
-WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+WORK="$(mktemp -d)"; trap 'rm -rf "$WORK" "$TARGET"' EXIT
 cd "$WORK"
 
 echo "==> Installing CoffeeScript 1.7.1"
@@ -53,6 +58,6 @@ if [ "$ACTUAL_MD5" != "$EXPECTED_MD5" ]; then
   echo "FAIL: rebuilt md5 $ACTUAL_MD5 != expected $EXPECTED_MD5"; exit 1
 fi
 if ! diff -q rebuilt.js "$TARGET" >/dev/null; then
-  echo "FAIL: rebuilt output differs from $TARGET"; diff rebuilt.js "$TARGET" | head -40; exit 1
+  echo "FAIL: rebuilt output differs from the frozen v1.6.16 vendored section"; diff rebuilt.js "$TARGET" | head -40; exit 1
 fi
 echo "OK: reproduces byte-for-byte (md5 $ACTUAL_MD5)"
