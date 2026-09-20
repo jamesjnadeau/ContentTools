@@ -1,4 +1,4 @@
-# ContentTools 2 (alpha)
+# ContentTools 2 (beta)
 
 A WYSIWYG editor for HTML content, being modernized into the editing surface
 for a git-backed markdown CMS.
@@ -8,8 +8,8 @@ which has been unmaintained since 2022.
 
 ## Status
 
-**`2.0.0-alpha.0` — the library modernization is done and the editor is now
-also a custom element; the CMS is not built yet.**
+**`2.0.0-beta.0` — Milestone 1 is complete: the library is modernized and the
+editor also runs as a custom element. The CMS is not built yet.**
 
 What changed from v1.6.16:
 
@@ -19,7 +19,7 @@ What changed from v1.6.16:
 | Modules | one shared closure, concatenated | 81 ES modules |
 | Build | Grunt + PhantomJS (unrunnable on Node 22) | Vite |
 | Dependencies | ContentEdit/ContentSelect/HTMLString vendored as one prebuilt file | absorbed as source |
-| Tests | 127 assertions, PhantomJS | 662, real browser |
+| Tests | 127 assertions, PhantomJS | 667, real browser, plus five suites against the built artifacts |
 | Host access | bare `document`/`window` throughout | one `RootContext` seam |
 | Embedding | mounts chrome into `document.body` | `<content-tools-editor>`, chrome in a shadow root |
 
@@ -110,7 +110,7 @@ it accurately.
 ```sh
 npm install
 npm run build        # dist/: IIFE, minified IIFE, ESM, CSS + images
-npm test             # lint, typecheck, 662 browser tests, golden master, equivalence, visual
+npm test             # lint, typecheck, browser tests, golden master, equivalence, visual, size
 npm run test:coverage
 ```
 
@@ -122,7 +122,7 @@ npm run test:coverage
 
 Five suites, deliberately covering different things:
 
-- **`test/browser/`** — 662 tests in real Chromium, run against the SOURCE so
+- **`test/browser/`** — 667 tests in real Chromium, run against the SOURCE so
   coverage can attribute. Includes upstream ContentEdit's own 329 specs,
   inherited with the code.
 - **`test/golden/golden.spec.mjs`** — a characterisation harness that drives
