@@ -1,3 +1,5 @@
+import ContentTools from './namespace.js';
+
 /*
  * decaffeinate suggestions:
  * DS101: Remove unnecessary use of Array.from

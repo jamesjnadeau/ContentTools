@@ -1,3 +1,5 @@
+import HTMLString from '../../html-string/namespace.js';
+
 /*
  * decaffeinate suggestions:
  * DS101: Remove unnecessary use of Array.from
@@ -206,15 +208,4 @@ var ContentEdit = {
     }
 };
 
-
-// Export the namespace
-
-// Browser (via window)
-if (typeof window !== 'undefined') {
-    window.ContentEdit = ContentEdit;
-}
-
-// Node/Browserify
-if ((typeof module !== 'undefined') && module.exports) {
-    const exports = (module.exports = ContentEdit);
-}
+export default ContentEdit;

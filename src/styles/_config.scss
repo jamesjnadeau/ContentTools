@@ -1,0 +1,17 @@
+// Build-time configuration for the stylesheet.
+//
+// `$image-path-prefix` is where the compiled CSS looks for the icon font
+// and the drop-indicator SVGs. It lives in its own module so the entry can
+// set it with `@use "config" with (...)` while every other partial reads it
+// without configuring it -- which is what makes the @use migration work.
+$image-path-prefix: "images/" !default;
+
+// The colour used to highlight editable regions.
+//
+// This was declared `!default` in BOTH vendor/_content-edit.scss (#f39c12) and
+// _settings.scss (rgba(#f39c12, 0.25)). Under @import they shared one global
+// scope, so whichever loaded first won -- the vendor file -- and the rgba
+// variant in _settings.scss silently never applied. @use gives each module its
+// own scope, which would have quietly changed the colour, so the value that
+// actually shipped in v1.6.16 is pinned here as the single definition.
+$highlight-color: #f39c12 !default;

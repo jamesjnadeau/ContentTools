@@ -1,6 +1,12 @@
-/* Phase 1 build: stylesheet + assets via Vite, JS via the CoffeeScript shim.
-   The two halves merge in dist/ and split apart again in Phase 3, when the JS
-   becomes real ESM modules that Vite can own. */
+/* Builds every published artifact.
+ *
+ *   dist/content-tools.js       IIFE, five browser globals, readable
+ *   dist/content-tools.min.js   the same, minified
+ *   dist/index.js               ESM, for consumers with a bundler
+ *   dist/content-tools.css      stylesheet + dist/images/ assets
+ *
+ * Plus the dev playground.
+ */
 import {execFileSync} from 'node:child_process';
 import {rmSync} from 'node:fs';
 import {join, resolve} from 'node:path';
@@ -9,9 +15,10 @@ import {fileURLToPath} from 'node:url';
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const run = (cmd, args) => execFileSync(cmd, args, {cwd: ROOT, stdio: 'inherit'});
 
-run('npx', ['vite', 'build']);
-run(process.execPath, [join(ROOT, 'scripts/build-legacy.mjs')]);
+run('npx', ['vite', 'build', '--mode', 'style']); // CSS + images/
+run('npx', ['vite', 'build']);                    // IIFE
+run('npx', ['vite', 'build', '--mode', 'min']);   // minified pair
+run('npx', ['vite', 'build', '--mode', 'esm']);   // ESM
 run(process.execPath, [join(ROOT, 'scripts/build-playground.mjs')]);
 
-// The stylesheet entry emits an empty JS chunk; it is not part of the package.
 rmSync(join(ROOT, 'dist/.styles-entry.js'), {force: true});

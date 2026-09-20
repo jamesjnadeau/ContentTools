@@ -28,7 +28,7 @@ jobs:
       - name: Install browser
         run: npx playwright install --with-deps chromium
 
-      - name: Ported ContentEdit suite (329 tests, real browser)
+      - name: Ported suites + surface test (461 tests, real browser)
         run: npm run test:unit
 
       - name: Golden master (against the frozen legacy bundle)

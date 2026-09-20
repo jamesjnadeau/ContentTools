@@ -1,5 +1,7 @@
-
 @use "sass:color";
+@use "../settings" as *;
+@use "../mixins" as *;
+
 /**
  * The toolbox widget displays a set of tools the user can use to edit the
  * content of the page.

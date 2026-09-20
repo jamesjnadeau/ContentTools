@@ -1,5 +1,7 @@
-
 @use "sass:color";
+@use "../settings" as *;
+@use "../mixins" as *;
+
 /**
  * The content tools library supports a number of dialogs for different types of
  * functionality (e.g insert an image, change a tables dimensions, etc).

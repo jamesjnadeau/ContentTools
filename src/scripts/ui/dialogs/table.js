@@ -1,3 +1,6 @@
+import ContentEdit from '../../../../vendor-src/content-edit/scripts/namespace.js';
+import ContentTools from '../../namespace.js';
+
 /*
  * decaffeinate suggestions:
  * DS002: Fix invalid constructor

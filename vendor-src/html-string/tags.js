@@ -1,3 +1,5 @@
+import HTMLString from './namespace.js';
+
 /*
  * decaffeinate suggestions:
  * DS102: Remove unnecessary code created because of implicit returns

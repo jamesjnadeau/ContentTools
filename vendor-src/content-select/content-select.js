@@ -473,15 +473,4 @@ var _getNodeRange = function(element, docRange) {
     return [startNode, startOffset, endNode, endOffset];
 };
 
-
-// Export the namespace
-
-// Browser (via window)
-if (typeof window !== 'undefined') {
-    window.ContentSelect = ContentSelect;
-}
-
-// Node/Browserify
-if ((typeof module !== 'undefined') && module.exports) {
-    const exports = (module.exports = ContentSelect);
-}
+export default ContentSelect;

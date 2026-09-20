@@ -1,12 +1,11 @@
+@use "../config" as *;
 /**
  * A prefix appended to all background-image URLs.
  */
-$image-path-prefix: 'images/' !default;
 
 /**
  * Colours common to the UI,
  */
-$highlight-color: #f39c12 !default;
 
 /**
  * A mixin for performing a rotate transform across multiple browsers.

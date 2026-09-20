@@ -1,5 +1,7 @@
-
 @use "sass:color";
+@use "../settings" as *;
+@use "../mixins" as *;
+
 /**
  * The ignition switch is how users start and stop editing the page.
  */

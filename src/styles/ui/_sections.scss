@@ -1,5 +1,7 @@
-
 @use "sass:color";
+@use "../settings" as *;
+@use "../mixins" as *;
+
 /**
  * Sections are used to divide up configuration blocks within a dialog's view.
  * They contain wither a switch or an input, for example the table dialog has

@@ -1,3 +1,6 @@
+import ContentSelect from '../../content-select/content-select.js';
+import ContentEdit from './namespace.js';
+
 /*
  * decaffeinate suggestions:
  * DS002: Fix invalid constructor

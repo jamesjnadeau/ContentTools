@@ -261,15 +261,4 @@ Your changes have not been saved, do you really want to lose them?\
     }
 };
 
-
-// Export the namespace
-
-// Browser (via window)
-if (typeof window !== 'undefined') {
-    window.ContentTools = ContentTools;
-}
-
-// Node/Browserify
-if ((typeof module !== 'undefined') && module.exports) {
-    const exports = (module.exports = ContentTools);
-}
+export default ContentTools;

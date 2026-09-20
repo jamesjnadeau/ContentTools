@@ -1,3 +1,7 @@
+import ContentSelect from '../../../../vendor-src/content-select/content-select.js';
+import ContentEdit from '../../../../vendor-src/content-edit/scripts/namespace.js';
+import ContentTools from '../../namespace.js';
+
 /*
  * decaffeinate suggestions:
  * DS102: Remove unnecessary code created because of implicit returns

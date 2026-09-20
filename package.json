@@ -24,14 +24,15 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "build:js": "node scripts/build-legacy.mjs",
-    "build:css": "vite build",
+    "build:js": "vite build",
     "test:golden": "playwright test --config test/golden/playwright.config.mjs golden.spec.mjs",
     "build:playground": "node scripts/build-playground.mjs",
     "dev": "node scripts/build.mjs && node test/golden/server.mjs",
     "test:visual": "playwright test --config test/golden/playwright.config.mjs visual.spec.mjs",
     "test": "npm run test:unit && npm run test:golden && npm run test:visual",
-    "test:unit": "vitest run --config vitest.config.mjs"
+    "test:unit": "vitest run --config vitest.config.mjs",
+    "build:esm": "vite build --mode esm",
+    "build:min": "vite build --mode min"
   },
   "repository": {
     "type": "git",
@@ -44,5 +45,22 @@
   "files": [
     "dist",
     "translations"
+  ],
+  "type": "module",
+  "module": "dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "default": "./dist/content-tools.js"
+    },
+    "./global": "./dist/content-tools.js",
+    "./style.css": "./dist/content-tools.css",
+    "./translations/*": "./translations/*"
+  },
+  "sideEffects": [
+    "**/*.css",
+    "**/*.scss",
+    "./src/**",
+    "./vendor-src/**"
   ]
 }

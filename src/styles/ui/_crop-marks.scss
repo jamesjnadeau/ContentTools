@@ -1,4 +1,6 @@
 @use "sass:color";
+@use "../settings" as *;
+@use "../mixins" as *;
 /**
  * Cropmarks define the region within an image that will be cropped. They appear
  * in the image dialog when crop is active.

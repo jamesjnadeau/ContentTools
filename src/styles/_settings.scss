@@ -1,3 +1,6 @@
+@use "config" as *;
+@forward "config";
+@use "mixins" as *;
 
 /**
  * All widgets are assigned a z-index equal to or higher than this setting. The
@@ -26,11 +29,6 @@ $confirm-action-color: #27ae60 !default;
 $edit-action-color: #2980b9 !default;
 $muted-action-color: #646464 !default;
 
-/**
- * The background colour used to highlight editiable regions to users when they
- * hold down the shift key.
- */
-$highlight-color: rgba(#f39c12, 0.25) !default;
 
 /**
  * Tooltips feature for a number of components, their base appearance is

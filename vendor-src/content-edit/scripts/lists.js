@@ -1,3 +1,7 @@
+import HTMLString from '../../html-string/namespace.js';
+import ContentSelect from '../../content-select/content-select.js';
+import ContentEdit from './namespace.js';
+
 /*
  * decaffeinate suggestions:
  * DS101: Remove unnecessary use of Array.from
@@ -647,7 +651,14 @@ Cls$lists = (ContentEdit.ListItemText = class ListItemText extends ContentEdit.T
         // For text elements with optimized output we use a cache to improve
         // performance for repeated calls.
         if (indent == null) { indent = ''; }
-        if (!this._lastCached || (this._lastCached < this._modified)) {
+        // NOTE: `<=`, not `<`. Both _lastCached and _modified come from
+        // Date.now(), so warming the cache and then taint()ing it inside the
+        // same millisecond left a strict `<` reading false and html() served
+        // stale content while the element's own content and DOM were correct.
+        // PhantomJS was slow enough in 2015 to never collide; modern browsers
+        // collide often. Re-checking when the stamps are equal costs at most
+        // one redundant recompute.
+        if (!this._lastCached || (this._lastCached <= this._modified)) {
 
             // Copy the content so we can optimize if for output, we also trim
             // whitespace from the string (if the behaviour hasn't been

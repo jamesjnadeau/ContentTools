@@ -3,28 +3,19 @@
 // Asset URLs are authored relative to this file so the bundler can resolve and
 // emit them. The build rewrites them back to `images/<name>` in the output CSS,
 // preserving the path contract that existing <link> integrations depend on.
-$image-path-prefix: "../assets/";
 
-// DEFERRED: @import -> @use/@forward.
-//
-// Dart Sass 3.0 removes @import, so this must happen eventually. It is NOT a
-// drop-in here: `sass-migrator module` was run and produced a stylesheet three
-// times the size, because _settings.scss @uses vendor/content-edit and every
-// partial @uses settings, so the vendored CSS is re-emitted once per consumer
-// (.ce-element went 43 -> 430 occurrences). Doing it properly means
-// restructuring how $image-path-prefix is configured into the vendored
-// stylesheet -- which belongs with Phase 3, where content-edit stops being
-// vendored and becomes our own source.
+
+@use "config" as * with ($image-path-prefix: "../assets/");
 
 /* Vendor */
-@import "vendor/content-edit";
+@use "vendor/content-edit";
 
 /* Mixins + settings */
-@import "mixins";
-@import "settings";
+@use "mixins" as *;
+@use "settings" as *;
 
 /* UI */
-@import "ui/ui";
+@use "ui/ui";
 
 /**
  * The highlight class below is used to highlight editable regions within the

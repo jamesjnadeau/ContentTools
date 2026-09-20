@@ -1,6 +1,8 @@
-
 @use "sass:color";
 @use "sass:list";
+@use "../settings" as *;
+@use "../mixins" as *;
+
 /**
  * The inspector provides a breadcrumb style path (constructured from tags) for
  * the currently selected element and its parent/ancestor tags.
