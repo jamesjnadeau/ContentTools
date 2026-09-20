@@ -1,19 +1,16 @@
-import ContentTools from '../scripts/index.js';
-import {HTML_PROFILE} from '../core/profile.js';
-
-/* The process-wide lease on the editor singletons, and the repair function
- * that makes reusing them possible.
+/* The process-wide lease on the editor singletons.
  *
  * `ContentTools.EditorApp` and `ContentEdit.Root` are both singletons, so a
- * page can only ever have one live editor. That is a Milestone-2 problem to
- * fix properly; until then this module is where the consequences are
- * contained, deliberately in ONE deletable file rather than spread across the
- * element or pushed into `editor.ts` as a public `reset()` that would then
- * need deprecating.
+ * page can only ever have one live editor. That is a deliberate rule rather
+ * than a bug to fix: the CMS shell opens one entry at a time. This module
+ * says who holds the singletons, so a second element degrades loudly instead
+ * of fighting the first for them.
  *
- * Two separate jobs live here because they are two halves of the same
- * constraint: the lease says who is allowed to hold the singletons, and
- * `resetEditorApp()` puts them back in a state the next holder can use.
+ * It used to hold a `resetEditorApp()` as well, hand-restoring eighteen
+ * fields of the live app because `EditorApp.get()` kept handing back the
+ * instance `destroy()` had just torn down. `destroy()` is terminal now
+ * (`editor.ts`, `EditorApp._discard`), so the next `get()` builds a fresh
+ * app and the constructor is the only description of initial state.
  */
 
 /** The element currently holding the singletons, or null. */
@@ -96,52 +93,4 @@ export function releaseLease(claimant: unknown): void {
 /** Who holds the lease. Exported for tests and for the conflict message. */
 export function leaseOwner(): unknown {
     return owner;
-}
-
-/**
- * Return the `EditorApp` singleton to the state a freshly constructed one
- * would be in.
- *
- * That framing, rather than "undo what the element did", is what makes this
- * defensible: the field list below is the `_EditorApp` constructor's, in its
- * order, and a divergence is a bug in one place or the other rather than an
- * omission nobody can detect. `destroy()` is not enough on its own -- it
- * disposes the history and the highlight timer, unbinds the ContentEdit.Root
- * handlers, unmounts, and clears the listeners, but leaves `_state`,
- * `_regions`, `_regionQuery` and `_namingProp` exactly as they were. A second
- * boot onto that would find itself already `editing`.
- *
- * Call it AFTER `destroy()`: the widget handles this nulls are the ones
- * `unmount()` sets, and running them first would make `destroy()`'s own
- * `unmount()` a no-op and leave `.ct-app` in the page.
- *
- * Three fields below are not constructor fields, and are assigned because a
- * fresh app does not have them at all: `_highlightTimeout`, `_ctrlDown` and
- * `_shiftDown`. The timers behind the first are `destroy()`'s to dispose,
- * not this function's -- an app can be reset without ever being destroyed.
- */
-export function resetEditorApp(): void {
-    const app = ContentTools.EditorApp.get() as any;
-
-    app.history = null;
-    app._state = 'dormant';
-    app._busy = false;
-    app._namingProp = null;
-    app._fixtureTest = domElement => domElement.hasAttribute('data-fixture');
-    app._regionQuery = null;
-    app._domRegions = null;
-    app._regions = {};
-    app._orderedRegions = [];
-    app._rootLastModified = null;
-    app._regionsLastModified = {};
-    app._ignition = null;
-    app._inspector = null;
-    app._toolbox = null;
-    app._emptyRegionsAllowed = false;
-    app._profile = HTML_PROFILE;
-
-    // Not constructor fields; see the note above.
-    app._highlightTimeout = null;
-    app._ctrlDown = undefined;
-    app._shiftDown = undefined;
 }

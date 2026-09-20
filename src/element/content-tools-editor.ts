@@ -36,7 +36,7 @@ import {ensureIconFont} from './icon-font.js';
 import {createEventBridge} from './event-bridge.js';
 import type {EventBridge} from './event-bridge.js';
 import {
-    claimLease, releaseLease, resetEditorApp,
+    claimLease, releaseLease,
     setPendingTeardown, flushPendingTeardown
 } from './editor-app-lease.js';
 import {snapshotGlobals, applyGlobals, restoreGlobals} from './globals.js';
@@ -602,7 +602,6 @@ export class ContentToolsEditor extends HTMLElement {
         } catch (error) {
             console.error('<content-tools-editor>: error destroying the editor', error);
         }
-        resetEditorApp();
 
         // Only if it is still ours: something else may have installed a
         // context since, and clobbering it would be worse than leaking one.
@@ -680,7 +679,6 @@ export class ContentToolsEditor extends HTMLElement {
         } catch (error) {
             console.error('<content-tools-editor>: error reclaiming the editor', error);
         }
-        resetEditorApp();
     }
 
     _goInert(): void {

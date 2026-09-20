@@ -1,5 +1,5 @@
 import {
-    claimLease, releaseLease, leaseOwner, resetEditorApp,
+    claimLease, releaseLease, leaseOwner,
     setPendingTeardown, flushPendingTeardown
 } from '../../../src/element/editor-app-lease.js';
 import {
@@ -75,114 +75,6 @@ describe('the editor-app lease', () => {
         flushPendingTeardown();
         flushPendingTeardown();
         expect(ran).toBe(1);
-    });
-});
-
-describe('resetEditorApp', () => {
-
-    const FIXTURE = '<div data-editable data-name="body"><p>body</p></div>';
-
-    /** Everything a freshly constructed _EditorApp owns, and nothing else. */
-    function freshApp() {
-        return new (ContentTools.EditorApp.getCls())();
-    }
-
-    let host;
-
-    beforeEach(() => {
-        host = document.getElementById('test');
-        host.innerHTML = FIXTURE;
-    });
-
-    afterEach(() => {
-        const app = ContentTools.EditorApp.get();
-        try {
-            if (app.isEditing()) app.stop(true);
-        } catch { /* nothing to stop */ }
-        try { app.destroy(); } catch { /* not initialised */ }
-        resetEditorApp();
-        host.innerHTML = '';
-    });
-
-    /**
-     * Assert the singleton is field-for-field what a fresh one would be.
-     *
-     * `Object.keys` of a fresh instance IS the constructor's field list --
-     * the class uses `declare` rather than class fields, so nothing appears
-     * that the constructor did not assign. Comparing against it means a
-     * field added to the constructor later fails HERE rather than surfacing
-     * as an element that boots into a stale state.
-     */
-    function expectConstructorState(app) {
-        const fresh = freshApp();
-        const keys = Object.keys(fresh);
-        // Guard the guard: if the constructor is ever emptied, the loop
-        // below would pass vacuously.
-        expect(keys.length).toBeGreaterThan(10);
-
-        for (const key of keys) {
-            if (typeof fresh[key] === 'function') {
-                continue;  // compared behaviourally in its own test
-            }
-            // Wrapped so a failure names the field rather than the value.
-            expect({[key]: app[key]}).toEqual({[key]: fresh[key]});
-        }
-    }
-
-    it('leaves the singleton exactly as constructed after a clean teardown', () => {
-        // The element's own order: stop, then destroy, then repair.
-        const app = ContentTools.EditorApp.get();
-        app.init('[data-editable]', 'data-name', null, false);
-        app.start();
-        app.stop(true);
-        app.destroy();
-
-        resetEditorApp();
-
-        expectConstructorState(app);
-    });
-
-    it('leaves the singleton exactly as constructed after a teardown MID-EDIT', () => {
-        /* The adversarial path, and the one that actually exercises most of
-           the field list: `stop()` clears `_regions` and the history stack
-           on its way out, so a reset tested only against the clean order
-           would pass with half of it deleted. Destroying while editing
-           leaves regions mounted, a history interval running and
-           `_state === 'editing'`. */
-        const app = ContentTools.EditorApp.get();
-        app.init('[data-editable]', 'data-name', null, false);
-        app.start();
-
-        expect(app.getState()).toBe('editing');
-        expect(Object.keys(app._regions).length).toBeGreaterThan(0);
-        expect(app.history).not.toBe(null);
-
-        app.destroy();
-        resetEditorApp();
-
-        expectConstructorState(app);
-    });
-
-    it('restores the DEFAULT fixture test', () => {
-        /* init() assigns fixtureTest only when truthy, so a custom one set
-           by a previous consumer sticks to the singleton forever -- a
-           documented wart. Restoring the constructor's default is what stops
-           the element inheriting the last integration's idea of a fixture. */
-        const app = ContentTools.EditorApp.get();
-        app.init('[data-editable]', 'data-name', () => true, false);
-        app.destroy();
-        resetEditorApp();
-
-        const plain = document.createElement('div');
-        const fixture = document.createElement('div');
-        fixture.setAttribute('data-fixture', '');
-        expect(app._fixtureTest(plain)).toBe(false);
-        expect(app._fixtureTest(fixture)).toBe(true);
-    });
-
-    it('is safe to call on an app that was never initialised', () => {
-        expect(() => resetEditorApp()).not.toThrow();
-        expect(ContentTools.EditorApp.get().getState()).toBe('dormant');
     });
 });
 

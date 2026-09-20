@@ -31,11 +31,6 @@ const DEFAULT_FIXTURE_TEST = domElement => domElement.hasAttribute('data-fixture
 function boot({regions = '[data-editable], [data-fixture]', namingProp = 'data-name',
                fixtureTest = DEFAULT_FIXTURE_TEST, withIgnition = true, html = FIXTURE} = {}) {
     editor = ContentTools.EditorApp.get();
-    try {
-        if (editor.isEditing()) editor.stop(true);
-    } catch { /* nothing to stop */ }
-    editor.removeEventListener();
-
     host = document.getElementById('test');
     host.innerHTML = html;
     editor.init(regions, namingProp, fixtureTest, withIgnition);
@@ -63,21 +58,21 @@ function setText(name, index, text) {
 }
 
 afterEach(() => {
-    // EditorApp is a singleton, which makes teardown load-bearing in three
-    // ways that each caused confusing cross-test failures:
+    // `destroy()` is terminal -- it vacates the singleton slot -- so the
+    // next boot() gets an app the constructor just built rather than
+    // whatever the last test left behind. That covers the listener
+    // accumulation this hook used to clear by hand (the cancellation tests
+    // attach a permanent `save -> preventDefault`, which silently
+    // suppressed saves in every later test).
     //
-    //  - Listeners accumulate. The cancellation tests attach a permanent
-    //    `save -> preventDefault`, which silently suppressed saves in every
-    //    later test until they are cleared.
-    //  - stop(false) reverts, and revert() asks for confirmation. The dialog
-    //    is auto-dismissed here, so the revert aborts and the editor stays
-    //    in the editing state. stop(true) avoids the prompt entirely.
-    //  - destroy() must not be used: get() keeps handing back the destroyed
-    //    instance, so every later init() operates on a torn-down app.
+    // stop() first, and stop(TRUE): stop-after-destroy throws, because
+    // destroy()'s unmount() has already nulled the toolbox; and stop(false)
+    // reverts, which asks for confirmation, and the auto-dismissed dialog
+    // aborts the revert and leaves the editor editing.
     try {
         if (editor && editor.isEditing()) editor.stop(true);
     } catch { /* nothing to stop */ }
-    try { editor && editor.removeEventListener(); } catch { /* no bindings */ }
+    try { editor && editor.destroy(); } catch { /* never initialised */ }
     editor = null;
 });
 
@@ -477,6 +472,90 @@ describe('EditorApp.destroy()', () => {
             document.addEventListener = realAdd;
             document.removeEventListener = realRemove;
         }
+    });
+});
+
+describe('the EditorApp singleton slot', () => {
+
+    /* `destroy()` used to leave the instance in place, so `get()` handed
+       back a torn-down app and every later `init()` ran against it. The
+       element papered over that with a `resetEditorApp()` that restored
+       eighteen fields by hand and had to be kept in step with the
+       constructor by eye. Replacing the instance makes the constructor the
+       only description of initial state. */
+
+    it('hands out a fresh app after destroy()', () => {
+        boot();
+        const first = editor;
+        first.destroy();
+
+        const second = ContentTools.EditorApp.get();
+        expect(second).not.toBe(first);
+        expect(second.getState()).toBe('dormant');
+        editor = second;
+    });
+
+    it('builds the fresh app field-for-field like the constructor', () => {
+        boot();
+        editor.start();
+        editor.stop(true);
+        editor.destroy();
+
+        const fresh = ContentTools.EditorApp.get();
+        const reference = new (ContentTools.EditorApp.getCls())();
+        const keys = Object.keys(reference);
+        // Guard the guard: an emptied constructor would pass vacuously.
+        expect(keys.length).toBeGreaterThan(10);
+        for (const key of keys) {
+            if (typeof reference[key] === 'function') {
+                continue;  // compared behaviourally below
+            }
+            // Wrapped so a failure names the field rather than the value.
+            expect({[key]: fresh[key]}).toEqual({[key]: reference[key]});
+        }
+        expect(fresh._fixtureTest(host.querySelector('[data-fixture]'))).toBe(true);
+        expect(fresh._fixtureTest(host.querySelector('[data-editable]'))).toBe(false);
+        editor = fresh;
+    });
+
+    it('does not let a stale app evict its successor', () => {
+        boot();
+        const first = editor;
+        first.destroy();
+        const second = ContentTools.EditorApp.get();
+
+        // A double destroy, or an unload handler firing late.
+        first.destroy();
+
+        expect(ContentTools.EditorApp.get()).toBe(second);
+        editor = second;
+    });
+
+    it('lets a held reference reclaim the slot by re-initialising', () => {
+        /* The one 1.6.x shape that would break silently: a consumer keeps
+           its own reference, destroys, and inits it again. Without the
+           claim in init() the tools would resolve to a different app and
+           the toolbox would drive an editor nobody can see. */
+        boot();
+        const held = editor;
+        held.destroy();
+        expect(ContentTools.EditorApp.get()).not.toBe(held);
+
+        held.init('[data-editable]', 'data-name', DEFAULT_FIXTURE_TEST, false);
+
+        expect(ContentTools.EditorApp.get()).toBe(held);
+        expect(ContentTools.Tool.editor()).toBe(held);
+    });
+
+    it('current() reports the slot without filling it', () => {
+        boot();
+        expect(ContentTools.EditorApp.current()).toBe(editor);
+        editor.destroy();
+        expect(ContentTools.EditorApp.current()).toBe(null);
+        // Still null: asking twice must not be what creates one.
+        expect(ContentTools.EditorApp.current()).toBe(null);
+        expect(ContentTools.EditorApp.get()).not.toBe(null);
+        editor = ContentTools.EditorApp.get();
     });
 });
 

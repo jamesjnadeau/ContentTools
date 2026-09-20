@@ -49,11 +49,10 @@ function boot(html, profile) {
 function teardown() {
     if (editor) {
         editor.stop(true);
+        // No profile restore: `destroy()` vacates the singleton slot, so
+        // the next spec's `get()` builds an app whose constructor sets
+        // HTML_PROFILE. A profile can no longer leak out of this file.
         editor.destroy();
-        // The app is a singleton, so a profile left set would leak into
-        // every later spec in the run -- including the ones in other
-        // files asserting HTML mode is unchanged.
-        editor.profile(HTML_PROFILE);
         editor = null;
     }
     if (div && div.parentNode) {

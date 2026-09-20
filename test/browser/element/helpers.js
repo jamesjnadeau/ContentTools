@@ -44,10 +44,18 @@ export function mount(attributes, html) {
  * nothing about the removal is observable until the queue drains.
  */
 export async function unmount(el) {
+    /* Captured BEFORE the removal. `destroy()` vacates the singleton slot,
+       so reading `EditorApp.get()` after a teardown CONSTRUCTS a pristine
+       app -- and every residue assertion below would then pass while
+       describing an object the element never touched. */
+    lastApp = el.editorApp || lastApp;
     el.remove();
     await Promise.resolve();
     await Promise.resolve();
 }
+
+/** The app the most recently unmounted element was driving. */
+let lastApp = null;
 
 /** Every `.ct-app` in the page, including inside element shadow roots. */
 export function chromeRoots() {
@@ -76,15 +84,24 @@ export function assertNoResidue() {
     expect(context instanceof ShadowRootContext).toBe(false);
     expect(context instanceof DocumentRootContext).toBe(true);
 
-    const app = ContentTools.EditorApp.get();
-    expect(app.getState()).toBe('dormant');
-    expect(app.isMounted()).toBe(false);
-    expect(Object.keys(app._regions)).toHaveLength(0);
-    expect(app._regionQuery).toBe(null);
-    /* The event bridge patches `busy` as an OWN property on the singleton,
-       because the method dispatches nothing of its own. destroy() clears the
-       app's listener map but knows nothing about that patch, so a bridge
-       that was not disposed leaves the singleton emitting ct-busy at a host
-       that is no longer in the page. */
-    expect(Object.prototype.hasOwnProperty.call(app, 'busy')).toBe(false);
+    /* Nothing holds the slot. This is the strongest single statement of
+       "the page is back to how the element found it": a stray `get()` on
+       any teardown path would leave an app here, and `current()` -- unlike
+       `get()` -- creates nothing to hide it. */
+    expect(ContentTools.EditorApp.current()).toBe(null);
+
+    /* The app the element was driving is finished, not repaired: its
+       `_state` and `_regions` are the garbage of a destroyed object and
+       nobody will read them again. What still matters about it is that it
+       let go of the page and of the host. */
+    const app = lastApp;
+    if (app) {
+        expect(app.isMounted()).toBe(false);
+        /* The event bridge patches `busy` as an OWN property on the app,
+           because the method dispatches nothing of its own. destroy()
+           clears the app's listener map but knows nothing about that patch,
+           so a bridge that was not disposed leaves a dead app emitting
+           ct-busy at a host that is no longer in the page. */
+        expect(Object.prototype.hasOwnProperty.call(app, 'busy')).toBe(false);
+    }
 }

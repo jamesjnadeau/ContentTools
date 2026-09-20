@@ -40,7 +40,11 @@ logs an error, leaves `state` unset, keeps rendering its `<slot>` so the content
 and untouched, emits `ct-error` with `{code: 'singleton-conflict'}`, and throws from its public
 methods when you call them — there a throw is right, because you get your own stack.
 
-De-singletoning is Milestone 2 work (the edit pane and the preview pane need it).
+This is a rule, not a defect awaiting a fix: the shell this element was built for opens one
+entry at a time. What it *does* support is doing that repeatedly — connect, edit, disconnect,
+connect again — because `EditorApp.destroy()` is terminal, so every boot gets an app the
+constructor just built. `ContentEdit.Root` is still shared, which is why the second-instance
+guard remains.
 
 ## Attributes
 

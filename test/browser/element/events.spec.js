@@ -1,5 +1,4 @@
 import {createEventBridge} from '../../../src/element/event-bridge.js';
-import {resetEditorApp} from '../../../src/element/editor-app-lease.js';
 
 /* The editor-event -> DOM-event bridge, driven against a bare EditorApp and
    a plain <div>.
@@ -42,7 +41,6 @@ afterEach(() => {
     } catch { /* nothing to stop */ }
     if (bridge) bridge.dispose();
     try { app.destroy(); } catch { /* not initialised */ }
-    resetEditorApp();
     host.remove();
     content.innerHTML = '';
 });

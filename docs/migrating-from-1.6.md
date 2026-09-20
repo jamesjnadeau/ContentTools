@@ -118,6 +118,15 @@ through a wrapper that swallows the exception `localStorage` throws in a
 sandboxed iframe and in Safari's private mode. Previously that threw out of
 the editor.
 
+**`destroy()` is terminal.** In v1.6.16 `destroy()` left the singleton in
+place, so `EditorApp.get()` kept handing back the torn-down instance and
+every later `init()` ran against it. It now vacates the slot: the next
+`get()` constructs a fresh app whose state is whatever the constructor sets.
+The object you already hold is unaffected, and calling `init()` on it makes
+it the singleton again, so the destroy-then-reinitialise shape works exactly
+as it did. What changes is that `get()` after a `destroy()` gives you a
+working editor instead of a broken one.
+
 **The build requires Node 22.** Only to build it — the published artifacts
 target the same browsers v1.6.16 did, and the legacy IE branches are still in
 the code.

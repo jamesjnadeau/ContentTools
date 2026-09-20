@@ -226,6 +226,13 @@ class _EditorApp extends ContentTools.ComponentUI {
 
         // Initialize the editor application
 
+        // Claim the singleton slot. `destroy()` vacates it, so a consumer
+        // holding a reference from before a destroy -- the 1.6.x
+        // destroy-then-reinit shape -- must become the app that
+        // `Tool.editor()` and every widget resolve to again, rather than
+        // silently driving an app nobody else can see.
+        ContentTools.EditorApp._claim(this);
+
         // Set the naming property
         if (namingProp == null) { namingProp = 'id'; }
         if (withIgnition == null) { withIgnition = true; }
@@ -461,7 +468,12 @@ class _EditorApp extends ContentTools.ComponentUI {
         this.unmount();
 
         // Clear the list of children for the editor
-        return this._children = [];
+        this._children = [];
+
+        // Give up the singleton. Everything above left this object unusable,
+        // so handing it back from `get()` is how a second boot ends up
+        // running against a torn-down app.
+        return ContentTools.EditorApp._discard(this);
     }
 
     highlightRegions(highlight) {
@@ -1475,8 +1487,37 @@ class _EditorApp extends ContentTools.ComponentUI {
             return instance != null ? instance : (instance = new cls());
         }
 
+        static current() {
+
+            // Return the live instance, or null. Unlike `get()` this creates
+            // nothing, which is what lets a caller ask whether an editor
+            // exists without bringing one into being -- and what lets a test
+            // assert that teardown left none behind.
+            return instance;
+        }
+
         static getCls() {
             return _EditorApp;
+        }
+
+        static _claim(app) {
+
+            // Make `app` the instance `get()` hands out.
+            instance = app;
+        }
+
+        static _discard(app) {
+
+            // Forget `app`, so the next `get()` builds a fresh one.
+            //
+            // `destroy()` is terminal: the object it ran on is finished, and
+            // an app rebuilt by the constructor is a better definition of
+            // "ready to use again" than any hand-written list of fields to
+            // put back. The identity check matters because `getCls()` lets a
+            // caller construct apps that were never the singleton.
+            if (instance === app) {
+                instance = null;
+            }
         }
     });
     Cls$editor.initClass();
