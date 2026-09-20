@@ -1,10 +1,18 @@
-/* Back-compat surface test.
+/* Back-compat surface test, against the SOURCE module graph.
  *
  * The golden master checks behaviour; this checks that the public API still
- * EXISTS after bundling. Tree-shaking removes things silently, so the two
- * known traps are asserted directly rather than inferred.
+ * exists once the modules have evaluated. Tree-shaking removes things
+ * silently, so the known traps are asserted directly rather than inferred.
+ *
+ * Read the title literally. This file used to say "IIFE build", and did not
+ * test one: setup-globals.js imports src/global.ts so that coverage can
+ * attribute to source, which means every assertion below runs against the
+ * module graph and nothing here would notice a bundler-introduced break.
+ * One did get through exactly that way -- the IIFE wrapper overwriting
+ * window.ContentTools -- and it is now pinned in golden.spec.mjs, which
+ * loads a real built bundle. Keep bundle-shape assertions there, not here.
  */
-describe('published surface (IIFE build)', () => {
+describe('published surface (source module graph)', () => {
 
     it('registers exactly 21 tools', () => {
         // Tool registration is a side effect of evaluating tool class bodies.

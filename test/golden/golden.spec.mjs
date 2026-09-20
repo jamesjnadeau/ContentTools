@@ -43,6 +43,44 @@ function asSnapshot(value) {
 
 test.describe('golden master (v1.6.16)', () => {
 
+    test('the bundle installs the five browser globals', async ({page}) => {
+        /* The script-tag contract, asserted against whichever bundle is under
+           test -- which is the point, since it has to hold for both.
+
+           This exists because it once did not. Vite builds src/global.ts as
+           `var ContentTools = (function(exports){...})({})`, so an entry with
+           exports had its outer assignment overwrite the window.ContentTools
+           the body had just set, leaving the ESM namespace object there
+           instead. Every `ContentTools.EditorApp` read undefined.
+
+           Nothing caught it: the unit suite loads the SOURCE (for coverage
+           attribution), and the default golden run loads the frozen legacy
+           bundle. Only the run against the current build sees it, so the
+           assertion lives here. */
+        await page.goto(PAGE);
+        await page.waitForFunction(() => window.ContentTools);
+        const shape = await page.evaluate(() => ({
+            globals: ['FSM', 'HTMLString', 'ContentSelect', 'ContentEdit', 'ContentTools']
+                .filter(name => window[name] !== undefined),
+            // The members a consumer actually reaches for, one per namespace.
+            editorApp: typeof window.ContentTools.EditorApp,
+            toolShelf: typeof window.ContentTools.ToolShelf,
+            flashUI: typeof window.ContentTools.FlashUI,
+            ceRoot: typeof window.ContentEdit.Root,
+            csRange: typeof window.ContentSelect.Range,
+            hsString: typeof window.HTMLString.String
+        }));
+        expect(shape).toEqual({
+            globals: ['FSM', 'HTMLString', 'ContentSelect', 'ContentEdit', 'ContentTools'],
+            editorApp: 'function',
+            toolShelf: 'function',
+            flashUI: 'function',
+            ceRoot: 'function',
+            csRange: 'function',
+            hsString: 'function'
+        });
+    });
+
     test('regions are discovered with the expected names and order', async ({page}) => {
         const errors = await boot(page);
         expect(errors).toEqual([]);
