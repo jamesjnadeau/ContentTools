@@ -31,6 +31,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Size budgets
+        # Right after the build, so a page-weight regression fails in
+        # seconds rather than after the browser suites.
+        run: npm run test:size
+
       - name: Install browsers
         # Three engines, because ShadowRootContext.getRange() is a
         # feature-detected chain and each of them takes a different branch.

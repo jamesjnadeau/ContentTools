@@ -81,91 +81,29 @@ Or as a single script that attaches the browser globals, as before:
 </script>
 ```
 
-The editor's ~55 KB of chrome CSS goes into the element's shadow root
-instead of into your page, so `.ct-app` and friends can no longer collide
-with your own styles. The icon font is inlined and registered on the
-document automatically — an `@font-face` declared inside a shadow root is
-ignored by Chromium and WebKit, so the element cannot leave it to the
-stylesheet.
-
-**Two modes.** By default (`content-scope="light"`, *Mode A*) only the chrome
-is encapsulated; the content stays in the light DOM behind a `<slot>`, which
-is why your page styles it and preview fidelity is free. Link
-`content.css` for the content rules — the `.ce-element` states, the drop
-indicators, the drag and resize cursors — which by definition have to reach
-the document. `content-scope="shadow"` (*Mode B*) moves the content into the
-shadow root as well: full isolation, but you must supply `content-styles`,
-and it is an opt-in preview rather than the supported path.
+The editor's ~44 kB of chrome CSS goes into the element's shadow root instead
+of into your page, so `.ct-app` and friends can no longer collide with your
+own styles. By default the editable content stays in the light DOM, so your
+page still styles it and preview fidelity is free — which is why you link
+`content.css` for the content rules.
 
 **One element per page.** `ContentTools.EditorApp` and `ContentEdit.Root` are
-still singletons, so a second connected element goes inert: it logs, emits
-`ct-error` with `{code: 'singleton-conflict'}`, leaves its content rendered
-and untouched, and throws from its own methods. De-singletoning is Milestone
-2.
+still singletons, so a second connected element goes inert and emits
+`ct-error`. De-singletoning is Milestone 2.
 
-#### Attributes
+Full attribute, property, method and event reference:
+**[docs/element.md](docs/element.md)**.
 
-| Attribute | Default | |
-|---|---|---|
-| `regions` | `[data-editable], [data-fixture]` | selector for the editable regions; live |
-| `naming-prop` | `data-name` | attribute a region's name is read from |
-| `ignition` | absent (off) | show the built-in edit/save switch |
-| `content-scope` | `light` | `light` (Mode A) or `shadow` (Mode B) |
-| `content-styles` | — | stylesheet URL to load into the shadow root |
-| `ui-lang` | falls back to `lang` | language for the chrome |
-| `state` | — | **reflected out**: `dormant` / `ready` / `editing` |
-| `busy` | — | **reflected out** |
+## Documentation
 
-`naming-prop` defaults to `data-name` here, not to `id` as the imperative
-`init()` does; and `ignition` is off by default, because an element is
-normally driven by the app around it. `ui-lang` is deliberately not `lang`:
-`lang` is inherited by the content and tells the browser what language *the
-text being edited* is in, which drives spellcheck, hyphenation, `:lang()` and
-screen-reader pronunciation. It is honoured as a fallback. Setting `ui-lang`
-fetches nothing — load the shipped translations with
-`ContentEdit.addTranslations()` yourself.
+- [Migrating from 1.6.x](docs/migrating-from-1.6.md)
+- [`<content-tools-editor>`](docs/element.md)
+- [Content scope: Mode A and Mode B](docs/content-scope.md)
+- [`RootContext` — the host seam](docs/root-context.md)
 
-#### Properties and methods
-
-Properties: `tools`, `fixtureTest`, `stylePalette`, `imageUploader`, and the
-read-only `rootContext` and `editorApp` (unstable — it is the v1.6.x
-singleton, which Milestone 2 reshapes).
-
-Methods: `start()`, `stop(save = true)`, `save(passive = false)`, `revert()`,
-`refresh()`, `flash(type)`, `adoptStyles(sheetOrCssOrUrl)`,
-`removeAdoptedStyles()`.
-
-`stop()` **saves** by default, where the imperative `stop()` reverts —
-reverting shows a confirm dialog, and cancelling it aborts the stop. The
-same reason applies when the element is removed from the DOM mid-edit: it
-saves rather than discarding the user's work.
-
-`adoptStyles` takes a `CSSStyleSheet`, CSS text (told apart by containing a
-`{`) or a URL (appended as a `<link>`). Whatever you add wins over the
-editor's own rules at equal specificity, because the chrome sheet is wrapped
-in `@layer ct-chrome` and unlayered rules always beat layered ones — no
-`!important`, and it does not depend on insertion order.
-
-#### Events
-
-Every event is a `CustomEvent` with `bubbles: true` and `composed: true`, so
-it escapes the shadow boundary and you can listen anywhere above the element.
-
-| Event | | `detail` |
-|---|---|---|
-| `ct-start` `ct-stop` `ct-save` `ct-revert` | cancelable | as the legacy event |
-| `ct-started` `ct-stopped` | | — |
-| `ct-saved` | | `{regions, passive}` — **changed** regions only |
-| `ct-busy` | | `{busy}` |
-| `ct-error` | | `{code, message}` |
-
-`preventDefault()` on one of the four cancelable events aborts the action
-inside the editor.
-
-These are a **second, separate stream** from the legacy
-`editorApp.addEventListener('saved', …)` one, which is unchanged and whose
-`ContentTools.Event` still exposes `detail()` as a *method*. The DOM events
-carry `detail` as a *property*. No object serves both.
+The v1.6.x API is unchanged, so [upstream's
+documentation](https://getcontenttools.com/api/content-tools) still describes
+it accurately.
 
 ## Development
 
@@ -182,7 +120,7 @@ npm run test:coverage
 
 ### How this is tested
 
-Three suites, deliberately covering different things:
+Five suites, deliberately covering different things:
 
 - **`test/browser/`** — 662 tests in real Chromium, run against the SOURCE so
   coverage can attribute. Includes upstream ContentEdit's own 329 specs,

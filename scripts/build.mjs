@@ -7,6 +7,7 @@
  *   dist/chunks/*.js            the library, shared by the two ESM entries
  *   dist/content-tools.css          stylesheet + dist/images/ assets
  *   dist/content-tools-content.css  the subset that must reach the document
+ *   dist/*.min.css                  minified twins of both
  *
  * Plus the dev playground.
  */
@@ -22,6 +23,10 @@ run('npx', ['vite', 'build', '--mode', 'style']); // CSS + images/
 // The document-level subset, for Mode A of the custom element. Built second
 // so it reuses the images/ the full sheet already emitted.
 run('npx', ['vite', 'build', '--mode', 'style-content']);
+// Minified twins. v1.6.16 shipped only a minified stylesheet, so a drop-in
+// replacement has to offer one; the readable sheets stay as they are.
+run('npx', ['vite', 'build', '--mode', 'style-min']);
+run('npx', ['vite', 'build', '--mode', 'style-content-min']);
 run('npx', ['vite', 'build']);                    // IIFE
 run('npx', ['vite', 'build', '--mode', 'min']);   // minified pair
 /* Every build uses emptyOutDir:false so the five modes can share dist/, but
@@ -31,8 +36,10 @@ rmSync(join(ROOT, 'dist/chunks'), {recursive: true, force: true});
 run('npx', ['vite', 'build', '--mode', 'esm']);   // ESM
 run(process.execPath, [join(ROOT, 'scripts/build-playground.mjs')]);
 
-rmSync(join(ROOT, 'dist/.styles-entry.js'), {force: true});
-rmSync(join(ROOT, 'dist/.styles-content-entry.js'), {force: true});
+for (const stub of ['content-tools', 'content-tools-content',
+                    'content-tools.min', 'content-tools-content.min']) {
+    rmSync(join(ROOT, `dist/.${stub}-entry.js`), {force: true});
+}
 
 /* The element registers its tag by SIDE EFFECT, and `package.json` keeps
  * `./dist/element.js` in its `sideEffects` allowlist so a consumer's bundler

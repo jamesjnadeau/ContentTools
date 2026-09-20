@@ -8,6 +8,7 @@ import dts from 'vite-plugin-dts';
  *   min        dist/content-tools.min.js   the same, minified
  *   esm        dist/index.js + element.js  ESM, sharing one library chunk
  *   style      dist/content-tools.css      stylesheet + dist/images/
+ *   style-min  dist/content-tools.min.css  the same, minified
  *
  * The stylesheet is deliberately NOT built in library mode. Vite's lib mode
  * ignores assetsInlineLimit and always inlines assets as data URIs, which
@@ -17,17 +18,30 @@ import dts from 'vite-plugin-dts';
 const shared = {emptyOutDir: false, cssMinify: false, minify: false};
 
 export default defineConfig(({mode}) => {
-    if (mode === 'style' || mode === 'style-content') {
-        // Both stylesheets are built the same way and differ only in entry and
-        // output name. The content sheet is a strict SUBSET of the full one --
-        // the rules that must reach the document rather than the shadow root --
-        // so it references the same five assets and must emit them to the same
-        // `images/` path.
-        const content = mode === 'style-content';
+    if (mode.startsWith('style')) {
+        /* Four artifacts from two entries: each stylesheet is emitted both
+         * readable and minified.
+         *
+         * The content sheet is a strict SUBSET of the full one -- the rules
+         * that must reach the document rather than the shadow root -- so it
+         * references the same five assets and must emit them to the same
+         * `images/` path.
+         *
+         * The minified pair exists because v1.6.16 shipped
+         * `build/content-tools.min.css` and nothing else: a drop-in
+         * replacement that handed back a 2.3x larger stylesheet (gzipped)
+         * would be a regression dressed as an upgrade. The readable sheets
+         * keep their names and their bytes, which is what
+         * test/golden/styles.spec.mjs asserts a partition over.
+         */
+        const content = mode.includes('content');
+        const min = mode.endsWith('-min');
+        const name = `content-tools${content ? '-content' : ''}${min ? '.min' : ''}`;
         return {
             base: './',
             build: {
                 ...shared,
+                cssMinify: min,
                 assetsInlineLimit: 0,
                 rollupOptions: {
                     input: resolve(__dirname, content
@@ -36,15 +50,11 @@ export default defineConfig(({mode}) => {
                     output: {
                         assetFileNames: info =>
                             info.name && info.name.endsWith('.css')
-                                ? (content
-                                    ? 'content-tools-content.css'
-                                    : 'content-tools.css')
+                                ? `${name}.css`
                                 : 'images/[name][extname]',
                         // The entry exists only to pull in the stylesheet; its
                         // JS output is empty and the build script removes it.
-                        entryFileNames: content
-                            ? '.styles-content-entry.js'
-                            : '.styles-entry.js'
+                        entryFileNames: `.${name}-entry.js`
                     }
                 }
             }
