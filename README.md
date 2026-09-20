@@ -15,10 +15,10 @@ What changed from v1.6.16:
 | | v1.6.16 | now |
 |---|---|---|
 | Language | CoffeeScript 1.x | TypeScript |
-| Modules | one shared closure, concatenated | 71 ES modules |
+| Modules | one shared closure, concatenated | 74 ES modules |
 | Build | Grunt + PhantomJS (unrunnable on Node 22) | Vite |
 | Dependencies | ContentEdit/ContentSelect/HTMLString vendored as one prebuilt file | absorbed as source |
-| Tests | 127 assertions, PhantomJS | 517, real browser |
+| Tests | 127 assertions, PhantomJS | 546, real browser |
 | Host access | bare `document`/`window` throughout | one `RootContext` seam |
 
 ContentEdit, ContentSelect and HTMLString are no longer external: their
@@ -66,7 +66,7 @@ Or as a single script that attaches the browser globals, as before:
 ```sh
 npm install
 npm run build        # dist/: IIFE, minified IIFE, ESM, CSS + images
-npm test             # lint, typecheck, 517 browser tests, golden master, visual
+npm test             # lint, typecheck, 546 browser tests, golden master, visual
 npm run test:coverage
 ```
 
@@ -77,7 +77,7 @@ npm run test:coverage
 
 Three suites, deliberately covering different things:
 
-- **`test/browser/`** — 517 tests in real Chromium, run against the SOURCE so
+- **`test/browser/`** — 546 tests in real Chromium, run against the SOURCE so
   coverage can attribute. Includes upstream ContentEdit's own 329 specs,
   inherited with the code.
 - **`test/golden/golden.spec.mjs`** — a characterisation harness that drives
