@@ -106,7 +106,7 @@ The five attributes above are mirrored as properties (`regions`, `namingProp`, `
 | `stylePalette` | `ContentTools.Style[]` | Reset-then-add, because `StylePalette.add()` is global and append-only |
 | `imageUploader` | `(dialog) => void` | Sets `ContentTools.IMAGE_UPLOADER` while connected |
 | `rootContext` | readonly | The `ShadowRootContext` in use |
-| `editorApp` | readonly | The `EditorApp` singleton. **Unstable** — Milestone 2 reshapes it |
+| `editorApp` | readonly | The `EditorApp` this element is driving, or `null`. A new one per boot. **Unstable** |
 | `state`, `busy` | readonly | As above |
 
 All four settable properties use the upgrade-property pattern, so assigning before the element

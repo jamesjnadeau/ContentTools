@@ -47,9 +47,9 @@ because the thing being locked is the page.
 ## When Mode B is right
 
 A controlled **preview pane**: content you render yourself, styled by a stylesheet you control,
-isolated from the page around it. That is the case Mode B exists for, and it is a Milestone 2+
-concern (a side-by-side edit and preview also needs de-singletoning, which is why it is a
-preview rather than a supported path today).
+isolated from the page around it. That is the case Mode B exists for, and it is a preview
+rather than a supported path today: a side-by-side edit and preview means two live editors on
+one page, and `ContentEdit.Root` is shared, so only one can hold focus and drag state.
 
 Its costs are real:
 

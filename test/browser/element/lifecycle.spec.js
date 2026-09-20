@@ -352,3 +352,96 @@ describe('the methods', () => {
         expect(warn).toHaveBeenCalled();
     });
 });
+
+describe('booting repeatedly', () => {
+
+    /* The point of the whole milestone. A CMS shell opens an entry, closes
+       it, and opens the next one -- so the third lifetime has to be
+       indistinguishable from the first, and every assertion here would have
+       passed vacuously before `destroy()` became terminal, because the
+       "second" editor was the first one patched back up by hand. */
+
+    it('the Nth boot is the 1st boot', async () => {
+        const apps = [];
+
+        for (let i = 0; i < 5; i += 1) {
+            const el = mount();
+            apps.push(el.editorApp);
+
+            expect(el.getAttribute('state')).toBe('ready');
+            expect(el.shadowRoot.querySelectorAll('.ct-app')).toHaveLength(1);
+            expect(el.shadowRoot.querySelectorAll('.ct-app-host')).toHaveLength(1);
+            expect(el.editorApp.domRegions()).toHaveLength(3);
+
+            el.start();
+            expect(el.getAttribute('state')).toBe('editing');
+
+            const body = el.editorApp.regions()['body'];
+            body.children[0].content = body.children[0].content.concat(` ${ i }`);
+            body.children[0].updateInnerHTML();
+            body.children[0].taint();
+
+            el.stop(true);
+            expect(el.getAttribute('state')).toBe('ready');
+
+            await unmount(el);
+            assertNoResidue();
+        }
+
+        // A different app every time -- which is the mechanism the rest of
+        // this test is a consequence of.
+        expect(new Set(apps).size).toBe(5);
+    });
+
+    it('does not carry a fixtureTest from one lifetime to the next', async () => {
+        /* `init()` assigns `_fixtureTest` only when the argument is truthy,
+           so under a reused singleton a custom test outlived its owner.
+           Nothing restores it now; the constructor never had it. */
+        const first = mount();
+        const everythingIsAFixture = () => true;
+        first.fixtureTest = everythingIsAFixture;
+        expect(first.editorApp._fixtureTest).toBe(everythingIsAFixture);
+        await unmount(first);
+
+        const second = mount();
+        expect(second.editorApp._fixtureTest).not.toBe(everythingIsAFixture);
+        expect(second.editorApp._fixtureTest(second.querySelector('[data-editable]')))
+            .toBe(false);
+        await unmount(second);
+        assertNoResidue();
+    });
+
+    it('tears down cleanly even when the stop is vetoed', async () => {
+        /* A shell can cancel `ct-stop`. The element still has to let go of
+           the page when it is removed -- and the editor is still editing at
+           that point, so this is the path on which focus used to survive. */
+        const el = mount();
+        el.start();
+        el.editorApp.regions()['body'].children[0].focus();
+        el.addEventListener('ct-stop', ev => ev.preventDefault());
+
+        await unmount(el);
+        assertNoResidue();
+    });
+
+    it('can still drag after a reboot', async () => {
+        /* `startDragging` short-circuits when a drag is already in flight,
+           so an element removed mid-drag used to disable dragging for the
+           rest of the page's life. */
+        const first = mount();
+        first.start();
+        first.editorApp.regions()['body'].children[0].drag(10, 10);
+        await unmount(first);
+        assertNoResidue();
+
+        const second = mount();
+        second.start();
+        const element = second.editorApp.regions()['body'].children[0];
+        element.drag(10, 10);
+        expect(ContentEdit.Root.get().dragging()).toBe(element);
+        ContentEdit.Root.get().cancelDragging();
+
+        await unmount(second);
+        assertNoResidue();
+    });
+});

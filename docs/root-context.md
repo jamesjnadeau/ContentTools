@@ -44,8 +44,9 @@ try {
 `rootContext()` returns the context in force and **throws** if none is installed — importing
 the library installs the default, so that only happens if you deep-import a module directly.
 
-The context is process-wide, like `EditorApp` and `ContentEdit.Root`. One at a time.
-De-singletoning is Milestone 2.
+The context is process-wide, like `ContentEdit.Root`. One at a time, and deliberately so: the
+element saves the context it displaced and restores it on teardown, so a page can run an editor,
+close it and run another. Two at once is not supported.
 
 ## The interface
 
