@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Verifies that external/scripts/content-edit.js reproduces byte-for-byte from upstream
-# CoffeeScript source. See UPSTREAM.md. Exits non-zero on any mismatch.
+# Verifies that the vendored ContentEdit/ContentSelect/HTMLString section of the
+# frozen v1.6.16 artifact reproduces byte-for-byte from upstream CoffeeScript
+# source. See UPSTREAM.md. Exits non-zero on any mismatch.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

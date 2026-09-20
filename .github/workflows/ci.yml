@@ -64,8 +64,9 @@ jobs:
           retention-days: 7
 
   provenance:
-    # Proves external/scripts/content-edit.js still reproduces from upstream
-    # CoffeeScript. Cheap, and it is the precondition for Phase 3's absorb.
+    # Proves the vendored libraries still reproduce from upstream CoffeeScript,
+    # which is what justified absorbing them as source. Cheap, and it keeps
+    # vendor-src/UPSTREAM.md honest.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
