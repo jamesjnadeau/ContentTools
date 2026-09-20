@@ -1,3 +1,4 @@
+
 /**
  * Flashes are used to display a visual confirmation to the user that an action
  * has completed successfully (or failed).
@@ -11,62 +12,54 @@
      */
     $flash-timer: 2s;
 
-    @include keyframes(flash) {
+    @keyframes flash {
         0% {
             opacity: 0;
             font-size: 32px;
-            @include transform(font-size);
         }
         25% {
             font-size: 320px;
             opacity: 1;
-            @include transform(all);
         }
         50% {
             font-size: 320px;
             opacity: 1;
-            @include transform(all);
         }
         75% {
             font-size: 320px;
             opacity: 1;
-            @include transform(all);
         }
         100% {
             opacity: 0;
-            @include transform(all);
         }
     }
 
     @mixin animation--flash() {
-        @include animation(flash $flash-timer ease-in);
-        @include animation-iteration-count(1);
-        @include animation-fill-mode(forwards);
+        animation: flash $flash-timer ease-in;
+        animation-iteration-count: 1;
+        animation-fill-mode: forwards;
     }
 
     /**
      * The flash timer animation is used purely to indicated to the Javascript
      * that created the flash element that the animation has finished.
      */
-    @include keyframes(flash-timer) {
+    @keyframes flash-timer {
         0% {
             opacity: 1;
-            @include transform(opacity);
         }
         99% {
             opacity: 1;
-            @include transform(opacity);
         }
         100% {
             opacity: 0;
-            @include transform(opacity);
         }
     }
 
     @mixin animation--flash-timer() {
-        @include animation(flash-timer $flash-timer ease-in);
-        @include animation-iteration-count(1);
-        @include animation-fill-mode(forwards);
+        animation: flash-timer $flash-timer ease-in;
+        animation-iteration-count: 1;
+        animation-fill-mode: forwards;
     }
 
     /**

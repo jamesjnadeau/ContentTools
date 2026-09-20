@@ -3,13 +3,11 @@
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <title>ContentTools characterisation fixture</title>
-<link rel="stylesheet" type="text/css" href="/build/content-tools.min.css">
+<!-- stylesheet is injected by bundle-loader.js so it can be parameterised -->
 <style>
   body { margin: 0; font-family: Georgia, serif; }
   .article { width: 720px; margin: 0 auto; padding: 32px; }
   .image-fixture { width: 200px; height: 120px; background-size: cover; }
-  /* Deterministic layout: no transitions/animations during snapshotting. */
-  *, *::before, *::after { transition: none !important; animation: none !important; }
 </style>
 </head>
 <body>

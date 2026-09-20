@@ -1,0 +1,44 @@
+/**
+ * Local replacements for the handful of Bourbon mixins this project used.
+ *
+ * Bourbon existed here only to emit vendor prefixes for transform, transition,
+ * animation, @keyframes, box-sizing, user-select and hyphens. All of those are
+ * unprefixed standards in every browser this library targets, so the mixins are
+ * gone and the properties are written directly -- except where a prefix is still
+ * genuinely required (see `user-select` and `hyphens` below).
+ */
+
+/**
+ * The one Bourbon *variable* this project used, inlined verbatim from
+ * bourbon/addons/_font-family.scss so the `pre` styling is unchanged.
+ */
+$monospace: "Bitstream Vera Sans Mono", Consolas, Courier, monospace !default;
+
+/**
+ * Contain floats. The one Bourbon mixin worth keeping as a mixin, since it
+ * expands to a pseudo-element rather than a single declaration.
+ */
+@mixin clearfix {
+    &::after {
+        clear: both;
+        content: "";
+        display: table;
+    }
+}
+
+/**
+ * Safari still requires -webkit-user-select; the -moz- and -ms- forms are long
+ * obsolete and are not emitted.
+ */
+@mixin user-select($value) {
+    -webkit-user-select: $value;
+    user-select: $value;
+}
+
+/**
+ * Safari still requires -webkit-hyphens.
+ */
+@mixin hyphens($value) {
+    -webkit-hyphens: $value;
+    hyphens: $value;
+}

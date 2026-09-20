@@ -1,3 +1,4 @@
+@use "sass:color";
 /**
  * Cropmarks define the region within an image that will be cropped. They appear
  * in the image dialog when crop is active.
@@ -76,7 +77,7 @@
          */
         &__handle {
             background: #2980b9;
-            border: 1px solid lighten(#2980b9, 10%);
+            border: 1px solid color.adjust(#2980b9, $lightness: 10%);
             border-radius: 7px;
             cursor: pointer;
             height: 15px;
@@ -91,7 +92,7 @@
             }
 
             &:hover {
-                background: lighten(#2980b9, 5%);
+                background: color.adjust(#2980b9, $lightness: 5%);
             }
         }
     }

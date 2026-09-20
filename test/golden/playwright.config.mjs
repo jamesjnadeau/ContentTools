@@ -5,6 +5,8 @@ const PORT = 8931;
 export default defineConfig({
     testDir: '.',
     testMatch: '*.spec.mjs',
+    // Screenshot comparison needs a small tolerance for font rasterisation.
+    expect: {toHaveScreenshot: {maxDiffPixelRatio: 0.002}},
     // The whole point of a characterisation oracle is determinism, so a retry
     // would hide exactly the flakiness we need to know about.
     retries: 0,
@@ -30,7 +32,12 @@ export default defineConfig({
             // The image ships Chromium r1194 at a fixed path; @playwright/test
             // may pin a different revision, so point at what is actually here
             // rather than downloading a second copy.
-            launchOptions: {executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium'}
+            // In CI, Playwright manages its own browser; locally the image
+            // ships Chromium at a fixed path that may not match this
+            // @playwright/test revision, so point at what is actually there.
+            launchOptions: process.env.CI
+                ? {}
+                : {executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium'}
         }
     }]
 });

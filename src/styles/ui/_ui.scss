@@ -1,3 +1,4 @@
+
 /*
 The widget CSS class should be applied any UI element that's insert into the DOM
 and not within a widget, the widget CSS class resets the style for of all
@@ -30,7 +31,7 @@ supported child elements.
     }
 
     /* Defaults */
-    @include box-sizing(border-box);
+    box-sizing: border-box;
 }
 
 .ct-widget {
@@ -38,17 +39,17 @@ supported child elements.
     @include type-text;
     z-index: $base-z-index;
 
-    @include transition-property(opacity);
-    @include transition-duration(0.25s);
-    @include transition-timing-function(ease-in);
+    transition-property: opacity;
+    transition-duration: 0.25s;
+    transition-timing-function: ease-in;
 }
 
 .ct-widget--active {
     opacity: 1;
 
-    @include transition-property(opacity);
-    @include transition-duration(0.25s);
-    @include transition-timing-function(ease-in);
+    transition-property: opacity;
+    transition-duration: 0.25s;
+    transition-timing-function: ease-in;
 }
 
 @import "attributes";

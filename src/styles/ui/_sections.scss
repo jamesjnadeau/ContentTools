@@ -1,3 +1,5 @@
+
+@use "sass:color";
 /**
  * Sections are used to divide up configuration blocks within a dialog's view.
  * They contain wither a switch or an input, for example the table dialog has
@@ -10,7 +12,7 @@
     .ct-section {
         border-bottom: 1px solid #eee;
         @include clearfix;
-        color: lighten($text-color, 35%);
+        color: color.adjust($text-color, $lightness: 35%);
         cursor: pointer;
         font-style: italic;
         height: 48px;
@@ -31,13 +33,13 @@
 
             .ct-section__switch {
                 background-color: #27ae60;
-                border: 1px solid darken(#27ae60, 10%);
+                border: 1px solid color.adjust(#27ae60, $lightness: -10%);
 
                 &:before {
                     left: 25px;
-                    @include transition-property(left);
-                    @include transition-duration(0.1s);
-                    @include transition-timing-function(ease-in);
+                    transition-property: left;
+                    transition-duration: 0.1s;
+                    transition-timing-function: ease-in;
                 }
             }
         }
@@ -66,7 +68,7 @@
 
         &__switch {
             background-color: #ccc;
-            border: 1px solid darken(#ccc, 10%);
+            border: 1px solid color.adjust(#ccc, $lightness: -10%);
             border-radius: 12px;
             box-shadow: inset 0px 0 2px rgba(black, 0.1);
             float: right;
@@ -83,9 +85,9 @@
                 left: 1px;
                 position: absolute;
                 top: 1px;
-                @include transition-property(left);
-                @include transition-duration(0.1s);
-                @include transition-timing-function(ease-in);
+                transition-property: left;
+                transition-duration: 0.1s;
+                transition-timing-function: ease-in;
                 width:20px;
             }
         }

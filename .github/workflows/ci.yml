@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The golden master compares against the frozen v1.6.16 artifact,
+          # and the provenance check needs tags.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: JS output still matches the frozen v1.6.16 artifact
+        # Phase 1 is a toolchain change only. Until Phase 2 decaffeinates the
+        # source, the built JS must stay byte-identical to build/content-tools.js.
+        run: diff dist/content-tools.js build/content-tools.js
+
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Golden master (against the frozen legacy bundle)
+        run: npx playwright test --config test/golden/playwright.config.mjs golden.spec.mjs
+        env:
+          CHROMIUM_PATH: ''
+
+      - name: Golden master (against the current build)
+        run: npx playwright test --config test/golden/playwright.config.mjs golden.spec.mjs
+        env:
+          CT_BUNDLE: /dist/content-tools.js
+          CHROMIUM_PATH: ''
+
+      - name: Visual regression (rebuilt CSS vs legacy stylesheet)
+        run: npx playwright test --config test/golden/playwright.config.mjs visual.spec.mjs
+        env:
+          CT_CSS: /dist/content-tools.css
+          CHROMIUM_PATH: ''
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+
+  provenance:
+    # Proves external/scripts/content-edit.js still reproduces from upstream
+    # CoffeeScript. Cheap, and it is the precondition for Phase 3's absorb.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: ./vendor-src/verify-provenance.sh

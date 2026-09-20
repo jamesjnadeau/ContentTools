@@ -1,10 +1,26 @@
 @charset "UTF-8";
 
-/* Vendor */
-@import "../../external/styles/content-edit";
-@import "../../external/styles/bourbon/bourbon";
+// Asset URLs are authored relative to this file so the bundler can resolve and
+// emit them. The build rewrites them back to `images/<name>` in the output CSS,
+// preserving the path contract that existing <link> integrations depend on.
+$image-path-prefix: "../assets/";
 
-/* Settings */
+// DEFERRED: @import -> @use/@forward.
+//
+// Dart Sass 3.0 removes @import, so this must happen eventually. It is NOT a
+// drop-in here: `sass-migrator module` was run and produced a stylesheet three
+// times the size, because _settings.scss @uses vendor/content-edit and every
+// partial @uses settings, so the vendored CSS is re-emitted once per consumer
+// (.ce-element went 43 -> 430 occurrences). Doing it properly means
+// restructuring how $image-path-prefix is configured into the vendored
+// stylesheet -- which belongs with Phase 3, where content-edit stops being
+// vendored and becomes our own source.
+
+/* Vendor */
+@import "vendor/content-edit";
+
+/* Mixins + settings */
+@import "mixins";
 @import "settings";
 
 /* UI */
@@ -16,39 +32,35 @@
  * that it's specified as a modifier of `ct`.
  */
 
-@include keyframes(highlight) {
+@keyframes highlight {
     0% {
         outline-color: rgba(white, 0);
-        @include transform(background-color);
     }
     25% {
         outline-color: $highlight-color;
-        @include transform(background-color);
     }
     50% {
         outline-color: $highlight-color;
-        @include transform(background-color);
     }
     100% {
         outline-color: rgba(white, 0);
-        @include transform(background-color);
     }
 }
 
 @mixin animation--highlight() {
-    @include animation(highlight 0.5s ease-in);
-    @include animation-iteration-count(infinite);
-    @include animation-fill-mode(forwards);
+    animation: highlight 0.5s ease-in;
+    animation-iteration-count: infinite;
+    animation-fill-mode: forwards;
 }
 
 .ct-app {
-    @include box-sizing(border-box);
+    box-sizing: border-box;
 
     * {
         &,
         &:before,
         &:after {
-          @include box-sizing(border-box);
+          box-sizing: border-box;
         }
     }
 }

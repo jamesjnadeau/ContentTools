@@ -1,3 +1,4 @@
+
 /**
  * All widgets are assigned a z-index equal to or higher than this setting. The
  * base z-index can be adjusted to overcome z-index conflicts with existing page
@@ -30,7 +31,6 @@ $muted-action-color: #646464 !default;
  * hold down the shift key.
  */
 $highlight-color: rgba(#f39c12, 0.25) !default;
-
 
 /**
  * Tooltips feature for a number of components, their base appearance is
@@ -69,10 +69,10 @@ $highlight-color: rgba(#f39c12, 0.25) !default;
             opacity: 0.8;
             visibility:visible;
 
-            @include transition-property(opacity);
-            @include transition-duration(0.0s);
-            @include transition-timing-function(ease-in);
-            @include transition-delay(2.0s);
+            transition-property: opacity;
+            transition-duration: 0.0s;
+            transition-timing-function: ease-in;
+            transition-delay: 2.0s;
         }
     }
 }

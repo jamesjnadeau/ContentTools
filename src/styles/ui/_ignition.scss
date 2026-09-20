@@ -1,3 +1,5 @@
+
+@use "sass:color";
 /**
  * The ignition switch is how users start and stop editing the page.
  */
@@ -7,21 +9,19 @@
  * a response from the server then the ignition may be set to a busy state. The
  * busy state uses an animation (a rotating cog) defined below.
  */
-@include keyframes(busy-ignition) {
+@keyframes busy-ignition {
     0% {
         transform: rotate(0deg);
-        @include transform(transform);
     }
     100% {
         transform: rotate(359deg);
-        @include transform(transform);
     }
 }
 
 @mixin animation--busy-ignition() {
-    @include animation(busy-ignition 5s linear);
-    @include animation-iteration-count(infinite);
-    @include animation-fill-mode(forwards);
+    animation: busy-ignition 5s linear;
+    animation-iteration-count: infinite;
+    animation-fill-mode: forwards;
 }
 
 .ct-widget {
@@ -34,7 +34,6 @@
         left: 16px;
         position: fixed;
         top: 16px;
-
 
         /**
          * Depending on the current state of the switch we show either the edit
@@ -122,7 +121,7 @@
                 }
 
                 &:hover {
-                    background: lighten($confirm-action-color, 5%);
+                    background: color.adjust($confirm-action-color, $lightness: 5%);
                 }
             }
 
@@ -136,7 +135,7 @@
                 }
 
                 &:hover {
-                    background: lighten($cancel-action-color, 5%);
+                    background: color.adjust($cancel-action-color, $lightness: 5%);
                 }
             }
 
@@ -152,17 +151,17 @@
                  */
                 &:before {
                     content: '\e905';
-                    @include transition-property(transform);
-                    @include transition-duration(0.1s);
-                    @include transition-timing-function(ease-in);
+                    transition-property: transform;
+                    transition-duration: 0.1s;
+                    transition-timing-function: ease-in;
                 }
 
                 &:hover {
-                    background: lighten($bkg-color, 5%);
+                    background: color.adjust($bkg-color, $lightness: 5%);
 
                     &:before {
                         display: inline-block;
-                        @include transform(rotate(-15deg));
+                        transform: rotate(-15deg);
                     }
                 }
             }

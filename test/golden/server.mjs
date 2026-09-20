@@ -21,7 +21,11 @@ const TYPES = {
 };
 
 createServer(async (req, res) => {
-    const urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    let urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    // Phase 1 moved build/images/* to src/assets/. The frozen legacy stylesheet
+    // still asks for /build/images/<name>, so alias it rather than keeping a
+    // duplicate copy of the binaries around.
+    urlPath = urlPath.replace(/^\/build\/images\//, '/src/assets/');
     // Contain the served tree; normalize() collapses any ../ before the check.
     const filePath = join(ROOT, normalize(urlPath));
     if (!filePath.startsWith(ROOT)) {

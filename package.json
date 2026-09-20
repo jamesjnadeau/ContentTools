@@ -1,7 +1,7 @@
 {
-  "name": "ContentTools",
+  "name": "@jamesjnadeau/content-tools",
   "description": "A JS library for building WYSIWYG editors for HTML content",
-  "version": "1.6.16",
+  "version": "2.0.0-alpha.0",
   "keywords": [
     "wysiwyg",
     "inline",
@@ -13,18 +13,34 @@
     "email": "ant@getme.co.uk",
     "url": "https://github.com/anthonyjb"
   },
-  "main": "build/content-tools.js",
+  "main": "dist/content-tools.js",
   "devDependencies": {
-    "@playwright/test": "^1.49.0"
+    "@playwright/test": "^1.49.0",
+    "coffee-script": "^1.7.1",
+    "coffeescript": "^1.12.7",
+    "sass": "^1.104.1",
+    "vite": "^6.4.3"
   },
   "scripts": {
-    "test:golden": "playwright test --config test/golden/playwright.config.mjs"
+    "build": "node scripts/build.mjs",
+    "build:js": "node scripts/build-legacy.mjs",
+    "build:css": "vite build",
+    "test:golden": "playwright test --config test/golden/playwright.config.mjs golden.spec.mjs",
+    "build:playground": "node scripts/build-playground.mjs",
+    "dev": "node scripts/build.mjs && node test/golden/server.mjs",
+    "test:visual": "playwright test --config test/golden/playwright.config.mjs visual.spec.mjs",
+    "test": "npm run test:golden && npm run test:visual"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/GetmeUK/ContentTools.git"
+    "url": "https://github.com/jamesjnadeau/ContentTools.git"
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "license": "MIT",
+  "files": [
+    "dist",
+    "translations"
+  ]
 }
