@@ -1,6 +1,8 @@
+node_modules
 npm-debug.log
 .sass-cache
 jasmine
-node_modules
-
+src/tmp
+test-results
+playwright-report
 .DS_Store

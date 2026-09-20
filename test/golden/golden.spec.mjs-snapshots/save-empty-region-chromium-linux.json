@@ -1,0 +1,16 @@
+{
+  "placeholderChildren": [
+    {
+      "type": "Text",
+      "html": "<p></p>"
+    }
+  ],
+  "saved": [
+    {
+      "regions": {
+        "empty": "<p> now it has content </p>"
+      },
+      "passive": false
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+/* Zero-dependency static file server rooted at the repo, so the fixture can
+   reference /build/... and /test/golden/... with stable absolute paths. */
+import {createServer} from 'node:http';
+import {readFile} from 'node:fs/promises';
+import {extname, join, normalize, resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+const ROOT = resolve(fileURLToPath(new URL('../../', import.meta.url)));
+const PORT = Number(process.env.PORT || 8931);
+
+const TYPES = {
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.mjs': 'text/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.svg': 'image/svg+xml',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.woff': 'font/woff'
+};
+
+createServer(async (req, res) => {
+    const urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    // Contain the served tree; normalize() collapses any ../ before the check.
+    const filePath = join(ROOT, normalize(urlPath));
+    if (!filePath.startsWith(ROOT)) {
+        res.writeHead(403).end('forbidden');
+        return;
+    }
+    try {
+        const body = await readFile(filePath);
+        res.writeHead(200, {
+            'Content-Type': TYPES[extname(filePath)] || 'application/octet-stream',
+            'Cache-Control': 'no-store'
+        }).end(body);
+    } catch {
+        res.writeHead(404).end('not found');
+    }
+}).listen(PORT, () => console.log(`golden fixture server on http://127.0.0.1:${PORT}`));

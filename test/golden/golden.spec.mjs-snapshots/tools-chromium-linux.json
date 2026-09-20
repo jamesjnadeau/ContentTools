@@ -1,0 +1,23 @@
+[
+  "align-center",
+  "align-left",
+  "align-right",
+  "bold",
+  "heading",
+  "image",
+  "indent",
+  "italic",
+  "line-break",
+  "link",
+  "ordered-list",
+  "paragraph",
+  "preformatted",
+  "redo",
+  "remove",
+  "subheading",
+  "table",
+  "undo",
+  "unindent",
+  "unordered-list",
+  "video"
+]

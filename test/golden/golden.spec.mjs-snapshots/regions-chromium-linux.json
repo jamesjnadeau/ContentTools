@@ -1,0 +1,18 @@
+{
+  "regions": [
+    "author-pic",
+    "body",
+    "empty",
+    "link",
+    "sidebar",
+    "title"
+  ],
+  "ordered": [
+    "title",
+    "link",
+    "author-pic",
+    "body",
+    "sidebar",
+    "empty"
+  ]
+}
