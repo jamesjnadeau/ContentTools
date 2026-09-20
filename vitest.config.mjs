@@ -12,6 +12,13 @@ export default defineConfig({
         // The ported specs call describe/it/expect bare, as Jasmine did.
         globals: true,
         setupFiles: ['test/browser/setup-globals.js'],
+        /* These suites mutate process-wide singletons -- ContentEdit.Root and
+           ContentTools.EditorApp are both memoised, and one spec nulls
+           window.getComputedStyle outright. Running files concurrently lets
+           that state cross between them, which showed up as a merge silently
+           doing nothing in a file that passes on its own. */
+        isolate: true,
+        fileParallelism: false,
         browser: {
             enabled: true,
             provider: 'playwright',
