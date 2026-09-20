@@ -1,8 +1,9 @@
 # Upstream provenance of the vendored ContentEdit bundle
 
-**Status: VERIFIED — the vendored bundle is byte-identical to upstream and contains no local
-patches.** Established during Phase 0 of the 2.0 modernization. This closes the "Critical" risk
-that absorbing ContentEdit would silently discard a local fix.
+**Status: VERIFIED — the vendored bundle is byte-identical to upstream and contained no local
+patches when it was absorbed.** Established during Phase 0 of the 2.0 modernization. This closes
+the "Critical" risk that absorbing ContentEdit would silently discard a local fix. Divergences
+added deliberately *since* the absorb are listed under "Local divergences" at the end.
 
 ## Result
 
@@ -84,3 +85,17 @@ The `.coffee` sources under `vendor-src/` were converted to JavaScript in Phase 
 `verify-provenance.sh` fetches them from upstream at the pinned commits above, so it keeps
 working and remains the record that nothing was locally patched before conversion. The converted
 JavaScript is what the build now uses, and the ported spec suites are what verify it.
+
+## Local divergences
+
+The heading above is about the **frozen v1.6.16 artifact**, which contains no local patches and
+is what `verify-provenance.sh` checks. The live TypeScript under `vendor-src/` has since
+diverged, deliberately, in the places listed here. Anything not listed is a bug in one of them.
+
+| Where | What | Why |
+|---|---|---|
+| `content-edit/scripts/namespace.ts` — `_nextModifiedStamp()` | Added. `Node.taint()` calls it instead of `Date.now()`. | `Date.now()` has millisecond resolution, so two taints in the same tick compare equal and a change is missed. |
+| `content-edit/scripts/root.ts` — `cancelResizing()` | Added, mirroring upstream's `cancelDragging()`; `_onStopResizing()` now delegates to it. | Upstream has no way to end a resize except a mouse-up, so an editor torn down mid-resize leaves `_resizing` set — and `startResizing()` short-circuits on that, which kills resizing for every later editor on the page. |
+
+Every file also carries the `RootContext` seam in place of bare `document`/`window`, which is
+a whole-codebase change rather than a patch and is documented in `docs/root-context.md`.

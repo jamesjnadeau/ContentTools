@@ -467,6 +467,32 @@ class _EditorApp extends ContentTools.ComponentUI {
         // Unmount the editor
         this.unmount();
 
+        // Hand back the per-editor state this app left on the SHARED
+        // ContentEdit.Root.
+        //
+        // Root outlives the app, so anything left on it is inherited by the
+        // next one. The pointer gestures are the sharp end: `startDragging`
+        // and `startResizing` both open with `if (this._dragging) return;`,
+        // so a teardown mid-gesture leaves drag and resize dead for every
+        // later editor on the page -- as well as two document listeners
+        // bound and `ce--dragging` on the body.
+        //
+        // The focus is subtler. `stop()` blurs already, so this only bites
+        // when `stop()` bailed early -- a vetoed `stop` event, or a throw --
+        // and then the previous entry's element keeps `ce-element--focused`
+        // in the consumer's DOM and is still what `Root.focused()` reports.
+        //
+        // AFTER `unmount()`: that is what unbinds the inspector's blur/focus
+        // handlers, and notifying a half-unmounted inspector is worse than
+        // not notifying it. NOT `Root.get().unbind()` with no arguments,
+        // which would take the host page's own bindings with it.
+        const root = ContentEdit.Root.get();
+        root.cancelDragging();
+        root.cancelResizing();
+        if (root.focused()) {
+            root.focused().blur();
+        }
+
         // Clear the list of children for the editor
         this._children = [];
 

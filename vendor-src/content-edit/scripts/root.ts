@@ -291,15 +291,27 @@ class _Root extends ContentEdit.Node {
         return this._resizing.size([width, height]);
     }
 
-    _onStopResizing(ev) {
-        // Reset the resizing interactions
+    cancelResizing() {
+        // Cancel the current resizing interaction
+        //
+        // LOCAL ADDITION, not upstream 1.3.5 (see vendor-src/UPSTREAM.md).
+        // Upstream has `cancelDragging` and no counterpart, so there was no
+        // way to end a resize except by letting the user release the mouse.
+        // An editor torn down mid-resize therefore left `_resizing` set, two
+        // document listeners bound and `ce--resizing` on the body -- and
+        // because `startResizing` opens with `if (this._resizing) return;`,
+        // resizing stayed dead for every later editor on the page.
+
+        // Check there's a resizing interaction to cancel
+        if (!this._resizing) {
+            return;
+        }
 
         // Remove resizing behaviour
         rootContext().off('document', 'mousemove', this._onResize);
         rootContext().off('document', 'mouseup', this._onStopResizing);
 
         // Mark the element as no longer being resized
-        // Mark the elment as being dragged
         this._resizing._removeCSSClass('ce-element--resizing');
         this._resizing = null;
         this._resizingInit = null;
@@ -307,6 +319,14 @@ class _Root extends ContentEdit.Node {
 
         // Remove resizing class from body
         return rootContext().setGlobalState('resizing', false);
+    }
+
+    _onStopResizing() {
+        // Reset the resizing interactions
+        //
+        // The drag side already ends in `cancelDragging()`; this mirrors it,
+        // so there is one teardown path rather than two.
+        return this.cancelResizing();
     }
 }
 

@@ -90,6 +90,17 @@ export function assertNoResidue() {
        `get()` -- creates nothing to hide it. */
     expect(ContentTools.EditorApp.current()).toBe(null);
 
+    /* ContentEdit.Root is shared with the host page and survives the app, so
+       per-editor state left on it is what the NEXT editor inherits. The
+       pointer gestures matter most: `startDragging`/`startResizing` both
+       short-circuit when one is already in flight, so a leak here does not
+       litter, it disables. */
+    const root = ContentEdit.Root.get();
+    expect(root.focused()).toBe(null);
+    expect(root.dragging()).toBe(null);
+    expect(root.resizing()).toBe(null);
+    expect(Object.values(root._bindings).flat().filter(Boolean)).toHaveLength(0);
+
     /* The app the element was driving is finished, not repaired: its
        `_state` and `_regions` are the garbage of a destroyed object and
        nobody will read them again. What still matters about it is that it

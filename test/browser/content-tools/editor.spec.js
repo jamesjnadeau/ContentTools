@@ -475,6 +475,107 @@ describe('EditorApp.destroy()', () => {
     });
 });
 
+describe('EditorApp.destroy() teardown hygiene', () => {
+
+    /* ContentEdit.Root is shared with the page and outlives the app, so
+       anything this editor left on it is inherited by the next one. */
+
+    function root() {
+        return ContentEdit.Root.get();
+    }
+
+    it('cancels a drag in flight, so the next editor can drag', () => {
+        /* `startDragging` opens with `if (this._dragging) return;`, so a
+           drag left running does not merely litter -- it makes dragging
+           impossible for every later editor on the page. */
+        boot();
+        editor.start();
+        const element = editor.regions()['body'].children[0];
+        element.drag(10, 10);
+        expect(root().dragging()).toBe(element);
+
+        editor.destroy();
+
+        expect(root().dragging()).toBe(null);
+        expect(document.body.classList.contains('ce--dragging')).toBe(false);
+
+        // The state, not just the flag: a second editor can still drag.
+        boot();
+        editor.start();
+        const next = editor.regions()['body'].children[0];
+        next.drag(10, 10);
+        expect(root().dragging()).toBe(next);
+        root().cancelDragging();
+    });
+
+    it('cancels a resize in flight, so the next editor can resize', () => {
+        // Only a ResizableElement can be resized, so this one needs an image.
+        const PIC = '<div data-editable data-name="pics">' +
+            '<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div>';
+        boot({html: PIC});
+        editor.start();
+        const element = editor.regions()['pics'].children[0];
+        root().startResizing(element, ['top', 'left'], 0, 0, true);
+        expect(root().resizing()).toBe(element);
+
+        editor.destroy();
+
+        expect(root().resizing()).toBe(null);
+        expect(document.body.classList.contains('ce--resizing')).toBe(false);
+
+        boot({html: PIC});
+        editor.start();
+        const next = editor.regions()['pics'].children[0];
+        root().startResizing(next, ['top', 'left'], 0, 0, true);
+        expect(root().resizing()).toBe(next);
+        root().cancelResizing();
+    });
+
+    it('clears a focus that a vetoed stop left behind', () => {
+        /* `stop()` blurs on its way out, so focus only survives when stop
+           bailed early. A shell can veto `stop`, and then the entry is
+           closed anyway -- leaving the previous document's element as what
+           `Root.focused()` reports, with `ce-element--focused` still on the
+           consumer's node. */
+        boot();
+        editor.start();
+        const element = editor.regions()['body'].children[0];
+        element.focus();
+        expect(root().focused()).toBe(element);
+
+        editor.addEventListener('stop', ev => ev.preventDefault());
+        editor.stop(true);
+        expect(editor.isEditing()).toBe(true);
+        expect(root().focused()).toBe(element);
+
+        const domElement = element.domElement();
+        editor.destroy();
+
+        expect(root().focused()).toBe(null);
+        expect(domElement.classList.contains('ce-element--focused')).toBe(false);
+    });
+
+    it('is safe when nothing is focused, dragging or resizing', () => {
+        boot();
+        expect(root().focused()).toBe(null);
+        expect(() => editor.destroy()).not.toThrow();
+    });
+
+    it('does not notify a half-unmounted inspector', () => {
+        /* The blur has to come AFTER unmount(), which is what unbinds the
+           inspector's blur/focus handlers. Before it, `updateTags()` runs
+           against widgets whose handles the unmount is about to null. */
+        boot();
+        editor.start();
+        editor.regions()['body'].children[0].focus();
+        const updateTags = vi.spyOn(editor.inspector(), 'updateTags');
+
+        editor.destroy();
+
+        expect(updateTags).not.toHaveBeenCalled();
+    });
+});
+
 describe('the EditorApp singleton slot', () => {
 
     /* `destroy()` used to leave the instance in place, so `get()` handed
