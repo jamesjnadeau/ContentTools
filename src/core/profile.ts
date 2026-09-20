@@ -62,6 +62,19 @@ export interface ConstraintProfile {
      * and forbids the other.
      */
     readonly tableSections: boolean;
+
+    /**
+     * Whether a `ContentEdit.Static` element may be dragged to a new
+     * position.
+     *
+     * A static element is ContentEdit's fallback for DOM it has no
+     * editable class for. In markdown mode that is always a construct
+     * markdown can express and this editor cannot -- a shortcode, a raw
+     * HTML block, a footnote definition -- and its bytes are spliced back
+     * from the source rather than re-serialized, so it has to stay where
+     * they came from.
+     */
+    readonly moveStatics: boolean;
 }
 
 /** Everything v1.6.16 allowed. The default, and a pure no-op. */
@@ -74,7 +87,8 @@ export const HTML_PROFILE: ConstraintProfile = Object.freeze({
     styles: true,
     coding: true,
     resize: true,
-    tableSections: true
+    tableSections: true,
+    moveStatics: true
 });
 
 /**
@@ -158,7 +172,8 @@ export const MARKDOWN_PROFILE: ConstraintProfile = Object.freeze({
     styles: false,
     coding: false,
     resize: false,
-    tableSections: false
+    tableSections: false,
+    moveStatics: false
 });
 
 /** The profiles the element's `mode` attribute can name. */

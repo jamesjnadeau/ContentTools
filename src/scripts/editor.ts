@@ -1168,6 +1168,21 @@ class _EditorApp extends ContentTools.ComponentUI {
             element.can('resize', false);
         }
 
+        /* A `Static` in markdown mode is always a construct markdown can
+           express and this editor cannot -- a shortcode, a raw HTML
+           block, a footnote definition. `ContentEdit.Static` already
+           refuses focus, so it is read-only for free; what it does not
+           refuse is `drag()`, which is a public method and the one way
+           left to move a block whose bytes we intend to splice back
+           exactly where they were.
+        
+           `drop` is deliberately left alone. Forbidding it as well would
+           make a static block at the top or bottom of a region a wall
+           that no other block could be moved past. */
+        if (!this._profile.moveStatics && (element.type() === 'Static')) {
+            element.can('drag', false);
+        }
+
         if (element.children) {
             for (const child of Array.from<any>(element.children)) {
                 this._applyProfileTo(child);

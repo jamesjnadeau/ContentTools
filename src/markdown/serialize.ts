@@ -38,3 +38,42 @@ const OPTIONS = {
 export function serializeBlock(node: Node): string {
     return toMarkdown(node as never, OPTIONS).replace(/\n+$/, '');
 }
+
+/**
+ * Do two blocks mean the same thing in the file?
+ *
+ * Not simply `serializeBlock(a) === serializeBlock(b)`, because of the
+ * one construct HTML cannot carry: a soft line break. A paragraph the
+ * author wrapped across three source lines reaches the editor as one
+ * line -- the browser collapses the newlines, exactly as it should --
+ * and comes back as one line whether or not anybody touched it.
+ * Comparing the serialized text directly would call that a change and
+ * rewrite the paragraph, unwrapping it in the diff for nothing.
+ *
+ * So the comparison collapses runs of whitespace inside `text` nodes,
+ * and only there. That is precisely the set of values HTML collapses:
+ * `code` and `inlineCode` carry their text in `value` on their own node
+ * types, so a change to the indentation inside a fenced code block is
+ * still a difference -- which it has to be, since there it is content.
+ *
+ * When this says the same, `document.ts` splices the ORIGINAL bytes, so
+ * the author's line wrapping survives untouched. The looser comparison
+ * preserves more, not less.
+ */
+export function sameBlock(a: Node, b: Node): boolean {
+    return serializeBlock(collapseText(a)) === serializeBlock(collapseText(b));
+}
+
+const WHITESPACE = /[\t\n\r ]+/g;
+
+/** A copy of `node` with whitespace runs inside `text` values collapsed. */
+function collapseText(node: Node): Node {
+    if (node.type === 'text') {
+        return {...node, value: String(node.value).replace(WHITESPACE, ' ')};
+    }
+    const children = (node as {children?: unknown}).children;
+    if (!Array.isArray(children)) {
+        return node;
+    }
+    return {...node, children: (children as Node[]).map(collapseText)} as Node;
+}

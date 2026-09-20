@@ -18,3 +18,6 @@ A blockquote with two paragraphs:
 > first
 >
 > second
+
+A line ending in a hard break  
+and its continuation.

@@ -20,7 +20,7 @@
 import {parseMarkdown} from '../../../src/markdown/parse.js';
 import {blockToHTML, SOURCE_ATTRIBUTE} from '../../../src/markdown/to-html.js';
 import {fromHTML} from '../../../src/markdown/from-dom.js';
-import {serializeBlock} from '../../../src/markdown/serialize.js';
+import {serializeBlock, sameBlock} from '../../../src/markdown/serialize.js';
 
 const CORPUS = import.meta.glob('../../markdown/corpus/*.md', {
     query: '?raw', import: 'default', eager: true
@@ -43,6 +43,14 @@ describe('the corpus loads', function() {
     });
 });
 
+/* Corpus files that are deliberately nothing but static blocks.
+ *
+ * Named rather than inferred. The "nothing editable" guard below is
+ * there to catch a walker regression that starts classifying everything
+ * as unrepresentable, and inferring the exemption would disable exactly
+ * the alarm it exists to raise. */
+const ALL_STATIC = new Set(['shortcodes.md']);
+
 describe('walkers: editable blocks survive a round trip', function() {
 
     for (const [name, source] of Object.entries(FILES)) {
@@ -50,17 +58,56 @@ describe('walkers: editable blocks survive a round trip', function() {
             const {blocks} = parseMarkdown(source);
             const editable = blocks.filter(block => block.editable);
             // A corpus file with nothing editable would pass vacuously.
-            expect(editable.length).toBeGreaterThan(0);
+            if (ALL_STATIC.has(name)) {
+                expect(editable.length).toBe(0);
+            } else {
+                expect(editable.length).toBeGreaterThan(0);
+            }
 
             for (const entry of editable) {
                 const {back} = roundTrip(entry, source);
                 expect(back.length).toBe(1);
-                expect(serializeBlock(back[0].node))
-                    .toBe(serializeBlock(entry.node));
+                /* `sameBlock`, not string equality, and only because of
+                   soft line breaks: a paragraph the author wrapped over
+                   three lines has no HTML form that keeps the wrapping,
+                   so the round trip legitimately returns it unwrapped.
+                   What that tolerance does and does not cover is pinned
+                   directly below, so this is not a blanket loosening. */
+                expect(sameBlock(back[0].node, entry.node)).toBe(true);
             }
             return true;
         });
     }
+});
+
+describe('sameBlock: what the round trip is allowed to lose', function() {
+
+    /** The single block of a one-block document. */
+    function block(markdown) {
+        return parseMarkdown(markdown).blocks[0].node;
+    }
+
+    it('forgives a soft line break, which HTML cannot carry', function() {
+        return expect(sameBlock(block('a b c\n'), block('a\nb\nc\n'))).toBe(true);
+    });
+
+    it('does not forgive a changed word', function() {
+        return expect(sameBlock(block('a b c\n'), block('a b d\n'))).toBe(false);
+    });
+
+    it('does not forgive whitespace INSIDE a code block', function() {
+        /* The line the tolerance has to stop at. Inside fenced code
+           whitespace is content, and mdast keeps it on `code.value`
+           rather than in a `text` node -- which is exactly why
+           collapsing `text` values cannot reach it. */
+        const a = block('```\nif (x) {\n    y();\n}\n```\n');
+        const b = block('```\nif (x) {\n\ty();\n}\n```\n');
+        return expect(sameBlock(a, b)).toBe(false);
+    });
+
+    it('does not forgive whitespace inside inline code', function() {
+        return expect(sameBlock(block('`a  b`\n'), block('`a b`\n'))).toBe(false);
+    });
 });
 
 describe('walkers: static blocks', function() {

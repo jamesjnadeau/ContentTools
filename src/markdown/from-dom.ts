@@ -47,7 +47,62 @@ function inlineChildren(node: ParentNode): Node[] {
     for (const child of Array.from(node.childNodes)) {
         collectInline(child, out);
     }
-    return mergeText(out);
+    return normalise(mergeText(out));
+}
+
+/* Whitespace, as HTML means it.
+ *
+ * `region.html()` is pretty-printed: ContentEdit puts every block's
+ * content on its own line and indents it, so the text node inside a `<p>`
+ * is really `"\n    Some prose\n"`. A browser renders that as
+ * `"Some prose"` -- runs of whitespace collapse to a single space, and a
+ * block's leading and trailing whitespace disappears -- and markdown
+ * means exactly the same thing by it.
+ *
+ * Taking it literally instead turns the pretty-printer's indentation into
+ * content, which is what the first version of this module did: every
+ * paragraph came back as an indented code block and every list item grew
+ * four levels of nesting. Nothing in the pure-string tests could see it,
+ * because none of them had been through a real region.
+ *
+ * `<pre>` is the one exception, and it never comes through here --
+ * `blockFrom` reads its `textContent` directly.
+ */
+const WHITESPACE = /[\t\n\r ]+/g;
+
+/**
+ * Apply HTML's whitespace rules to one level of inline content.
+ *
+ * Collapse runs, then trim at the two ends. Content nested inside an
+ * inline element is normalised by that element's own `inlineChildren`
+ * call, so this only ever needs to look at the list it is handed.
+ *
+ * Three richer versions were written before this one and all three were
+ * code no test could fail: descending into nested children (already done
+ * by the nested call), trimming either side of a `<br>`, and pruning
+ * inline elements the trim had emptied. ContentEdit's serializer never
+ * puts whitespace next to an inline tag and `HTMLString.optimize()`
+ * drops empty ones, so none of those cases can arrive. What this has to
+ * handle is bounded by `region.spec.js`, which feeds it nothing but real
+ * `region.html()`.
+ */
+function normalise(nodes: Node[]): Node[] {
+    for (let i = 0; i < nodes.length; i += 1) {
+        const node = nodes[i];
+        if (node.type !== 'text') {
+            continue;
+        }
+        let value = String(node.value).replace(WHITESPACE, ' ');
+        if (i === 0) {
+            value = value.replace(/^ /, '');
+        }
+        if (i === nodes.length - 1) {
+            value = value.replace(/ $/, '');
+        }
+        node.value = value;
+    }
+
+    return nodes;
 }
 
 /** Adjacent text nodes serialize differently from one; merge them. */
@@ -140,7 +195,7 @@ function listItems(element: Element): Node[] {
             }
             collectInline(child, inlineNodes);
         }
-        const children: Node[] = [parent('paragraph', mergeText(inlineNodes))];
+        const children: Node[] = [parent('paragraph', normalise(mergeText(inlineNodes)))];
         if (nested) {
             children.push(listFrom(nested));
         }

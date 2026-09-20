@@ -23,7 +23,7 @@ import type {Frontmatter, ParsedMarkdown} from './parse.js';
 import {toHTML} from './to-html.js';
 import {fromHTML} from './from-dom.js';
 import type {EditedBlock} from './from-dom.js';
-import {serializeBlock} from './serialize.js';
+import {serializeBlock, sameBlock} from './serialize.js';
 import {stringify as stringifyYAML} from 'yaml';
 import type {SourceBlock} from './types.js';
 
@@ -126,8 +126,17 @@ export class MarkdownDocument {
             const original = entry.index === null ? null : blocks[entry.index];
 
             if (!original) {
-                // Created by the user. Nothing to splice from.
-                out.push({text: serializeBlock(entry.node), index: null});
+                /* Created by the user, so there is nothing to splice
+                   from -- and nothing to write either if it is empty.
+                   An empty block is not hypothetical: `start()` gives a
+                   region with no editable children a placeholder
+                   paragraph so there is somewhere to type, which is
+                   exactly what an all-shortcode file gets. Writing it
+                   back would add a blank line to a file nobody edited. */
+                const created = serializeBlock(entry.node);
+                if (created !== '') {
+                    out.push({text: created, index: null});
+                }
                 continue;
             }
 
@@ -151,15 +160,18 @@ export class MarkdownDocument {
              * would re-serialize and reformat for a diff of nothing.
              * Equal markdown means equal diff, which is the question
              * actually being asked. */
-            const next = serializeBlock(entry.node);
-            const unchanged = next === serializeBlock(original.node);
+            if (sameBlock(entry.node, original.node)) {
+                out.push({
+                    text: source.slice(original.start, original.end),
+                    index: original.index
+                });
+                continue;
+            }
 
-            out.push({
-                text: unchanged
-                    ? source.slice(original.start, original.end)
-                    : next,
-                index: original.index
-            });
+            const next = serializeBlock(entry.node);
+            if (next !== '') {
+                out.push({text: next, index: original.index});
+            }
         }
 
         return out;
