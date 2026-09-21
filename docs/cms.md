@@ -46,6 +46,10 @@ entry is in review is a **label** — `cms/draft`, `cms/in-review`,
 backend:
   repo: owner/site
   branch: main          # default: main
+  auth:                 # default: {kind: pat} -- see docs/auth.md
+    kind: github-app
+    clientId: Iv1.xxxxxxxx
+    proxy: https://cms-auth.example.workers.dev
 
 media:
   folder: static/images # where uploads are committed
@@ -121,15 +125,27 @@ the one repository the deployment edits, in `sessionStorage` — never
 app, no hosted secret and nothing deployed, which makes it the adapter a
 static host can use and the one to try the workflow with first.
 
-It implements `AuthAdapter`, which is all the rest of this half knows about:
+`GitHubAppAuthAdapter` is the other one: a **Sign in with GitHub** button
+for a site with authors, at the cost of one small deployed proxy.
+[docs/auth.md](auth.md) covers both, and what each one costs.
+
+They implement `AuthAdapter`, which is all the rest of this half knows
+about:
 
 ```ts
 interface AuthAdapter {
     authenticate(): Promise<{token: string}>;
     logout(): Promise<void>;
     currentToken(): string | null;
+    /** What the gate offers instead of a secret field, if anything. */
+    readonly gate?: {readonly label: string; readonly note: string};
+    /** Finish a flow the page was redirected back from, if there is one. */
+    resume?(): Promise<void>;
 }
 ```
+
+The last two are optional, which is why adding the App adapter changed
+nothing about the PAT one.
 
 Where `sessionStorage` is unavailable — a sandboxed iframe, some
 private-browsing modes — the token lives in memory for that tab instead of

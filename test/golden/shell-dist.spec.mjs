@@ -528,3 +528,195 @@ test('the review list moves an entry between statuses', async ({page}) => {
     expect(errors).toEqual([]);
     expect(logged).toEqual([]);
 });
+
+/* --- signing in with a GitHub App ------------------------------------
+ *
+ * The whole redirect round trip, through the built shell, with nothing
+ * stubbed inside it: the browser really leaves for `github.com`, really
+ * comes back with a `code` in its query, and the page that boots on the
+ * far side is the same `app/index.html` as every test above.
+ *
+ * This is the case the popup design could not have had. A popup leg is
+ * another `Page`, so `page.route` does not reach it, and the vitest
+ * browser project has no `context` at all -- the failure that decided
+ * against it (COOP severing `window.opener`) is structurally invisible
+ * to any test this repo can write. Every step of a redirect is a
+ * navigation, and a navigation is interceptable.
+ */
+
+const PROXY = 'https://cms-auth.example.test/exchange';
+const EXCHANGED = 'ghu_exchanged_for_a_code';
+
+/**
+ * Serve the app-auth config in place of the PAT one this page ships.
+ *
+ * A routed body rather than a second fixture page: `app/index.html` is
+ * the deliverable and the thing under test, and two copies of it would
+ * drift. Only the config differs between a deployment whose authors
+ * paste tokens and one whose authors press a button, which is the claim
+ * this makes by construction.
+ */
+async function serveAppAuthConfig(page) {
+    await page.route('**/app/cms-config.yml', route => route.fulfill({
+        status: 200,
+        headers: {'content-type': 'text/yaml'},
+        body: [
+            'backend:',
+            '  repo: owner/site',
+            '  branch: main',
+            '  auth:',
+            '    kind: github-app',
+            '    clientId: Iv1.playwright',
+            `    proxy: ${PROXY}`,
+            'media:',
+            '  folder: static/images',
+            '  publicPath: /images',
+            'collections:',
+            '  - name: blog',
+            '    label: Blog',
+            '    folder: content/blog',
+            ''
+        ].join('\n')
+    }));
+}
+
+test('the App flow leaves for GitHub, comes back, and exchanges the code',
+     async ({page}) => {
+    const errors = [];
+    page.on('pageerror', error => errors.push(`${error.name}: ${error.message}`));
+    const logged = collectConsoleErrors(page);
+
+    const fake = await serveGitHub(page);
+    await serveAppAuthConfig(page);
+
+    /* GitHub, standing in for the authorise screen a person would see
+       and approve. It answers the way GitHub does once they have: a 302
+       back to the `redirect_uri` the request carried, with the code and
+       the SAME `state`. Echoing the state rather than inventing one is
+       what makes the check on the way home a real check. */
+    let authorize = null;
+    await page.route('https://github.com/login/oauth/authorize*', route => {
+        authorize = new URL(route.request().url());
+        const back = new URL(authorize.searchParams.get('redirect_uri'));
+        back.searchParams.set('code', 'the_code');
+        back.searchParams.set('state', authorize.searchParams.get('state'));
+        return route.fulfill({status: 302, headers: {location: back.toString()}});
+    });
+
+    /* The proxy, which is the only party holding the client secret. It
+       is a separate origin from the page on purpose: that is the shape
+       a real deployment has, so this also exercises a cross-origin POST
+       rather than a same-origin one that would hide a CORS mistake. */
+    let exchange = null;
+    await page.route(PROXY, async route => {
+        exchange = new URLSearchParams(route.request().postData() ?? '');
+        return route.fulfill({
+            status: 200,
+            headers: {
+                'content-type': 'application/json',
+                'access-control-allow-origin': '*'
+            },
+            body: JSON.stringify({token: EXCHANGED, expires_in: 28800})
+        });
+    });
+
+    /* Started on a collection rather than the dashboard, for two
+       reasons. It is the bookmark case -- somebody opens a link to a
+       page of the site and is asked to sign in first -- and the
+       redirect cannot carry a fragment: `redirect_uri` is this page
+       without its query OR its hash, because GitHub matches the
+       registered callback exactly. So the route only survives if the
+       adapter stored it and put it back. It also gives the shell
+       something to FETCH once it is in, which the dashboard does not. */
+    await page.goto(`${PAGE}#/c/blog`);
+    await expect(page.locator('content-tools-cms'))
+        .toHaveAttribute('state', 'signed-out');
+
+    /* The gate's other shape, driven by the adapter the CONFIG asked
+       for. No `el.auth` is assigned anywhere on this page, so a
+       `backend.auth` block that did not reach `_adapterFor` would leave
+       a password field here and this would not exist. */
+    await expect(shell(page).locator('.ct-cms__gate-form')).toBeHidden();
+    const button = shell(page).locator('.ct-cms__gate-app-button');
+    await expect(button).toHaveText('Sign in with GitHub');
+
+    await button.click();
+
+    await expect(page.locator('content-tools-cms'))
+        .toHaveAttribute('state', 'ready');
+
+    /* What the browser actually sent to GitHub. PKCE cannot be proved
+       here -- GitHub ignores query parameters it does not know, so
+       whether the real App flow ENFORCES `code_challenge` is only
+       answerable against a real App -- but that we send it, and send
+       the matching verifier to the proxy and never to GitHub, is
+       exactly what is assertable and is what this checks. */
+    expect(authorize.searchParams.get('client_id')).toBe('Iv1.playwright');
+    expect(authorize.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(authorize.searchParams.get('code_challenge')).toBeTruthy();
+    expect(authorize.searchParams.has('code_verifier')).toBe(false);
+
+    expect(exchange.get('code')).toBe('the_code');
+    expect(exchange.get('code_verifier')).toBeTruthy();
+    /* The secret is the proxy's, and the browser must not be carrying
+       one to hand it. */
+    expect(exchange.has('client_secret')).toBe(false);
+
+    /* The code is out of the address bar. It is bookmarkable and it
+       leaks in a `Referer`, and `replaceUrl` runs before the exchange
+       so that a failed one does not leave it there either. */
+    expect(new URL(page.url()).search).toBe('');
+
+    /* Back on the page they asked for, rather than the dashboard. */
+    expect(new URL(page.url()).hash).toBe('#/c/blog');
+    await expect(shell(page).locator('.ct-cms__entry-link')).toHaveText(['hello']);
+
+    /* And the token GitHub is being called with is the EXCHANGED one --
+       the end of the round trip, and the assertion no source-level test
+       can make, because only here does a real `fetch` build the header
+       from a token a real redirect produced. */
+    const [, , headers] = fake.requests.find(([method, path]) =>
+        method === 'GET' && path.startsWith('/repos/owner/site/contents/')) ?? [];
+    expect(String(headers?.authorization ?? headers?.Authorization))
+        .toBe(`Bearer ${EXCHANGED}`);
+
+    expect(errors).toEqual([]);
+    expect(logged).toEqual([]);
+});
+
+test('a proxy that is not deployed says so on the page, naming itself',
+     async ({page}) => {
+    const logged = collectConsoleErrors(page);
+
+    await serveGitHub(page);
+    await serveAppAuthConfig(page);
+    await page.route('https://github.com/login/oauth/authorize*', route => {
+        const authorize = new URL(route.request().url());
+        const back = new URL(authorize.searchParams.get('redirect_uri'));
+        back.searchParams.set('code', 'the_code');
+        back.searchParams.set('state', authorize.searchParams.get('state'));
+        return route.fulfill({status: 302, headers: {location: back.toString()}});
+    });
+    /* The likeliest way an App deployment is wrong: the Worker or the
+       Function was never published, or its URL has a typo in it. The
+       browser sees a rejected `fetch`, which is a bare `TypeError` --
+       and described as one it reads "could not reach GitHub", sending
+       an operator to a status page about a machine of their own. */
+    await page.route(PROXY, route => route.abort('connectionfailed'));
+
+    await page.goto(PAGE);
+    await shell(page).locator('.ct-cms__gate-app-button').click();
+
+    await expect(shell(page).locator('.ct-cms__alert-title'))
+        .toHaveText('That sign-in did not finish.');
+    await expect(shell(page).locator('.ct-cms__alert-detail'))
+        .toContainText(PROXY);
+
+    /* Still at the gate, with the button to try again -- and the code
+       is gone from the address bar, so a reload retries the SIGN-IN
+       rather than replaying a code that has already been spent. */
+    await expect(page.locator('content-tools-cms'))
+        .toHaveAttribute('state', 'signed-out');
+    expect(new URL(page.url()).search).toBe('');
+    expect(logged).toEqual([]);
+});

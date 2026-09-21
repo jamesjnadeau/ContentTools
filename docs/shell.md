@@ -31,8 +31,14 @@ fail nowhere until somebody opened an entry.
 `app/` is the deployable application, and it is two files: `index.html`
 above, and `cms-config.yml` describing the one repository that deployment
 edits. Copy `app/` and `dist/` to any static host and that is the install.
-There is no server, no build step per site, and no secret anywhere in it:
-the token is the author's own and never leaves their tab.
+There is no server and no build step per site: by default the token is
+the author's own fine-grained one, and it never leaves their tab.
+
+A site with several authors can have them press **Sign in with GitHub**
+instead, which costs one small deployed proxy and a `backend.auth` block
+in the config — see [signing in](auth.md). Nothing else about the install
+changes, and the secret lives in the proxy rather than anywhere the
+browser can reach.
 
 ```
 your-host/
@@ -65,7 +71,7 @@ working while the other passes.
 
 | property | |
 |---|---|
-| `auth` | An [`AuthAdapter`](cms.md#signing-in). Defaults to a `PatAuthAdapter` reading the sign-in field |
+| `auth` | An [`AuthAdapter`](auth.md). Overrides `backend.auth`; without either, a `PatAuthAdapter` reading the sign-in field |
 | `fetch` | The `fetch` the config load and every API call go through. Defaults to the page's |
 | `widgets` | Frontmatter widgets, **merged over** the defaults |
 | `repo` | Read-only: the `CmsRepo`, once the config has loaded |
@@ -96,6 +102,23 @@ That check also catches the worst-shaped failure available here — a token
 that can read but not push. Everything works until the first save, which
 fails with somebody's afternoon in the editor. GitHub answers that case with
 a 200 whose body says no, so the gate reads the body.
+
+**The gate has a second shape.** When `backend.auth` asks for a GitHub
+App — or a host page assigns an adapter that offers one — the field and
+its paragraph of permissions are replaced by a single button, and the
+adapter supplies both its label and the sentence under it. The shell
+does not know which kind it is holding; it asks the adapter. The flow is
+a top-level redirect, finished at the next boot before any route loads,
+so a returning author never sees the gate flash past. See
+[signing in](auth.md).
+
+**A refused save leaves its markdown on the gate.** The 401 that brings
+the gate back is usually a save — that is the request that re-throws so
+the token can be dropped — and the editor goes with the token. The gate
+shows what the save was carrying in a box you can copy out of, and it
+survives the trip to GitHub, because the App flow signs somebody in by
+leaving the page. It lasts exactly as long as the gate does, and the
+panel says so: nothing puts it back into an editor on the way home.
 
 ## Where you are
 

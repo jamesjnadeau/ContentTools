@@ -10,6 +10,8 @@
   branch-per-entry pull request workflow a save becomes.
 - **[The shell](shell.md)** — `<content-tools-cms>`: the application authors open, and
   how a deployment is configured and installed.
+- **[Signing in](auth.md)** — the two auth adapters: a fine-grained token for one
+  operator, a GitHub App for a site with authors, and the small proxy the second needs.
 - **[Content scope: Mode A and Mode B](content-scope.md)** — where the editable content lives,
   and why the default leaves it in the light DOM.
 - **[`RootContext` — the host seam](root-context.md)** — the single object every `document` and

@@ -8,10 +8,11 @@ which has been unmaintained since 2022.
 
 ## Status
 
-**Milestones 1 through 5 are complete: the library is modernized, the editor
+**All five milestones are complete: the library is modernized, the editor
 runs as a custom element, it can be constrained to what markdown expresses,
 and there is a CMS shell on top of it that edits a git repository by pull
-request.**
+request — with authors signing in either with their own token or through a
+GitHub App.**
 
 `2.0.0-beta.0` is the last published version and covers Milestone 1 only;
 everything from markdown mode onwards is on `master` and unreleased.
@@ -21,7 +22,7 @@ everything from markdown mode onwards is on `master` and unreleased.
 | 1 | TypeScript ESM library, ContentEdit absorbed as source, one `RootContext` seam, and `<content-tools-editor>` with its chrome in a shadow root |
 | 2 | markdown mode — the editor constrained to what markdown expresses — and a save that keeps untouched blocks byte-identical; a repeatable editor lifecycle |
 | 3 | runtime config, a GitHub client of our own, one branch and one pull request per entry |
-| 4 | the fine-grained PAT adapter. The GitHub App OAuth proxy is the piece still to come |
+| 4 | two auth adapters: a fine-grained PAT, and a GitHub App whose code exchange is one pure `Request` → `Response` function, deployed as a tiny proxy |
 | 5 | the shell: collections, entries, frontmatter widgets, a media library and the editorial workflow |
 
 What changed from v1.6.16:
@@ -29,10 +30,10 @@ What changed from v1.6.16:
 | | v1.6.16 | now |
 |---|---|---|
 | Language | CoffeeScript 1.x | TypeScript |
-| Modules | one shared closure, concatenated | 119 ES modules |
+| Modules | one shared closure, concatenated | 122 ES modules |
 | Build | Grunt + PhantomJS (unrunnable on Node 22) | Vite |
 | Dependencies | ContentEdit/ContentSelect/HTMLString vendored as one prebuilt file | absorbed as source |
-| Tests | 127 assertions, PhantomJS | 1,470 in real Chromium, plus nine Playwright suites against the built artifacts |
+| Tests | 127 assertions, PhantomJS | 1,577 in real Chromium, plus ten Playwright suites against the built artifacts |
 | Host access | bare `document`/`window` throughout | one `RootContext` seam |
 | Embedding | mounts chrome into `document.body` | `<content-tools-editor>`, chrome in a shadow root |
 | Output | HTML in, HTML out | that, or markdown with a one-line diff |
@@ -120,18 +121,20 @@ Full attribute, property, method and event reference:
 ```
 
 That tag is the whole application. It loads the config for the one
-repository that deployment edits, signs an author in with their own
-fine-grained token, lists what they can edit, and turns each save into a
-branch, a commit and a pull request for a human to review. `app/` is a
-working deployment of it — copy `app/` and `dist/` to any static host.
+repository that deployment edits, signs an author in — with their own
+fine-grained token, or through a GitHub App — lists what they can edit, and
+turns each save into a branch, a commit and a pull request for a human to
+review. `app/` is a working deployment of it — copy `app/` and `dist/` to
+any static host.
 
 Editing one paragraph produces a one-line diff, because the markdown save
 splices the blocks nobody touched back in verbatim. That is the property the
 whole thing rests on: a pull request nobody can read is a review that does
 not happen.
 
-**[docs/shell.md](docs/shell.md)**, and
-**[docs/cms.md](docs/cms.md)** for the same machinery without the UI.
+**[docs/shell.md](docs/shell.md)**, **[docs/auth.md](docs/auth.md)** for
+the two ways authors sign in, and **[docs/cms.md](docs/cms.md)** for the same
+machinery without the UI.
 
 ## Documentation
 
@@ -166,7 +169,7 @@ markdown mode at `markdown.html`, and the headless git layer at
 
 Deliberately covering different things:
 
-- **`test/browser/`** — 1,470 tests in real Chromium, run against the SOURCE so
+- **`test/browser/`** — 1,577 tests in real Chromium, run against the SOURCE so
   coverage can attribute. Includes upstream ContentEdit's own 329 specs,
   inherited with the code.
 - **`test/golden/golden.spec.mjs`** — a characterisation harness that drives
@@ -198,6 +201,17 @@ Deliberately covering different things:
   unexecuted. CI installs all three; locally Chromium is the default and
   `CT_ENGINES=firefox,webkit npm run test:element:golden` adds the others
   (`npx playwright install --with-deps firefox webkit` first).
+
+- **`test/golden/proxy-dist.spec.mjs`** — imports the BUILT `dist/proxy.js`
+  into a page and runs a code exchange through it. The proxy is the one
+  artifact nobody here can deploy, and it is published from its own Vite
+  mode, so this is what says the published module resolves and behaves:
+  the client secret reaches GitHub, the refresh token is not in the bytes
+  that come back, and `configFrom` names a missing variable rather than
+  failing on somebody's first sign-in. The handler's own rules — a failure
+  GitHub answers with HTTP **200** and an `error` body, a `redirect_uri`
+  off the configured origin, a method that is not `POST` — are in
+  `test/browser/auth/exchange.spec.js`, where they can be enumerated.
 
 - **`test/golden/cms-dist.spec.mjs`** — drives the BUILT `dist/cms.js` through
   `playground/cms.html`, with Playwright routing `api.github.com` to an
@@ -246,13 +260,17 @@ changes behaviour and needs verifying on its own:
 
 ## Roadmap
 
-Milestone 5 closed the original plan: there is a deployable CMS, and a
-change made in it arrives as a pull request somebody can read.
+The original plan is closed: there is a deployable CMS, a change made in
+it arrives as a pull request somebody can read, and a site's authors can
+sign in with a button rather than a pasted token.
 
-What is left is the piece Milestone 4 deliberately deferred — a GitHub App
-OAuth proxy as a second `AuthAdapter`, so a site's authors sign in rather
-than pasting a token. Beyond that: a preview pane, which needs the site's
-own templates and so is a config key and a piece of work of its own.
+What is left is a release — everything past Milestone 1 is unpublished —
+and then a preview pane, which needs the site's own templates and so is a
+config key and a piece of work of its own. Three things are owed by hand
+rather than by test, and are listed in
+[docs/auth.md](docs/auth.md) and the plan: the round trip against a real
+repository, a real GitHub App signing a real person in, and whether the App
+web flow enforces PKCE rather than merely accepting it.
 
 ## Licence
 
