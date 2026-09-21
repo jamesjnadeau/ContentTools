@@ -109,10 +109,19 @@ export default [
            with `safeFilename` rather than written twice, which is the
            only reason this is 1 kB and not two -- a media file and an
            entry named from the same title have to agree on what a
-           filename is. */
+           filename is.
+
+           12 kB -> 13.5 kB with the GitHub App adapter: the redirect
+           out, the resume back, PKCE, and the expiry arithmetic. The
+           largest single addition this entry has taken, and it buys the
+           thing the PAT adapter cannot -- authors who sign in rather
+           than being taught what a fine-grained token is. Both adapters
+           are named exports of one entry, so a deployment that stays on
+           the PAT pays it here; the shell's own build tree-shakes
+           whichever adapter it does not construct. */
         name: 'cms entry',
         path: closureOf('dist/cms.js'),
-        limit: '12 kB',
+        limit: '13.5 kB',
         gzip: true
     },
     {

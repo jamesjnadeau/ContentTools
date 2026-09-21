@@ -148,6 +148,41 @@ export function describeError(error: unknown): Described {
         };
     }
 
+    /* Not a failure: the browser is on its way to GitHub and this page is
+       being torn down. `authenticate()` raises it rather than returning a
+       promise that never settles, because a gate frozen with nothing on it
+       for as long as a navigation takes is indistinguishable from a gate
+       that is broken. */
+    if (name === 'RedirectingError') {
+        return {
+            title: 'Taking you to GitHub.',
+            detail: message,
+            kind: 'notice',
+            path: ''
+        };
+    }
+
+    /* Before the `TypeError` row below, and that ordering is the point.
+       The App adapter wraps a rejected `fetch` to the exchange proxy in
+       one of these, because a raw TypeError would be described as "could
+       not reach GitHub" -- naming the wrong machine, and sending an
+       operator to check GitHub's status page about a Worker of their own
+       that is not deployed. Every one of these messages names its own
+       cause already, so the row carries it through rather than replacing
+       it.
+
+       `unauthorized` because the outcome is the same whatever refused:
+       there is no token, and the person belongs at the gate with a reason
+       on it. */
+    if (name === 'SignInError') {
+        return {
+            title: 'That sign-in did not finish.',
+            detail: message,
+            kind: 'unauthorized',
+            path: ''
+        };
+    }
+
     if (name === 'NotAuthenticatedError') {
         return {title: 'No token was given.', detail: message, kind: 'unauthorized', path: ''};
     }

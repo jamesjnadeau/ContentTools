@@ -373,11 +373,16 @@ describe('the media library', function() {
                -- and a revoked object URL is not an error anywhere, it is
                a grid of broken pictures after a reparent, with the tiles
                kept by key so nothing re-fetches them. */
-            const {fake} = await openAtHash('#/media');
-            await until(() => blobReads(fake).length === 1, 'the read to land');
-            const image = tileFor('cat.png').querySelector('.ct-cms__media-thumb');
-            const url = image.src;
-            expect(url.startsWith('blob:')).toBe(true);
+            await openAtHash('#/media');
+            /* Waited on the SRC, not on the request. The blob read
+               landing is one tick short of the URL being assigned, so
+               waiting on `blobReads(fake).length` reads `src` before the
+               tile has one -- green on a quiet machine and red on a
+               loaded one, which is the worst shape a gate can have. */
+            const thumb = () => tileFor('cat.png')?.querySelector('.ct-cms__media-thumb');
+            await until(() => thumb()?.src.startsWith('blob:'),
+                        'the object URL to reach the tile');
+            const url = thumb().src;
 
             const revoked = [];
             const real = URL.revokeObjectURL.bind(URL);

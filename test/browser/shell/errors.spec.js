@@ -3,6 +3,7 @@ import {ConfigError} from '../../../src/cms/config.js';
 import {GitHubError, ConflictError} from '../../../src/cms/github.js';
 import {NotAuthenticatedError} from '../../../src/auth/pat.js';
 import {NothingToSaveError} from '../../../src/cms/repo.js';
+import {RedirectingError, SignInError} from '../../../src/auth/github-app.js';
 
 /* The mapping from a thrown thing to what a person reads.
  *
@@ -115,6 +116,31 @@ describe('describeError', function() {
         const foreign = {name: 'GitHubError', message: 'Bad credentials',
                          method: 'GET', path: '/repos/o/r', status: 401};
         expect(describeError(foreign).kind).toBe('unauthorized');
+    });
+
+    it('does not alarm anybody about a redirect in progress', function() {
+        /* `authenticate()` raises this once the browser is on its way to
+           GitHub. Described as a failure it would put a red panel on the
+           screen for the fraction of a second before the page goes, which
+           is how a working sign-in comes to look broken. */
+        const described = describeError(new RedirectingError());
+        expect(described.kind).toBe('notice');
+        return expect(described.detail).toContain('signed in');
+    });
+
+    it('names the proxy, not GitHub, when the sign-in service is down',
+       function() {
+        /* The adapter wraps a rejected `fetch` to its exchange proxy in a
+           SignInError for exactly this: as a raw TypeError it lands in the
+           row below, which says "Could not reach GitHub" about a Worker
+           the operator forgot to deploy. */
+        const described = describeError(new SignInError(
+            'The sign-in service at https://auth.example.com/exchange could not '
+            + 'be reached (Failed to fetch).'));
+
+        expect(described.kind).toBe('unauthorized');
+        expect(described.title).not.toContain('GitHub');
+        return expect(described.detail).toContain('auth.example.com/exchange');
     });
 
     it('does not blame the network for our own bug', function() {

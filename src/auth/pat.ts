@@ -14,13 +14,12 @@
  */
 
 import type {AuthAdapter} from './types.js';
+import {memoryStorage, sessionStorageOrMemory} from './storage.js';
+/* Re-exported so `./cms` keeps exporting it from here, where every
+   consumer already imports it from. */
+export type {TokenStorage} from './storage.js';
+import type {TokenStorage} from './storage.js';
 
-/** The little of `Storage` this needs, so a test can hand over a Map. */
-export interface TokenStorage {
-    getItem(key: string): string | null;
-    setItem(key: string, value: string): void;
-    removeItem(key: string): void;
-}
 
 export interface PatAuthOptions {
     /**
@@ -43,37 +42,6 @@ export class NotAuthenticatedError extends Error {
     constructor(message = 'no GitHub token was given') {
         super(message);
         this.name = 'NotAuthenticatedError';
-    }
-}
-
-/**
- * Storage that is there but refuses.
- *
- * `sessionStorage` exists and throws on access in a sandboxed iframe and
- * in some private-browsing modes, so every read and write is guarded and
- * the token simply lives in memory for that tab instead. Losing the token
- * on reload is a worse experience; failing to start at all is a broken
- * one.
- */
-function memoryStorage(): TokenStorage {
-    const held = new Map<string, string>();
-    return {
-        getItem: key => held.get(key) ?? null,
-        setItem: (key, value) => void held.set(key, value),
-        removeItem: key => void held.delete(key)
-    };
-}
-
-function sessionStorageOrMemory(): TokenStorage {
-    try {
-        /* Reaching for the property is what throws -- that is how a
-           sandboxed iframe refuses. A probe read as well would be
-           belt-and-braces over nothing: every later call is guarded
-           separately, so a storage that starts failing halfway through
-           the tab's life falls back on its own. */
-        return globalThis.sessionStorage;
-    } catch {
-        return memoryStorage();
     }
 }
 

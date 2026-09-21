@@ -107,3 +107,17 @@ export type {EditorialStatus} from './status.js';
 export {PatAuthAdapter, NotAuthenticatedError, TOKEN_KEY} from '../auth/pat.js';
 export type {PatAuthOptions, TokenStorage} from '../auth/pat.js';
 export type {AuthAdapter} from '../auth/types.js';
+
+/* The second adapter: authors sign in instead of pasting a credential.
+ * The flow is a top-level redirect, so it is two calls rather than one --
+ * `authenticate()` leaves the page and `resume()` finishes at the next
+ * boot -- and the shell drives both. The code exchange it posts to is
+ * `exchangeHandler` from the `./proxy` subpath, which runs on a server
+ * because the exchange needs the App's client secret and GitHub's token
+ * endpoint sends no CORS headers.
+ */
+export {
+    GitHubAppAuthAdapter, RedirectingError, SignInError,
+    AUTHORIZE_URL, APP_TOKEN_KEY, APP_FLOW_KEY, EXPIRY_SKEW_MS
+} from '../auth/github-app.js';
+export type {GitHubAppAuthOptions} from '../auth/github-app.js';
