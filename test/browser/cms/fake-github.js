@@ -529,6 +529,26 @@ export function createFakeGitHub(options = {}) {
             return pull;
         },
 
+        /**
+         * Merge a pull request, as a person does on GitHub.
+         *
+         * The base branch moves to the head and the pull request
+         * closes. Closing it and nothing else would be the easier lie:
+         * the review list empties either way, and the entry would
+         * still be missing from the base branch -- so a test could not
+         * tell a merge from an abandoned change, which is the
+         * difference the merge means.
+         *
+         * The head branch is left standing, because GitHub leaves it
+         * standing unless the repository is set to delete it.
+         */
+        mergePull(number) {
+            const pull = pulls.find(candidate => candidate.number === number);
+            refs.set(pull.base.ref, refs.get(pull.head.ref));
+            pull.state = 'closed';
+            return pull;
+        },
+
         /** Add `count` open pull requests, to exercise pagination. */
         addPulls(count) {
             for (let i = 0; i < count; i += 1) {

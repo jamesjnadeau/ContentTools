@@ -219,6 +219,63 @@ $panel-background: #f7f7f7;
     @include type-text($font-size: 11px, $line-height: 16px);
 }
 
+// --- the review list ------------------------------------------------------
+
+// The same shape as the entry list, deliberately: a row is a link, then
+// what is true of it, then what acts on it. An author moving between the
+// two screens is reading the same thing twice, and a second layout for it
+// would be a second thing to learn for no answer either one gives.
+.ct-cms__review-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.ct-cms__review {
+    align-items: baseline;
+    border-bottom: 1px solid $border-color;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 6px 0;
+}
+
+.ct-cms__review-link {
+    color: $edit-action-color;
+    // Not `flex: 1 1 auto` like the entry list's: the spacer after the
+    // badge is what pushes the buttons to the far end here, and a link
+    // that also grows would take the room the spacer needs and leave the
+    // three status buttons floating in the middle of the row.
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+// Which collection the entry is in. Muted, because it is the answer to a
+// question the row raises rather than the one it exists for.
+.ct-cms__review-where {
+    color: $muted-action-color;
+    @include type-text($font-size: 11px, $line-height: 16px);
+}
+
+.ct-cms__review-moves {
+    display: flex;
+    gap: 8px;
+}
+
+// Underlined like the muted buttons they are, until one is the current
+// status -- which is also the one that is disabled, so it would otherwise
+// be greyed and indistinguishable from a move that is in flight.
+.ct-cms__review-move--current:disabled {
+    color: $text-color;
+    font-weight: bold;
+    text-decoration: none;
+}
+
+.ct-cms__review-pull {
+    color: $muted-action-color;
+    @include type-text($font-size: 11px, $line-height: 16px);
+}
+
 // --- the alert region -----------------------------------------------------
 
 // Every failure the shell catches lands here. The rule the cms dist suite

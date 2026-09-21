@@ -8,19 +8,19 @@
  * would move focus back to the top of the document with nothing on screen
  * to explain it.
  *
- * The LABEL is resolved here rather than in `mergeEntries` because it is the
- * only thing on a row that needs the config: a file collection's entries are
- * named by the operator (`label: About`), a folder collection's are named by
- * their filename. Pushing that down into the merge would give a pure
- * function a reason to know about configuration, and `merge.ts` exists
- * precisely because the join is the product decision and nothing else is.
+ * The LABEL is resolved at render time rather than in `mergeEntries`,
+ * because it is the only thing on a row that needs the config. Pushing it
+ * down into the merge would give a pure function a reason to know about
+ * configuration, and `merge.ts` exists precisely because the join is the
+ * product decision and nothing else is. The words themselves live in
+ * `labels.ts` since M5-7, where the review list says them too.
  */
 import {h, list} from '../render.js';
 import {refuseCreate} from './create.js';
+import {entryLabel, statusLabel} from './labels.js';
 import {formatRoute} from '../routes.js';
 import type {ListedEntry} from '../merge.js';
 import type {Collection} from '../../cms/config.js';
-import type {EditorialStatus} from '../../cms/status.js';
 
 export interface EntriesState {
     collection: Collection;
@@ -33,36 +33,6 @@ export interface EntriesState {
 export interface Entries {
     readonly node: HTMLElement;
     update(state: EntriesState): void;
-}
-
-const STATUS_LABELS: Record<EditorialStatus, string> = {
-    'draft': 'Draft',
-    'in-review': 'In review',
-    'ready': 'Ready'
-};
-
-/**
- * What the badge says for an entry with a pull request open.
- *
- * A pull request carrying no `cms/*` label still gets a badge. Somebody
- * removed the label by hand, or opened the pull request themselves; either
- * way the entry IS under review, and a row that says nothing reads as an
- * ordinary published entry -- so the next person to open it is editing
- * against a branch they were never told about.
- */
-function badgeFor(entry: ListedEntry): string {
-    return entry.status ? STATUS_LABELS[entry.status] : 'Open';
-}
-
-/** The name to show: the operator's, when they gave one. */
-function labelFor(collection: Collection, entry: ListedEntry): string {
-    if (collection.kind === 'file') {
-        const file = collection.files.find(f => f.name === entry.slug);
-        if (file) {
-            return file.label;
-        }
-    }
-    return entry.slug;
 }
 
 function row(doc: Document): HTMLElement {
@@ -85,7 +55,7 @@ function row(doc: Document): HTMLElement {
 
 function fill(el: HTMLElement, collection: Collection, entry: ListedEntry): void {
     const link = el.querySelector('.ct-cms__entry-link') as HTMLAnchorElement;
-    link.textContent = labelFor(collection, entry);
+    link.textContent = entryLabel(collection, entry.slug);
     link.setAttribute('href', formatRoute({
         kind: 'entry', collection: entry.collection, slug: entry.slug
     }));
@@ -94,7 +64,7 @@ function fill(el: HTMLElement, collection: Collection, entry: ListedEntry): void
         el.querySelector('.ct-cms__badge') as HTMLElement,
         el.querySelector('.ct-cms__badge--unpublished') as HTMLElement
     ];
-    badge.textContent = entry.pull ? badgeFor(entry) : '';
+    badge.textContent = entry.pull ? statusLabel(entry.status) : '';
     badge.hidden = entry.pull === null;
     /* Separate from the status badge, because they answer different
        questions: "how far along is this change" and "is there a live page

@@ -180,10 +180,15 @@ export default [
 
            212 kB -> 216 kB with the media library: the grid, the tile
            state machine behind its public-URL-first thumbnails, the
-           insert path into the open editor, and their rules. */
+           insert path into the open editor, and their rules.
+
+           216 kB -> 218 kB with the review list: one view, the status
+           moves behind it, and the shared labels the entry list already
+           said. The smallest rise of the milestone, and it should be --
+           the screen is a list of rows that link out. */
         name: 'shell entry + its chunks',
         path: closureOf('dist/shell.js'),
-        limit: '216 kB',
+        limit: '218 kB',
         gzip: true
     },
     {

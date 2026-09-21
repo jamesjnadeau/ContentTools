@@ -144,10 +144,11 @@ test('a token gets past the gate and the collections render', async ({page}) => 
 
     await expect(page.locator('content-tools-cms')).toHaveAttribute('state', 'ready');
     /* The two collections `app/cms-config.yml` declares, and then the
-       media library, which is not one of them -- it is the folder every
-       collection's pictures share, so it is last and it is fixed. */
+       two places that are not collections and are fixed: the media
+       folder every collection's pictures share, and the review list,
+       which spans all of them and so belongs to none. */
     expect(await shell(page).locator('.ct-cms__nav-link').allTextContents())
-        .toEqual(['Blog', 'Pages', 'Media']);
+        .toEqual(['Blog', 'Pages', 'Media', 'In review']);
 
     /* The credential the BROWSER sent, which no injected-transport test
        can see: a client that stores `fetch` unbound, or builds the header
@@ -381,8 +382,11 @@ test('the media folder falls back to an authenticated read, and inserts',
     await shell(page).locator('.ct-cms__gate-form button').click();
     await expect(page.locator('content-tools-cms')).toHaveAttribute('state', 'ready');
 
-    // The library is its own place in the nav, under its own heading.
-    await shell(page).locator('.ct-cms__nav-link').last().click();
+    /* The library is its own place in the nav, under its own heading.
+       Named rather than taken by position: `last()` meant Media until
+       the review list arrived beside it, and a positional selector
+       reads as if nothing changed while clicking somewhere else. */
+    await shell(page).locator('.ct-cms__nav-link', {hasText: 'Media'}).click();
     await expect(shell(page).locator('.ct-cms__media-name')).toHaveText(['cat.png']);
     /* Nothing to insert into from here, and the grid says so rather
        than offering a button that would report success and do nothing. */
@@ -478,4 +482,49 @@ test('the content stylesheet reaches the document', async ({page}) => {
         return content;
     });
     expect(placeholder).toBe('"..."');
+});
+
+test('the review list moves an entry between statuses', async ({page}) => {
+    const errors = [];
+    page.on('pageerror', error => errors.push(`${error.name}: ${error.message}`));
+    const logged = collectConsoleErrors(page);
+
+    const fake = await serveGitHub(page);
+    fake.openPull('blog', 'hello', ['cms/draft']);
+
+    await page.goto(PAGE);
+    await shell(page).locator('.ct-cms__input').fill(TOKEN);
+    await shell(page).locator('.ct-cms__gate-form button').click();
+    await expect(page.locator('content-tools-cms')).toHaveAttribute('state', 'ready');
+
+    await shell(page).locator('.ct-cms__nav-link', {hasText: 'In review'}).click();
+    await expect(shell(page).locator('.ct-cms__review-link')).toHaveText(['hello']);
+    await expect(shell(page).locator('.ct-cms__review-badge')).toHaveText('Draft');
+
+    await shell(page).locator('.ct-cms__review-move', {hasText: 'Ready'}).click();
+    await expect(shell(page).locator('.ct-cms__review-badge')).toHaveText('Ready');
+
+    /* The DELETE that takes the old label off, which no other screen
+       makes: a save only ever ADDS one. The label name carries a slash,
+       so what is asserted is the escaped path the BROWSER sent -- a
+       client that interpolated it raw would address
+       `/labels/cms/draft`, which is a different endpoint and answers
+       404, and `removeLabel` reads a 404 as "already gone" and says
+       nothing. The entry would then carry both labels for ever. */
+    expect(fake.requests.some(([method, path]) =>
+        method === 'DELETE'
+        && path === '/repos/owner/site/issues/1/labels/cms%2Fdraft')).toBe(true);
+
+    /* And the pull request really moved, rather than only the badge:
+       exactly one of ours on it, read from the fake rather than from
+       the screen that just claimed it. */
+    expect(fake.pulls()[0].labels.map(label => label.name)).toEqual(['cms/ready']);
+
+    // The way out. The shell never merges; that is a human decision and
+    // it happens on GitHub.
+    await expect(shell(page).locator('.ct-cms__review-pull'))
+        .toHaveAttribute('href', 'https://github.com/owner/site/pull/1');
+
+    expect(errors).toEqual([]);
+    expect(logged).toEqual([]);
 });

@@ -106,14 +106,18 @@ describe('content-tools-cms', function() {
         expect(shadow.querySelector('.ct-cms__repo').textContent).toBe('owner/site');
 
         const links = [...shadow.querySelectorAll('.ct-cms__nav-link')];
-        // The media folder is last and under its own heading: it is not a
-        // collection, and a row among them would offer a "New entry" link
-        // for a folder that holds no entries.
-        expect(links.map(a => a.textContent)).toEqual(['Blog', 'Pages', 'Media']);
+        /* The media folder and the review list come after the
+           collections, each under its own heading, because neither is
+           one. A media row among them would offer a "New entry" link
+           for a folder that holds no entries; a review row would ask
+           which collection it belongs to, and the answer is all of
+           them. */
+        expect(links.map(a => a.textContent))
+            .toEqual(['Blog', 'Pages', 'Media', 'In review']);
         // Real hrefs, not click handlers: this is what makes a collection
         // linkable, reloadable and reachable from the keyboard.
         expect(links.map(a => a.getAttribute('href')))
-            .toEqual(['#/c/blog', '#/c/pages', '#/media']);
+            .toEqual(['#/c/blog', '#/c/pages', '#/media', '#/review']);
     });
 
     it('refuses an empty token rather than signing in with nothing', async function() {

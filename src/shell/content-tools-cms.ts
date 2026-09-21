@@ -39,7 +39,8 @@ import {
 import type {CmsConfig, Collection, Field, FolderCollection} from '../cms/config.js';
 import {CmsRepo, EntryExistsError} from '../cms/repo.js';
 import {DIRECTORY_LIMIT} from '../cms/github.js';
-import type {Entry, MediaFile} from '../cms/repo.js';
+import type {EditorialStatus} from '../cms/status.js';
+import type {Entry, InFlightEntry, MediaFile} from '../cms/repo.js';
 import {MediaStore, mediaUploader} from '../cms/media.js';
 import {PatAuthAdapter} from '../auth/pat.js';
 import type {AuthAdapter} from '../auth/types.js';
@@ -173,6 +174,18 @@ export class ContentToolsCms extends HTMLElement {
      * element really goes away.
      */
     declare private _thumbnails: Set<string>;
+    /** Everything in flight, for `#/review`. null while it is loading. */
+    declare private _review: InFlightEntry[] | null;
+    /**
+     * Pull request numbers whose status is being written right now.
+     *
+     * A list rather than one number. `_setState` renders synchronously,
+     * so the row that was clicked is disabled before its handler
+     * returns -- but the rows below it are not, and an author moving
+     * three entries to Ready presses three buttons faster than three
+     * round trips answer.
+     */
+    declare private _moving: readonly number[];
     /**
      * The editor element, which is this host's only LIGHT-DOM child.
      *
@@ -256,7 +269,8 @@ export class ContentToolsCms extends HTMLElement {
             create: title => this._create(title),
             showMedia: open => this._showMedia(open),
             thumbnail: item => this._thumbnail(item),
-            insert: (item, size) => this._insert(item, size)
+            insert: (item, size) => this._insert(item, size),
+            moveStatus: (entry, status) => this._moveStatus(entry, status)
         /* A GETTER, not a snapshot. The frame is built here, in the
            constructor, and a host page sets `el.widgets` afterwards --
            it has no element to set it on until this has returned. A
@@ -280,6 +294,8 @@ export class ContentToolsCms extends HTMLElement {
         this._media = null;
         this._mediaOpen = false;
         this._thumbnails = new Set();
+        this._review = null;
+        this._moving = [];
         this._editor = null;
         this._edited = null;
         this._form = null;
@@ -459,7 +475,8 @@ export class ContentToolsCms extends HTMLElement {
                 truncated: this._truncated,
                 entry: this._entryState(),
                 creating: this._creating,
-                media: this._mediaState(config)
+                media: this._mediaState(config),
+                review: {entries: this._review, moving: this._moving}
             });
             this._gateView().update({
                 repo: config.backend.repo,
@@ -486,6 +503,8 @@ export class ContentToolsCms extends HTMLElement {
         deleting?: boolean;
         media?: {files: MediaItem[]; truncated: boolean} | null;
         mediaOpen?: boolean;
+        review?: InFlightEntry[] | null;
+        moving?: readonly number[];
     }): void {
         if ('config' in patch) {
             this._config = patch.config ?? null;
@@ -525,6 +544,12 @@ export class ContentToolsCms extends HTMLElement {
         }
         if ('mediaOpen' in patch) {
             this._mediaOpen = patch.mediaOpen ?? false;
+        }
+        if ('review' in patch) {
+            this._review = patch.review ?? null;
+        }
+        if ('moving' in patch) {
+            this._moving = patch.moving ?? [];
         }
         this._render();
     }
@@ -682,7 +707,8 @@ export class ContentToolsCms extends HTMLElement {
            free after navigating away" -- is satisfied directly. */
         this._closeEntry();
         this._setState({
-            route, error: null, entries: null, truncated: false, creating: false
+            route, error: null, entries: null, truncated: false, creating: false,
+            review: null
         });
         void this._guard(() => this._loadRoute(at));
     }
@@ -715,6 +741,14 @@ export class ContentToolsCms extends HTMLElement {
                 return;
             }
             this._setState({media: this._listing(folder)});
+            return;
+        }
+        if (route.kind === 'review') {
+            const inFlight = await repo.listInFlight();
+            if (at !== this._nav) {
+                return;
+            }
+            this._setState({review: inFlight});
             return;
         }
         if (route.kind !== 'collection' && route.kind !== 'entry') {
@@ -1618,6 +1652,63 @@ export class ContentToolsCms extends HTMLElement {
     private async _dropToken(): Promise<void> {
         await this.auth.logout();
         this._closeEntry();
+    }
+
+    // --- the review list --------------------------------------------------
+
+    /**
+     * Move an entry's pull request to a status.
+     *
+     * The shell NEVER MERGES. `ready` says an entry is finished, not
+     * that it is published: branch protection, required reviews and
+     * CODEOWNERS are the repository's own controls, and a tool that can
+     * write, approve and publish in one session has quietly removed the
+     * review gate this whole workflow exists for.
+     */
+    private _moveStatus(entry: InFlightEntry, status: EditorialStatus): void {
+        /* Not guarded. A row exists only because `_loadRoute` listed it,
+           and that returns early without a repository -- so by the time
+           there is a button to press, there is something behind it. */
+        const repo = this._repo as CmsRepo;
+        const number = entry.pull.number;
+
+        /* Nor is a second press guarded against: `_setState` renders
+           synchronously, so all three of this row's buttons are
+           disabled before this returns. */
+        this._setState({moving: [...this._moving, number], error: null});
+        void this._guard(async () => {
+            try {
+                const pull = await repo.setStatus(entry.pull, status);
+                /* Spliced from what `setStatus` RETURNED, rather than
+                   re-listing. It computes the labels as they now stand,
+                   so a re-fetch is a request that can only tell us what
+                   we already know -- and one that can come back stale,
+                   because GitHub's label writes are not read-your-own.
+
+                   Mapped over the list AS IT NOW STANDS, and with no
+                   navigation token. `?.` rather than a guard, because
+                   a move that answers after the author left has
+                   nothing to update and must not write an empty list
+                   over the null that says "not loaded": `undefined`
+                   reaches `_setState` as the same null it already
+                   holds. And no token, because there is no stale
+                   render to catch -- the row is found by pull request
+                   number, so a list refreshed underneath this takes
+                   the update just as correctly as the one the button
+                   was pressed on. */
+                this._setState({
+                    review: this._review?.map(row =>
+                        row.pull.number === number ? {...row, pull} : row)
+                });
+            } finally {
+                /* Off the list whatever happened. A number left behind
+                   keeps its row's three buttons disabled for as long as
+                   the tab is open -- including after a refresh brings
+                   the same review back -- so a move that failed would
+                   read as a review nobody is allowed to touch. */
+                this._setState({moving: this._moving.filter(n => n !== number)});
+            }
+        });
     }
 
     // --- which screen -----------------------------------------------------

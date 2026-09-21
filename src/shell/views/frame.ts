@@ -21,6 +21,8 @@ import {buildCreate} from './create.js';
 import type {CreateHandlers, CreateView} from './create.js';
 import {buildMedia} from './media.js';
 import type {MediaHandlers, MediaState, MediaView} from './media.js';
+import {buildReview} from './review.js';
+import type {ReviewHandlers, ReviewState, ReviewView} from './review.js';
 import type {WidgetSource} from './fields.js';
 import {formatRoute} from '../routes.js';
 import type {Route} from '../routes.js';
@@ -31,7 +33,8 @@ import type {CmsConfig} from '../../cms/config.js';
 /** Where the editor element is slotted. Its light-DOM home is the host. */
 export const EDITOR_SLOT = 'editor';
 
-export interface FrameHandlers extends EntryHandlers, CreateHandlers, MediaHandlers {
+export interface FrameHandlers
+        extends EntryHandlers, CreateHandlers, MediaHandlers, ReviewHandlers {
     signOut(): void;
 }
 
@@ -49,6 +52,13 @@ export interface FrameState {
     creating: boolean;
     /** The media folder: its own route, and the panel under an open entry. */
     media: MediaState;
+    /** Everything in flight, for `#/review`. */
+    review: {
+        /** null while the listing is in flight -- not the same as nothing. */
+        entries: ReviewState['entries'];
+        /** Pull request numbers whose status is being written right now. */
+        moving: readonly number[];
+    };
 }
 
 /**
@@ -182,7 +192,8 @@ function mainView(
         entries: Entries,
         entry: EntryView,
         create: CreateView,
-        media: MediaView
+        media: MediaView,
+        review: ReviewView
         ): HTMLElement[] {
     switch (state.route.kind) {
     case 'home':
@@ -204,8 +215,39 @@ function mainView(
     case 'media':
         media.update(state.media);
         return [media.node];
+    case 'review':
+        /* Built once and re-shown, like the entry list and for the same
+           reason: a status move updates a row IN PLACE, so a rebuild
+           per render would replace the button under the pointer
+           between the click and the answer. */
+        review.update({
+            config: state.config,
+            entries: state.review.entries,
+            moving: state.review.moving
+        });
+        return [review.node];
     default:
         return placeholder(doc, state);
+    }
+}
+
+/**
+ * Say, on the link, that this is where you are.
+ *
+ * Both marks together, because they serve different readers and only one
+ * of them is visible: the class draws the highlight, and `aria-current`
+ * is the whole of what a screen reader gets -- a class says nothing to
+ * it. Written once rather than per link: the collections, the media
+ * folder and the review list all mark the same way, and three copies of
+ * a two-line rule is three places for one of them to lose the attribute
+ * while the highlight keeps working and nothing looks wrong.
+ */
+function markCurrent(link: HTMLElement, current: boolean): void {
+    link.className = 'ct-cms__nav-link' + (current ? ' ct-cms__nav-link--current' : '');
+    if (current) {
+        link.setAttribute('aria-current', 'page');
+    } else {
+        link.removeAttribute('aria-current');
     }
 }
 
@@ -226,11 +268,20 @@ export function buildFrame(
         class: 'ct-cms__nav-link',
         href: formatRoute({kind: 'media'})
     }, ['Media']);
+    /* Neither is the review list, for the same reason and one more of
+       its own: it spans every collection, so it belongs to none of
+       them. It is last because it is where a change goes after it is
+       written, not where writing starts. */
+    const reviewLink = h(doc, 'a', {
+        class: 'ct-cms__nav-link',
+        href: formatRoute({kind: 'review'})
+    }, ['In review']);
     const view = h(doc, 'div', {class: 'ct-cms__view'});
     const entries = buildEntries(doc);
     const entry = buildEntry(doc, handlers, widgets);
     const create = buildCreate(doc, handlers);
     const media = buildMedia(doc, handlers);
+    const review = buildReview(doc, handlers);
     const alert = alertRegion(doc);
 
     const slot = doc.createElement('slot');
@@ -259,6 +310,10 @@ export function buildFrame(
                 h(doc, 'h2', {class: 'ct-cms__nav-heading'}, ['Library']),
                 h(doc, 'ul', {class: 'ct-cms__nav-list'}, [
                     h(doc, 'li', {}, [mediaLink])
+                ]),
+                h(doc, 'h2', {class: 'ct-cms__nav-heading'}, ['Workflow']),
+                h(doc, 'ul', {class: 'ct-cms__nav-list'}, [
+                    h(doc, 'li', {}, [reviewLink])
                 ])
             ]),
             h(doc, 'main', {class: 'ct-cms__main'}, [alert, view, slot])
@@ -278,18 +333,8 @@ export function buildFrame(
                 ? state.route.collection
                 : null;
 
-            const onMedia = state.route.kind === 'media';
-            mediaLink.className = 'ct-cms__nav-link'
-                + (onMedia ? ' ct-cms__nav-link--current' : '');
-            /* `aria-current` as well as the class, for the same reason
-               the collection links carry it: the highlight is the only
-               thing saying where you are, and a class says nothing to a
-               screen reader. */
-            if (onMedia) {
-                mediaLink.setAttribute('aria-current', 'page');
-            } else {
-                mediaLink.removeAttribute('aria-current');
-            }
+            markCurrent(mediaLink, state.route.kind === 'media');
+            markCurrent(reviewLink, state.route.kind === 'review');
 
             /* Keyed reconciliation rather than a rebuild. The collections
                rarely change, so this is almost always a no-op on the
@@ -305,22 +350,12 @@ export function buildFrame(
                         href: formatRoute({kind: 'collection', collection: collection.name})
                     }, [collection.label])
                 ]),
-                (el, collection) => {
-                    const link = el.firstElementChild as HTMLElement;
-                    link.className = 'ct-cms__nav-link'
-                        + (collection.name === current ? ' ct-cms__nav-link--current' : '');
-                    /* `aria-current` rather than the class alone: the
-                       highlight is the only thing saying where you are,
-                       and a class says nothing to a screen reader. */
-                    if (collection.name === current) {
-                        link.setAttribute('aria-current', 'page');
-                    } else {
-                        link.removeAttribute('aria-current');
-                    }
-                }
+                (el, collection) => markCurrent(
+                    el.firstElementChild as HTMLElement, collection.name === current)
             );
 
-            view.replaceChildren(...mainView(doc, state, entries, entry, create, media));
+            view.replaceChildren(
+                ...mainView(doc, state, entries, entry, create, media, review));
         }
     };
 }
