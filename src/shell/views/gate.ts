@@ -45,6 +45,14 @@ export interface GateState {
     error: Described | null;
     /** The adapter's button, or null for the token form. */
     gate: {label: string; note: string} | null;
+    /**
+     * Markdown a refused save was carrying, or null.
+     *
+     * Shown here rather than on the entry view because there is no entry
+     * view any more: dropping the token closes the editor, and the whole
+     * of what somebody wrote goes with it.
+     */
+    unsaved: string | null;
 }
 
 export interface Gate {
@@ -140,6 +148,30 @@ export function buildGate(doc: Document, handlers: GateHandlers): Gate {
     });
     const app = h(doc, 'div', {class: 'ct-cms__gate-app'}, [appNote, appButton]);
 
+    /* The work a refused save was carrying, in a box the person can
+       select out of. Offering them a sign-in screen without showing them
+       what they wrote is data loss with a button on it -- which is the
+       same sentence the entry view's conflict pane is written under, and
+       the reason this reuses its textarea rule rather than inventing
+       one.
+
+       It says "copy it now" because that is the truth for both shapes of
+       this gate and especially for the App one: signing in there leaves
+       the page entirely, and nothing brings the draft back into an
+       editor on the way home. */
+    const rescueText = h(doc, 'textarea', {
+        class: 'ct-cms__conflict-text',
+        readonly: 'readonly',
+        spellcheck: 'false',
+        'aria-label': 'The markdown that was not saved'
+    }) as HTMLTextAreaElement;
+    const rescue = h(doc, 'div', {class: 'ct-cms__gate-rescue'}, [
+        h(doc, 'p', {class: 'ct-cms__gate-text'},
+          ['This did not save, because the sign-in had expired. Copy it now: '
+           + 'it is kept only until you are signed in again.']),
+        rescueText
+    ]);
+
     const node = h(doc, 'div', {class: 'ct-cms__gate'}, [
         h(doc, 'div', {class: 'ct-cms__gate-panel'}, [
             h(doc, 'h1', {class: 'ct-cms__gate-title'}, ['Sign in']),
@@ -148,6 +180,11 @@ export function buildGate(doc: Document, handlers: GateHandlers): Gate {
                what a refusal says, and one alert cannot be left behind on
                the panel that is hidden. */
             alert,
+            /* Above both panels, like the alert and for the same
+               reason: which shape is showing has nothing to do with
+               whether there is work to rescue, and a panel hidden with
+               the token form would take the draft with it. */
+            rescue,
             pat,
             app
         ])
@@ -158,6 +195,23 @@ export function buildGate(doc: Document, handlers: GateHandlers): Gate {
         update(state: GateState): void {
             repo.textContent = state.repo;
             showAlert(doc, alert, state.error);
+            rescue.hidden = state.unsaved === null;
+            /* Emptied rather than left alone when there is nothing to
+               rescue, so letting go of a draft lets go of it here too:
+               a hidden textarea still holding somebody's post is their
+               writing sitting in the DOM after the shell said it was
+               finished with it.
+
+               Written first as `value !== unsaved` around the
+               assignment, to keep a selection from being dropped
+               mid-copy by an unrelated render. That guard is gone
+               because the reason for it was not measured and is not
+               true: Chromium leaves the selection alone when a
+               textarea is assigned the string it already holds, and
+               moves the caret only when the text actually changes --
+               which is the case that wants the new text anyway. */
+            rescueText.value = state.unsaved ?? '';
+
             pat.hidden = state.gate !== null;
             app.hidden = state.gate === null;
             if (state.gate) {

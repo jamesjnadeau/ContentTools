@@ -341,11 +341,15 @@ $panel-background: #f7f7f7;
     @include type-text($font-size: 12px, $line-height: 16px);
 }
 
-// The two panels that interrupt. Both carry work the person is about to
-// lose, so both are bordered in the warning colour rather than sitting in
-// the page as ordinary content.
+// The panels that interrupt. Each carries work the person is about to
+// lose, so each is bordered in the warning colour rather than sitting in
+// the page as ordinary content. `gate-rescue` is on the gate rather than
+// in the frame, which is why it joins this rule instead of getting one:
+// it is the same panel, shown after the token it would have saved with
+// stopped working.
 .ct-cms__conflict,
 .ct-cms__confirm,
+.ct-cms__gate-rescue,
 .ct-cms__leave {
     border: 1px solid $cancel-action-color;
     display: flex;

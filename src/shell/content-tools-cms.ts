@@ -43,6 +43,8 @@ import type {EditorialStatus} from '../cms/status.js';
 import type {Entry, InFlightEntry, MediaFile} from '../cms/repo.js';
 import {MediaStore, mediaUploader} from '../cms/media.js';
 import {PatAuthAdapter} from '../auth/pat.js';
+import {sessionStorageOrMemory} from '../auth/storage.js';
+import type {TokenStorage} from '../auth/storage.js';
 import {GitHubAppAuthAdapter} from '../auth/github-app.js';
 import type {AuthAdapter} from '../auth/types.js';
 /* The CLASS module, never `../element/index.js`, and never
@@ -108,6 +110,16 @@ export const TAG_NAME = 'content-tools-cms';
 
 /** Attribute naming the config file this deployment is given. */
 const CONFIG_ATTRIBUTE = 'config';
+
+/**
+ * Where a refused save's markdown waits, across a reload or a redirect.
+ *
+ * `sessionStorage`, like the token and for the same reason: this is the
+ * person's unpublished writing, and it should not outlive the tab they
+ * wrote it in and sit in a shared origin on a machine somebody else uses
+ * next.
+ */
+export const RESCUE_KEY = 'content-tools:unsaved';
 
 /**
  * The one region an entry has, and the key its HTML arrives under.
@@ -244,6 +256,18 @@ export class ContentToolsCms extends HTMLElement {
     declare private _offered: string | null;
 
     /**
+     * Markdown a refused save was carrying, shown on the gate.
+     *
+     * Kept in `sessionStorage` as well as here, because the App adapter
+     * signs somebody in by LEAVING the page -- a field would not be
+     * there when the browser came back, and the moment a token expires
+     * mid-save is exactly the moment somebody has something to lose.
+     */
+    declare private _unsaved: string | null;
+    /** Where that draft is kept, with the same fallback a token gets. */
+    declare private _drafts: TokenStorage;
+
+    /**
      * The adapter a host page assigned, which always wins.
      *
      * Two fields rather than one plus a flag, so the precedence is stated
@@ -317,6 +341,8 @@ export class ContentToolsCms extends HTMLElement {
         this._nav = 0;
         this._booted = false;
         this._offered = null;
+        this._unsaved = null;
+        this._drafts = sessionStorageOrMemory();
         this._authGiven = null;
         this._authFromConfig = null;
         this._widgets = null;
@@ -505,7 +531,8 @@ export class ContentToolsCms extends HTMLElement {
                    at any moment, and a gate holding the shape the
                    previous adapter asked for is a password field wired
                    to something that ignores it. */
-                gate: this.auth.gate ?? null
+                gate: this.auth.gate ?? null,
+                unsaved: this._unsaved
             });
         } else {
             this._statusView().update({error: this._error});
@@ -603,6 +630,31 @@ export class ContentToolsCms extends HTMLElement {
                this, because there the token must go whether the answer
                was a 401, a 404 or a 200 whose body says read-only. */
             if (described.kind === 'unauthorized') {
+                /* BEFORE the drop, and this order is the whole point of
+                   the rescue: `_dropToken` closes the entry, and the
+                   editor -- with everything written into it -- goes with
+                   it. The realistic lapse is not "expires while typing",
+                   it is "writes a post, presses Submit, and the save
+                   401s", so the save path is exactly where the token
+                   dies and exactly where there is most to lose.
+
+                   Not guarded against a throw from `_pending`: the only
+                   way here with an entry open is a request that a save
+                   or a leave check already built the same answer for.
+
+                   Only when there IS something to capture. Passing a
+                   null straight through would CLEAR the draft, and a
+                   401 with no entry open is the commonest way back to
+                   the gate there is -- a resume that did not finish, or
+                   a listing refused a moment after the token went. The
+                   author would land on the gate their post was waiting
+                   on and find it empty, which is the data loss this
+                   whole sub-phase exists to stop, arriving by the one
+                   door nobody watches. */
+                const pending = this._pending()?.content ?? null;
+                if (pending !== null) {
+                    this._rescue(pending);
+                }
                 await this._dropToken();
             }
             this._setState({error: described});
@@ -1598,8 +1650,26 @@ export class ContentToolsCms extends HTMLElement {
 
            `?.()` because an adapter whose whole flow happens in the page
            declares no `resume` -- the PAT one does not, and calling it
-           unconditionally would throw on every deployment that uses it. */
+           unconditionally would throw on every deployment that uses it.
+
+           The draft is picked back up BEFORE it, not after, because the
+           boot the storage exists for is the one where the resume does
+           NOT finish -- a `state` that does not match, a bookmarked
+           callback URL, a proxy that is not deployed. That throws
+           straight out of here into `_guard`, so a recall below it
+           would be skipped on exactly the boot that needs it, and the
+           author would be back at the gate they left from with their
+           post gone. */
+        this._unsaved = this._recall();
         await this.auth.resume?.();
+
+        /* Signing in is what ends the draft, and a resume IS a sign-in:
+           an author who comes back holding a token has passed the screen
+           the draft lives on, so leaving it in storage would mean a gate
+           hours from now offering them something they cannot place. */
+        if (this.auth.currentToken()) {
+            this._rescue(null);
+        }
 
         /* Re-read the address bar rather than navigating to the route
            parsed at connect. A resume puts the author back on the route
@@ -1679,6 +1749,12 @@ export class ContentToolsCms extends HTMLElement {
                 this._setState({error: refused});
                 return;
             }
+            /* Past the gate, so the rescue is over. A draft that
+               outlived the screen it is shown on is a draft nobody can
+               reach, taking up the storage the next one needs -- and
+               reappearing, hours later, on a gate that has nothing to do
+               with it. */
+            this._rescue(null);
             /* Not `_setState({error: null})`: getting past the gate is
                the first moment the shell may fetch, so the current route
                has never been loaded. */
@@ -1733,6 +1809,38 @@ export class ContentToolsCms extends HTMLElement {
     private async _dropToken(): Promise<void> {
         await this.auth.logout();
         this._closeEntry();
+    }
+
+    /**
+     * Hold a refused save's markdown, or let go of it.
+     *
+     * No `_setState`: every caller is already on its way to one, and a
+     * render from in here would paint the gate before the token it is
+     * about to drop has gone.
+     */
+    private _rescue(content: string | null): void {
+        this._unsaved = content;
+        try {
+            if (content === null) {
+                this._drafts.removeItem(RESCUE_KEY);
+            } else {
+                this._drafts.setItem(RESCUE_KEY, content);
+            }
+        } catch {
+            /* Storage full, or a tab put in a state that forbids it.
+               The field above still has the draft, so the gate still
+               shows it -- what is lost is surviving the redirect, which
+               is worth strictly less than the screen it is on. */
+        }
+    }
+
+    /** The draft a previous page left behind, if there is one. */
+    private _recall(): string | null {
+        try {
+            return this._drafts.getItem(RESCUE_KEY);
+        } catch {
+            return null;
+        }
     }
 
     // --- the review list --------------------------------------------------
