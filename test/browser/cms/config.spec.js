@@ -142,6 +142,80 @@ describe('parseConfig', function() {
         });
     });
 
+    describe('how authors sign in', function() {
+
+        /* `backend.auth` is what a deployment uses to say its authors
+           press a button instead of pasting a credential. It is optional
+           and defaults to the adapter that needs no infrastructure, so
+           every config written before it existed keeps parsing. */
+
+        it.each([
+            ['omitted', {repo: 'owner/site'}],
+            ['null', {repo: 'owner/site', auth: null}],
+            ['an empty block', {repo: 'owner/site', auth: {}}],
+            ['said outright', {repo: 'owner/site', auth: {kind: 'pat'}}]
+        ])('is the token form with auth %s', function(_name, backend) {
+            return expect(parseConfig(minimal({backend})).backend.auth)
+                .toEqual({kind: 'pat'});
+        });
+
+        it('keeps an app block whole', function() {
+            const config = parseConfig(minimal({backend: {
+                repo: 'owner/site',
+                auth: {
+                    kind: 'github-app',
+                    clientId: 'Iv1.abcdef',
+                    proxy: 'https://cms-auth.example.workers.dev'
+                }
+            }}));
+
+            return expect(config.backend.auth).toEqual({
+                kind: 'github-app',
+                clientId: 'Iv1.abcdef',
+                proxy: 'https://cms-auth.example.workers.dev'
+            });
+        });
+
+        it('names a missing client id', function() {
+            /* Half an app block is a redirect this deployment could make
+               and an exchange it could never finish. Both halves are
+               named at parse time rather than as an authorize URL
+               carrying `client_id=undefined`. */
+            const error = errorFrom(minimal({backend: {
+                repo: 'owner/site',
+                auth: {kind: 'github-app', proxy: 'https://auth.example.com'}
+            }}));
+            return expect(error.path).toBe('backend.auth.clientId');
+        });
+
+        it('names a missing proxy', function() {
+            const error = errorFrom(minimal({backend: {
+                repo: 'owner/site',
+                auth: {kind: 'github-app', clientId: 'Iv1.abcdef'}
+            }}));
+            return expect(error.path).toBe('backend.auth.proxy');
+        });
+
+        it.each(['github_app', 'app', 'oauth', 'GitHub-App'])(
+            'refuses %s as a kind', function(kind) {
+            /* The spelling, rather than a shell that silently keeps
+               asking for a personal access token the operator has just
+               told their authors they will not need. */
+            const error = errorFrom(minimal({backend: {
+                repo: 'owner/site', auth: {kind}
+            }}));
+            expect(error.path).toBe('backend.auth.kind');
+            return expect(error.message).toContain(kind);
+        });
+
+        it('refuses a block that is not an object', function() {
+            const error = errorFrom(minimal({backend: {
+                repo: 'owner/site', auth: 'github-app'
+            }}));
+            return expect(error.path).toBe('backend.auth');
+        });
+    });
+
     describe('reporting where a config is wrong', function() {
 
         it('names a missing repo', function() {

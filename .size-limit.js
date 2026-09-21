@@ -209,10 +209,18 @@ export default [
            216 kB -> 218 kB with the review list: one view, the status
            moves behind it, and the shared labels the entry list already
            said. The smallest rise of the milestone, and it should be --
-           the screen is a list of rows that link out. */
+           the screen is a list of rows that link out.
+
+           218 kB -> 220 kB with the GitHub App adapter reaching the
+           shell: the second gate panel, `backend.auth`, the boot resume,
+           and the adapter itself, which is in here as SOURCE rather than
+           through `dist/cms.js` and so is counted twice across the
+           package. A deployment that stays on personal access tokens
+           pays for it and cannot not -- the config decides which adapter
+           is built, and a config is read at runtime. */
         name: 'shell entry + its chunks',
         path: closureOf('dist/shell.js'),
-        limit: '218 kB',
+        limit: '220 kB',
         gzip: true
     },
     {

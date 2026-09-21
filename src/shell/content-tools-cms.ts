@@ -43,6 +43,7 @@ import type {EditorialStatus} from '../cms/status.js';
 import type {Entry, InFlightEntry, MediaFile} from '../cms/repo.js';
 import {MediaStore, mediaUploader} from '../cms/media.js';
 import {PatAuthAdapter} from '../auth/pat.js';
+import {GitHubAppAuthAdapter} from '../auth/github-app.js';
 import type {AuthAdapter} from '../auth/types.js';
 /* The CLASS module, never `../element/index.js`, and never
    `../markdown/index.js`. Both of those are build ENTRIES of the same Vite
@@ -242,7 +243,16 @@ export class ContentToolsCms extends HTMLElement {
     /** The token the gate collected, read once by the default adapter. */
     declare private _offered: string | null;
 
-    declare private _auth: AuthAdapter | null;
+    /**
+     * The adapter a host page assigned, which always wins.
+     *
+     * Two fields rather than one plus a flag, so the precedence is stated
+     * once -- in the getter -- instead of as an `if` somewhere else that
+     * has to stay in step with it.
+     */
+    declare private _authGiven: AuthAdapter | null;
+    /** The adapter the config asked for, or the lazy default. */
+    declare private _authFromConfig: AuthAdapter | null;
     declare private _widgets: Readonly<Record<string, WidgetFactory>> | null;
     declare private _fetch: typeof globalThis.fetch | null;
 
@@ -307,7 +317,8 @@ export class ContentToolsCms extends HTMLElement {
         this._nav = 0;
         this._booted = false;
         this._offered = null;
-        this._auth = null;
+        this._authGiven = null;
+        this._authFromConfig = null;
         this._widgets = null;
         this._fetch = null;
 
@@ -330,14 +341,23 @@ export class ContentToolsCms extends HTMLElement {
      * can go stale.
      */
     get auth(): AuthAdapter {
-        if (!this._auth) {
-            this._auth = new PatAuthAdapter({prompt: () => this._offered});
+        if (this._authGiven) {
+            return this._authGiven;
         }
-        return this._auth;
+        if (!this._authFromConfig) {
+            /* The default, and lazily, because the config that would say
+               otherwise has not loaded yet. `_loadConfig` overwrites this
+               rather than leaving it: something reading `auth` before the
+               config lands would otherwise pin the PAT adapter for the
+               life of the page, and `auth:` in the config would silently
+               do nothing. */
+            this._authFromConfig = new PatAuthAdapter({prompt: () => this._offered});
+        }
+        return this._authFromConfig;
     }
 
     set auth(adapter: AuthAdapter) {
-        this._auth = adapter;
+        this._authGiven = adapter;
         this._render();
     }
 
@@ -480,7 +500,12 @@ export class ContentToolsCms extends HTMLElement {
             });
             this._gateView().update({
                 repo: config.backend.repo,
-                error: shownOn('signed-out')
+                error: shownOn('signed-out'),
+                /* Read every render, never cached: `el.auth` is settable
+                   at any moment, and a gate holding the shape the
+                   previous adapter asked for is a password field wired
+                   to something that ignores it. */
+                gate: this.auth.gate ?? null
             });
         } else {
             this._statusView().update({error: this._error});
@@ -1555,15 +1580,71 @@ export class ContentToolsCms extends HTMLElement {
                 return http(input, init);
             }
         });
+        /* Explicitly, and before the state lands: `_render` reads
+           `this.auth` to decide which shape the gate takes, and the
+           memoising getter would hand it a PAT adapter one tick before
+           the config said otherwise -- a password field that flickers
+           into a button. A host page's own adapter still wins; that rule
+           lives in the getter. */
+        this._authFromConfig = this._adapterFor(config);
         this._setState({config, error: null});
-        /* The route was parsed at connect, before there was a config to
-           resolve it against. This is the first navigation to it, and
-           `_loadRoute` declines while there is no token -- so a signed-out
+
+        /* Finish a flow this page was redirected back from, BETWEEN the
+           two. Before `_setState` a failure would leave `_config` null,
+           so the screen would be `unconfigured` and the status view would
+           call a sign-in problem a misconfigured deployment. After
+           `_navigate`, the first route would load with no token, so a
+           returning author gets a gate flash and a wasted round trip.
+
+           `?.()` because an adapter whose whole flow happens in the page
+           declares no `resume` -- the PAT one does not, and calling it
+           unconditionally would throw on every deployment that uses it. */
+        await this.auth.resume?.();
+
+        /* Re-read the address bar rather than navigating to the route
+           parsed at connect. A resume puts the author back on the route
+           they left from, and it does that with `replaceState`, which
+           fires no `hashchange` -- so `_route` still holds the callback
+           URL's empty hash and the author would land on the dashboard.
+           On every other boot the two are the same string.
+
+           `_loadRoute` declines while there is no token, so a signed-out
            boot stops at the gate and `_signIn` navigates again. */
-        this._navigate(this._route);
+        this._navigate(parseRoute(this._hash()));
     }
 
-    private _signIn(offered: string): void {
+    /**
+     * The adapter this deployment's config asks for.
+     *
+     * `fetch` is late-bound and called unbound, for the same two reasons
+     * `CmsRepo` gets it that way: a host page may set the property at any
+     * point, and `this.fetch(...)` would hand the browser this element as
+     * fetch's receiver, which the native `fetch` refuses with "Illegal
+     * invocation".
+     *
+     * That second half survives mutation at source level and is meant
+     * to: every spec here assigns `el.fetch`, and an assigned function
+     * does not care what it is called on. The page that does NOT assign
+     * one is `app/index.html`, so the line is killed by the round trip
+     * in `shell-dist.spec.mjs` -- which is where the identical bug in
+     * the M3 client was found, and the reason that suite exists.
+     */
+    private _adapterFor(config: CmsConfig): AuthAdapter {
+        const auth = config.backend.auth;
+        if (auth.kind !== 'github-app') {
+            return new PatAuthAdapter({prompt: () => this._offered});
+        }
+        return new GitHubAppAuthAdapter({
+            clientId: auth.clientId,
+            proxy: auth.proxy,
+            fetch: (input, init) => {
+                const http = this.fetch;
+                return http(input, init);
+            }
+        });
+    }
+
+    private _signIn(offered: string | null): void {
         void this._guard(async () => {
             this._offered = offered;
             try {

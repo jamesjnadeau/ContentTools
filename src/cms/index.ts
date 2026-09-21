@@ -45,6 +45,7 @@ export type {
     CmsConfig,
     CmsConfigInput,
     BackendConfig,
+    BackendAuthConfig,
     MediaConfig,
     Collection,
     FolderCollection,

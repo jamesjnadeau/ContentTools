@@ -27,6 +27,24 @@ export class ConfigError extends Error {
     }
 }
 
+/**
+ * How this deployment's authors get a token.
+ *
+ * A union rather than one shape with optional fields, so `clientId` and
+ * `proxy` cannot be half-given: a `github-app` block missing either is a
+ * `ConfigError` at parse time, not a redirect to an authorize URL with
+ * `client_id=undefined` that GitHub answers with its own error page.
+ */
+export type BackendAuthConfig =
+    | {readonly kind: 'pat'}
+    | {
+        readonly kind: 'github-app';
+        /** The App's client id. Public; the secret lives in the proxy. */
+        readonly clientId: string;
+        /** The hosted code exchange -- see the `./proxy` subpath. */
+        readonly proxy: string;
+    };
+
 export interface BackendConfig {
     /** `owner/name`. */
     readonly repo: string;
@@ -34,6 +52,8 @@ export interface BackendConfig {
     readonly branch: string;
     /** REST API root, without a trailing slash. */
     readonly apiBase: string;
+    /** Defaults to the PAT adapter, which needs no infrastructure. */
+    readonly auth: BackendAuthConfig;
 }
 
 export interface MediaConfig {
@@ -179,6 +199,37 @@ export const SLUG_TOKENS: readonly string[] = Object.freeze(
 const SLUG_TOKEN = /\{\{([^{}]*)\}\}/g;
 
 // --- reading untyped input ------------------------------------------------
+
+/**
+ * `backend.auth`, defaulting to the adapter that needs no infrastructure.
+ *
+ * Absent means `pat`, because that is the deployment shape that works on a
+ * static host with nothing else running -- and because every config
+ * written before this key existed means exactly that.
+ */
+function parseAuth(value: unknown): BackendAuthConfig {
+    if (value === undefined || value === null) {
+        return Object.freeze({kind: 'pat' as const});
+    }
+    const auth = object(value, 'backend.auth');
+    const kind = optionalStr(auth.kind, 'backend.auth.kind', 'pat');
+    if (kind === 'pat') {
+        return Object.freeze({kind: 'pat' as const});
+    }
+    /* Named rather than left to fail later. An operator who wrote
+       `github_app` or `app` gets the spelling here, not a shell that
+       silently keeps asking for a personal access token they were told
+       they would not need. */
+    if (kind !== 'github-app') {
+        throw new ConfigError('backend.auth.kind',
+            `expected "pat" or "github-app", got "${kind}"`);
+    }
+    return Object.freeze({
+        kind: 'github-app' as const,
+        clientId: str(auth.clientId, 'backend.auth.clientId'),
+        proxy: str(auth.proxy, 'backend.auth.proxy')
+    });
+}
 
 function object(value: unknown, path: string): Record<string, unknown> {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -430,7 +481,8 @@ export function parseConfig(input: CmsConfigInput): CmsConfig {
             repo,
             branch: optionalStr(backend.branch, 'backend.branch', DEFAULT_BRANCH),
             apiBase: optionalStr(backend.apiBase, 'backend.apiBase', DEFAULT_API_BASE)
-                .replace(/\/+$/, '')
+                .replace(/\/+$/, ''),
+            auth: parseAuth(backend.auth)
         }),
         media: Object.freeze({
             folder: trimSlashes(str(media.folder, 'media.folder')),

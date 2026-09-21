@@ -131,6 +131,20 @@ export async function signIn(el, token = 'github_pat_test') {
 }
 
 /**
+ * Press the gate's button, as a person does with an App adapter.
+ *
+ * A sibling of `signIn` rather than a branch inside it: `signIn` is what
+ * every other spec here uses, and the whole claim of this milestone is
+ * that the PAT path did not change. An edit to that function is the
+ * alarm.
+ */
+export async function signInWithApp(el) {
+    el.shadowRoot.querySelector('.ct-cms__gate-app-button').click();
+    await until(() => el.getAttribute('state') !== 'signed-out',
+                'the shell to leave the gate');
+}
+
+/**
  * Mount at a route, sign in, and wait for whatever that route loads.
  *
  * The hash is set BEFORE the element is connected, because that is the

@@ -116,6 +116,21 @@ export class GitHubAppAuthAdapter implements AuthAdapter {
     private readonly options: GitHubAppAuthOptions;
     private storage: TokenStorage;
 
+    /**
+     * What the gate shows instead of a token field.
+     *
+     * The eight hours is said out loud because it is the one thing about
+     * this flow a person has to plan around: there is no mid-session
+     * re-authentication, so when it lapses the page goes to GitHub and
+     * back, and anything unsaved at that moment is rescued separately.
+     */
+    readonly gate = {
+        label: 'Sign in with GitHub',
+        note: 'You will be taken to GitHub to authorise this site, and brought '
+            + 'back here. A session lasts about eight hours; after that, sign '
+            + 'in again.'
+    };
+
     constructor(options: GitHubAppAuthOptions) {
         this.options = options;
         this.storage = options.storage ?? sessionStorageOrMemory();
