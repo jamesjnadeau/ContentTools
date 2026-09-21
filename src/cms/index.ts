@@ -85,8 +85,11 @@ export type {
 /* Media, and where an entry is in review. `safeFilename` is public because
  * a shell that shows the name an upload will get has to agree with the
  * store about it, and re-deriving that rule is how the two come to differ.
+ * `imageType` is public for the same reason one level along: a media
+ * library deciding what it can preview and what it can insert must agree
+ * with the uploader about what an image is.
  */
-export {MediaStore, mediaUploader, safeFilename} from './media.js';
+export {MediaStore, mediaUploader, safeFilename, imageType} from './media.js';
 export type {
     ImageDialogLike, MediaStoreOptions, MediaUploaderOptions, StagedMedia
 } from './media.js';

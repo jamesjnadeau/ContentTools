@@ -82,6 +82,49 @@ export function safeFilename(filename: string): string {
     return suffix ? `${safe}.${suffix}` : safe;
 }
 
+/**
+ * The content type an extension names, or null for anything else.
+ *
+ * A whitelist rather than a sniff, and it decides two things at once: what
+ * the media library can show a thumbnail for, and what it will let
+ * somebody insert into an entry. Both answers have to be the same one --
+ * a tile that renders a preview and then inserts a broken `<img>`, or a
+ * tile that refuses to insert a picture it is visibly showing, are two
+ * different ways of looking wrong.
+ *
+ * The type matters because a `Blob` built from an authenticated read is
+ * what the fallback thumbnail renders, and an `<img>` sniffs a raster
+ * format out of the bytes but will NOT do that for an SVG -- it is XML,
+ * and without `image/svg+xml` on the Blob the element fires `error` and
+ * says nothing anywhere. Measured, not assumed. Guessing the type from
+ * the bytes would be more accurate and is not worth a decoder: the
+ * repository is the one place a filename can be trusted, because
+ * `safeFilename` wrote it.
+ */
+const IMAGE_TYPES: Readonly<Record<string, string>> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    avif: 'image/avif',
+    /* Safe in an `<img>`, which is the only place the shell puts it:
+       script and external references inside an SVG are inert there, in
+       every engine. It would NOT be safe inlined into the page, and
+       nothing does that. */
+    svg: 'image/svg+xml'
+};
+
+export function imageType(filename: string): string | null {
+    const at = filename.lastIndexOf('.');
+    /* `at > 0`, so a dotfile is not read as an extension: `.png` is the
+       whole name of a hidden file, not a picture called nothing. */
+    if (at <= 0) {
+        return null;
+    }
+    return IMAGE_TYPES[filename.slice(at + 1).toLowerCase()] ?? null;
+}
+
 export class MediaStore {
 
     private readonly config: CmsConfig;

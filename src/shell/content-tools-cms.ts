@@ -38,6 +38,7 @@ import {
 } from '../cms/config.js';
 import type {CmsConfig, Collection, Field, FolderCollection} from '../cms/config.js';
 import {CmsRepo, EntryExistsError} from '../cms/repo.js';
+import {DIRECTORY_LIMIT} from '../cms/github.js';
 import type {Entry, MediaFile} from '../cms/repo.js';
 import {MediaStore, mediaUploader} from '../cms/media.js';
 import {PatAuthAdapter} from '../auth/pat.js';
@@ -65,6 +66,9 @@ import {formatRoute, HOME, parseRoute} from './routes.js';
 import type {Route} from './routes.js';
 import {shellStyleSheet} from './styles.js';
 import {buildFrame, EDITOR_SLOT} from './views/frame.js';
+import {mediaItem} from './views/media.js';
+import type {MediaItem, MediaState} from './views/media.js';
+import {insertImage} from './insert.js';
 import type {Frame} from './views/frame.js';
 import {buildGate} from './views/gate.js';
 import type {Gate} from './views/gate.js';
@@ -115,6 +119,15 @@ const REGION = 'body';
 /** The markup the editor is handed, around the body it is editing. */
 const EDITOR_REGIONS = '[data-editable]';
 
+/**
+ * One page of the media folder, as the API returns it.
+ *
+ * Named because two routes read it and both have to read the same
+ * thing: the raw records, including the directories, because that is
+ * what the truncation count has to be measured on.
+ */
+type Listing = readonly {name: string; path: string; type: string; sha: string}[];
+
 export class ContentToolsCms extends HTMLElement {
 
     /* Plain assignments in the constructor, not class fields:
@@ -138,6 +151,28 @@ export class ContentToolsCms extends HTMLElement {
     declare private _entry: Entry | null;
     declare private _doc: MarkdownDocument | null;
     declare private _store: MediaStore | null;
+    /**
+     * The media folder, for the `#/media` route and the entry panel.
+     *
+     * The files and whether the listing was cut short are ONE field, not
+     * two: they are set together and cleared together, and two fields
+     * that must agree are two fields that can stop agreeing -- a stale
+     * `truncated` left over a fresh listing says the folder is bigger
+     * than it is, and nothing on screen contradicts it.
+     */
+    declare private _media: {files: MediaItem[]; truncated: boolean} | null;
+    declare private _mediaOpen: boolean;
+    /**
+     * Object URLs handed to thumbnails whose public URL did not answer.
+     *
+     * Held rather than revoked as soon as each one loads, which is the
+     * usual idiom: the tiles are keyed by filename and kept across route
+     * changes, so a grid revisited would otherwise show every fallback
+     * thumbnail broken -- and re-fetching them is a rate-limited
+     * authenticated request per file. Released in one go when this
+     * element really goes away.
+     */
+    declare private _thumbnails: Set<string>;
     /**
      * The editor element, which is this host's only LIGHT-DOM child.
      *
@@ -218,7 +253,10 @@ export class ContentToolsCms extends HTMLElement {
             discard: () => this._discard(),
             askDelete: asking => this._askDelete(asking),
             confirmDelete: () => this._delete(),
-            create: title => this._create(title)
+            create: title => this._create(title),
+            showMedia: open => this._showMedia(open),
+            thumbnail: item => this._thumbnail(item),
+            insert: (item, size) => this._insert(item, size)
         /* A GETTER, not a snapshot. The frame is built here, in the
            constructor, and a host page sets `el.widgets` afterwards --
            it has no element to set it on until this has returned. A
@@ -239,6 +277,9 @@ export class ContentToolsCms extends HTMLElement {
         this._entry = null;
         this._doc = null;
         this._store = null;
+        this._media = null;
+        this._mediaOpen = false;
+        this._thumbnails = new Set();
         this._editor = null;
         this._edited = null;
         this._form = null;
@@ -364,6 +405,26 @@ export class ContentToolsCms extends HTMLElement {
            reparented the shell, while the editor's own teardown is
            already written to survive exactly that (deferred a microtask,
            re-checking `isConnected`). */
+
+        /* The thumbnails ARE released, and for the same reason they are
+           released a microtask late and behind an `isConnected` check: a
+           move fires this synchronously before the reconnect, and a
+           revoked object URL is not an error anywhere -- it is a grid of
+           broken pictures after a reparent, with the tiles kept by key
+           so nothing re-fetches them. */
+        void Promise.resolve().then(() => {
+            if (!this.isConnected) {
+                this._releaseThumbnails();
+            }
+        });
+    }
+
+    /** Give back every object URL this element handed to a thumbnail. */
+    private _releaseThumbnails(): void {
+        for (const url of this._thumbnails) {
+            URL.revokeObjectURL(url);
+        }
+        this._thumbnails.clear();
     }
 
     // --- state ------------------------------------------------------------
@@ -397,7 +458,8 @@ export class ContentToolsCms extends HTMLElement {
                 entries: this._entries,
                 truncated: this._truncated,
                 entry: this._entryState(),
-                creating: this._creating
+                creating: this._creating,
+                media: this._mediaState(config)
             });
             this._gateView().update({
                 repo: config.backend.repo,
@@ -422,6 +484,8 @@ export class ContentToolsCms extends HTMLElement {
         conflict?: string | null;
         creating?: boolean;
         deleting?: boolean;
+        media?: {files: MediaItem[]; truncated: boolean} | null;
+        mediaOpen?: boolean;
     }): void {
         if ('config' in patch) {
             this._config = patch.config ?? null;
@@ -455,6 +519,12 @@ export class ContentToolsCms extends HTMLElement {
         }
         if ('deleting' in patch) {
             this._deleting = patch.deleting ?? false;
+        }
+        if ('media' in patch) {
+            this._media = patch.media ?? null;
+        }
+        if ('mediaOpen' in patch) {
+            this._mediaOpen = patch.mediaOpen ?? false;
         }
         this._render();
     }
@@ -638,6 +708,15 @@ export class ContentToolsCms extends HTMLElement {
         if (!repo || !this.auth.currentToken()) {
             return;
         }
+        if (route.kind === 'media') {
+            const folder = await repo.github.listDirectory(
+                (this._config as CmsConfig).media.folder, repo.base);
+            if (at !== this._nav) {
+                return;
+            }
+            this._setState({media: this._listing(folder)});
+            return;
+        }
         if (route.kind !== 'collection' && route.kind !== 'entry') {
             return;
         }
@@ -691,8 +770,7 @@ export class ContentToolsCms extends HTMLElement {
             return;
         }
 
-        this._mount(entry, MarkdownDocument.parse(entry.content ?? ''),
-                    folder.map(file => file.name));
+        this._mount(entry, MarkdownDocument.parse(entry.content ?? ''), folder);
     }
 
     /**
@@ -706,10 +784,20 @@ export class ContentToolsCms extends HTMLElement {
      * created entry becomes a second set of rules nobody exercises until
      * somebody writes one.
      */
-    private _mount(entry: Entry, doc: MarkdownDocument, taken: string[]): void {
+    private _mount(entry: Entry, doc: MarkdownDocument, folder: Listing): void {
         const config = this._config as CmsConfig;
         this._doc = doc;
-        this._store = new MediaStore({config, taken});
+        /* ONE listing, two uses, derived here rather than by each
+           caller: the names an upload is staged against and the files
+           the media panel offers have to be the same set. Reading it
+           twice is two answers that can differ -- and a create route
+           that listed for the store and not for the panel is exactly
+           the bug this shape prevents, found by the test that opens the
+           panel over an entry that does not exist yet. */
+        this._media = this._listing(folder);
+        this._store = new MediaStore({
+            config, taken: folder.map(file => file.name)
+        });
         this._openForm(doc, entry.collection, entry.slug);
 
         const editor = this._buildEditor(doc, this._store);
@@ -766,7 +854,7 @@ export class ContentToolsCms extends HTMLElement {
 
         void this._guard(async () => {
             let entry: Entry;
-            let folder: {name: string}[];
+            let folder: Listing;
             try {
                 /* `readEntry` answers both halves of the collision in one
                    round trip -- is the file on the base branch, is a pull
@@ -791,8 +879,7 @@ export class ContentToolsCms extends HTMLElement {
             if (entry.content !== null || entry.pull) {
                 throw new EntryExistsError(route.collection, slug, entry.path);
             }
-            this._mount(entry, this._blankDocument(fieldsFor(collection, slug)),
-                        folder.map(file => file.name));
+            this._mount(entry, this._blankDocument(fieldsFor(collection, slug)), folder);
         });
     }
 
@@ -1001,6 +1088,10 @@ export class ContentToolsCms extends HTMLElement {
            screen -- and the person who presses it is answering a
            question about a file they have closed. */
         this._deleting = false;
+        /* The panel belongs to the entry it was opened over. Left open,
+           the next entry arrives with a grid of Insert buttons already
+           on screen, wired to an entry nobody has read yet. */
+        this._mediaOpen = false;
         this._saving = false;
         this._saved = null;
         this._conflict = null;
@@ -1024,7 +1115,115 @@ export class ContentToolsCms extends HTMLElement {
                answer that can disagree with the one the list used to
                decide whether to offer a New entry link. */
             deletable: collection?.kind === 'folder' && collection.delete,
-            deleting: this._deleting
+            deleting: this._deleting,
+            mediaOpen: this._mediaOpen
+        };
+    }
+
+    /**
+     * A directory listing as tiles, and whether it was cut short.
+     *
+     * `truncated` is measured on the RAW listing, one line from where the
+     * request was made and before the directory filter below -- the same
+     * rule and the same reason as `CmsRepo.listEntries`: a folder of a
+     * thousand files holding a couple of subdirectories comes back under
+     * the cap once filtered, so counting survivors reports a capped
+     * listing as a complete one.
+     */
+    private _listing(folder: Listing): {files: MediaItem[]; truncated: boolean} {
+        const config = this._config as CmsConfig;
+        return {
+            /* Directories are not files. Without this a `thumbs/` folder
+               beside the images becomes a tile with a broken preview and
+               an Insert button that writes an `<img>` pointing at a
+               directory. */
+            files: folder
+                .filter(file => file.type === 'file')
+                .map(file => mediaItem(config, file)),
+            truncated: folder.length >= DIRECTORY_LIMIT
+        };
+    }
+
+    /** Open or close the media panel under the entry. */
+    private _showMedia(open: boolean): void {
+        this._setState({mediaOpen: open});
+    }
+
+    /**
+     * The bytes of a file whose public URL did not answer.
+     *
+     * Failure is SILENT here, deliberately, and it is the one place in
+     * the shell where that is right: one unreadable thumbnail is not a
+     * reason to put a page-wide alert over somebody's work, and the tile
+     * already says the file could not be read. Nothing is logged either
+     * -- `shell-dist.spec.mjs` asserts a clean console, and a grid of
+     * files a static host has not published yet would otherwise fill it.
+     *
+     * The cost is real and worth stating: a token revoked mid-session
+     * shows up here as tiles that will not load rather than as a return
+     * to the gate. The next request that is not a thumbnail -- any
+     * navigation, any save -- goes through `_guard` and does the right
+     * thing.
+     */
+    private async _thumbnail(item: MediaItem): Promise<string | null> {
+        const repo = this._repo;
+        /* `item.type === null` is not reachable from the grid -- a file
+           it cannot show is given no `src`, so it never fails and never
+           asks for this. It stays because it is also what makes the
+           type below a string: a Blob whose type is `null` is a Blob
+           with no type, and an SVG served that way does not render. */
+        if (!repo || item.type === null) {
+            return null;
+        }
+        try {
+            const bytes = await repo.github.readBlob(item.sha);
+            /* `.slice()` rather than the view itself: `Uint8Array` is
+               generic over its buffer now, and a `SharedArrayBuffer` is
+               not a `BlobPart`. Copying is honest about what happens
+               anyway -- the Blob takes a snapshot -- and a thumbnail is
+               the one place in this shell where an extra copy of the
+               bytes cannot matter. */
+            const url = URL.createObjectURL(
+                new Blob([bytes.slice().buffer], {type: item.type}));
+            this._thumbnails.add(url);
+            return url;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Put a file that is already in the repository into the open entry.
+     *
+     * Nothing is staged and nothing is committed: the file is in the
+     * repository already, so the entry references it by the same public
+     * URL a tile just proved renders, and the save that follows writes
+     * one changed line.
+     *
+     * The panel stays open. Inserting one picture is rarely the whole
+     * job, and a panel that closes itself makes the second insert a
+     * hunt for the button again.
+     */
+    private _insert(item: MediaItem, size: [number, number]): void {
+        insertImage(REGION, {url: item.url, size, alt: item.name});
+    }
+
+    /**
+     * The media folder, for the route and for the panel alike.
+     *
+     * `insertable` is derived from there being an open entry, never
+     * remembered: the panel's Insert buttons must go dead the instant the
+     * entry does. A boolean set when the panel opened would survive an
+     * entry closing under it -- a save that navigated, a conflict that
+     * reloaded -- and every press after that would report success and
+     * insert into nothing.
+     */
+    private _mediaState(config: CmsConfig): MediaState {
+        return {
+            folder: config.media.folder,
+            files: this._media?.files ?? null,
+            truncated: this._media?.truncated ?? false,
+            insertable: this._entry !== null
         };
     }
 

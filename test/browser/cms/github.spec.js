@@ -204,6 +204,47 @@ describe('reading', function() {
         expect(await client.readFile('content/a b/c+d.md', 'main')).toBe('x');
         return expect(fake.requests[0][1]).toContain('/contents/content/a%20b/c%2Bd.md');
     });
+
+    describe('readBlob', function() {
+
+        /** The sha of the one file the fake was seeded with. */
+        async function seeded(client, path = 'static/images/cat.png') {
+            const folder = path.slice(0, path.lastIndexOf('/'));
+            const listing = await client.listDirectory(folder, 'main');
+            return listing.find(f => f.path === path).sha;
+        }
+
+        it('returns bytes, not text', async function() {
+            /* The whole reason this is separate from `readFile`. A PNG
+               run through `TextDecoder` comes back with every byte above
+               0x7f replaced by U+FFFD, and the damage shows up as a
+               picture that will not render rather than as an error
+               anybody can trace back to the read. */
+            const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0x00, 0xfe]);
+            const {client} = connect({
+                'static/images/cat.png': {base64: btoa(String.fromCharCode(...bytes))}
+            });
+            return expect([...await client.readBlob(await seeded(client))])
+                .toEqual([...bytes]);
+        });
+
+        it('asks for raw rather than the base64 JSON form', async function() {
+            const {fake, client} = connect({'static/images/cat.png': {base64: 'AAA='}});
+            await client.readBlob(await seeded(client));
+            const read = fake.requests.find(r => r[1].includes('/git/blobs/'));
+            return expect(read[2].Accept).toContain('raw');
+        });
+
+        it('throws for a sha that is not there', async function() {
+            /* Unlike `readFile`, which answers null: a blob is
+               content-addressed, so there is no ref for this to be stale
+               against and "not there" means the sha is wrong. Swallowing
+               it would show an empty tile for a bug. */
+            const {client} = connect();
+            return expect(client.readBlob('b'.repeat(40)))
+                .rejects.toBeInstanceOf(GitHubError);
+        });
+    });
 });
 
 describe('branches', function() {

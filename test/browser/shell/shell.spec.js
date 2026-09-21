@@ -106,10 +106,14 @@ describe('content-tools-cms', function() {
         expect(shadow.querySelector('.ct-cms__repo').textContent).toBe('owner/site');
 
         const links = [...shadow.querySelectorAll('.ct-cms__nav-link')];
-        expect(links.map(a => a.textContent)).toEqual(['Blog', 'Pages']);
+        // The media folder is last and under its own heading: it is not a
+        // collection, and a row among them would offer a "New entry" link
+        // for a folder that holds no entries.
+        expect(links.map(a => a.textContent)).toEqual(['Blog', 'Pages', 'Media']);
         // Real hrefs, not click handlers: this is what makes a collection
         // linkable, reloadable and reachable from the keyboard.
-        expect(links.map(a => a.getAttribute('href'))).toEqual(['#/c/blog', '#/c/pages']);
+        expect(links.map(a => a.getAttribute('href')))
+            .toEqual(['#/c/blog', '#/c/pages', '#/media']);
     });
 
     it('refuses an empty token rather than signing in with nothing', async function() {
@@ -422,6 +426,21 @@ describe('content-tools-cms', function() {
                     'pages current');
         expect(shadow.querySelectorAll('[aria-current]')).toHaveLength(1);
         expect(shadow.querySelectorAll('.ct-cms__nav-link--current')).toHaveLength(1);
+
+        /* The media folder is under its own heading and outside the
+           keyed list the collections are reconciled through, so it
+           carries the highlight by its own code path -- which is the
+           reason it is asserted here rather than assumed to follow. */
+        location.hash = '#/media';
+        await until(() => shadow.querySelector('[aria-current]')?.textContent === 'Media',
+                    'media current');
+        expect(shadow.querySelectorAll('[aria-current]')).toHaveLength(1);
+        expect(shadow.querySelectorAll('.ct-cms__nav-link--current')).toHaveLength(1);
+
+        location.hash = '#/c/blog';
+        await until(() => shadow.querySelector('[aria-current]')?.textContent === 'Blog',
+                    'blog current again');
+        expect(shadow.querySelectorAll('[aria-current]')).toHaveLength(1);
     });
 
     it('replaces an alert rather than stacking failures', async function() {

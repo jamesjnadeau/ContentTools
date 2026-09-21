@@ -259,6 +259,13 @@ The dialog's **rotate and crop controls do nothing**. Both need something
 that can re-encode an image, and this deployment is a repository and a
 browser with nothing in between.
 
+`imageType(filename)` is the other half of the same agreement, and it is
+public for the same reason `safeFilename` is: a media library deciding what
+it can preview and what it can insert has to answer that question exactly as
+the uploader does. It is a whitelist of extensions rather than a sniff of the
+bytes — the repository is the one place a filename can be trusted, because
+`safeFilename` wrote it — and it returns the content type or `null`.
+
 ## Editorial status
 
 ```js
@@ -293,7 +300,13 @@ open a pull request this layer has no opinion about:
 ```js
 await repo.github.readFile('README.md', 'main');
 await repo.github.listDirectory('content', 'main');
+await repo.github.readBlob(sha);              // Uint8Array, for binary
 ```
+
+`readFile` decodes as text; `readBlob` does not, and it takes a blob sha
+rather than a path — which a directory listing already gives you. Use it for
+anything that is not text: it is how a media library shows a picture the
+published site does not serve yet.
 
 It is ours, not Octokit: twelve endpoints, no dependencies, and `fetch` as a
 constructor argument. Errors are a `GitHubError` carrying the status, the

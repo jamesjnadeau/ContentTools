@@ -26,9 +26,19 @@ const TOKEN = 'github_pat_playwright';
    changes -- which a one-line file could not distinguish. */
 const SEED = '---\ntitle: Hello\n---\n\n# Hello\n\nBody.\n';
 
+/* A real 1x1 PNG. The media tile decides whether Insert is offered from
+   `naturalWidth`, so a made-up byte string would leave the button
+   disabled and the test asserting about a grid that never rendered. */
+const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mN'
+    + 'kYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
 async function serveGitHub(page) {
     const fake = createFakeGitHub({
-        files: {'content/blog/hello.md': SEED, 'content/about.md': '# About\n'}
+        files: {
+            'content/blog/hello.md': SEED,
+            'content/about.md': '# About\n',
+            'static/images/cat.png': {base64: PNG_BASE64}
+        }
     });
     await page.route('https://api.github.com/**', async route => {
         const request = route.request();
@@ -40,7 +50,12 @@ async function serveGitHub(page) {
         await route.fulfill({
             status: response.status,
             headers: Object.fromEntries(response.headers.entries()),
-            body: await response.text()
+            /* The BYTES, not the text. A blob read asks for
+               `application/vnd.github.raw`, so a PNG comes back as
+               binary -- and decoding it as UTF-8 here replaces every
+               byte the decoder cannot spell, so the thumbnail the media
+               library falls back to would silently fail to decode. */
+            body: Buffer.from(await response.arrayBuffer())
         });
     });
     return fake;
@@ -128,8 +143,11 @@ test('a token gets past the gate and the collections render', async ({page}) => 
     await shell(page).locator('.ct-cms__gate-form button').click();
 
     await expect(page.locator('content-tools-cms')).toHaveAttribute('state', 'ready');
+    /* The two collections `app/cms-config.yml` declares, and then the
+       media library, which is not one of them -- it is the folder every
+       collection's pictures share, so it is last and it is fixed. */
     expect(await shell(page).locator('.ct-cms__nav-link').allTextContents())
-        .toEqual(['Blog', 'Pages']);
+        .toEqual(['Blog', 'Pages', 'Media']);
 
     /* The credential the BROWSER sent, which no injected-transport test
        can see: a client that stores `fetch` unbound, or builds the header
@@ -324,6 +342,76 @@ test('deleting an entry opens a pull request and says the page is still up',
     expect(fake.pulls().length).toBe(1);
     expect(fake.paths('cms/blog/hello')).not.toContain('content/blog/hello.md');
     expect(fake.read('content/blog/hello.md')).toBe(SEED);
+
+    expect(errors).toEqual([]);
+    expect(logged).toEqual([]);
+});
+
+test('the media folder falls back to an authenticated read, and inserts',
+     async ({page}) => {
+    /* The one path in the media library that no source test can check
+       end to end: the PUBLIC URL is tried first, and here it genuinely
+       404s -- `/images/cat.png` is not on the dev server -- so the tile
+       falls back to a blob read over the real `fetch`, decodes real PNG
+       bytes into an object URL, and only then offers Insert. A source
+       test serves both from data URLs and so proves nothing about the
+       bytes surviving the wire. */
+    const errors = [];
+    page.on('pageerror', error => errors.push(`${error.name}: ${error.message}`));
+    const logged = collectConsoleErrors(page);
+
+    const fake = await serveGitHub(page);
+    /* The toolbox where a returning author left it. It is `position:
+       fixed` chrome floating over the whole page, it is draggable, and
+       `ct-toolbox-position` is where the editor remembers it -- so this
+       is a real browser's state, not a test fixture.
+
+       It is seeded because the DEFAULT position lands at 128,128, which
+       in this shell is over the top-left of the main pane: the first
+       column of the media grid, and the first frontmatter field with it.
+       That collision is real and it is not the media library's -- it is
+       the editor's chrome over the shell's pane, and it covers the entry
+       body just as readily. Recorded as such rather than papered over
+       here; the click below is a genuine hit-tested one, so a stacking
+       mistake in the shell's OWN rules still fails this test. */
+    await page.addInitScript(() =>
+        localStorage.setItem('ct-toolbox-position', '1000,120'));
+    await page.goto(PAGE);
+    await shell(page).locator('.ct-cms__input').fill(TOKEN);
+    await shell(page).locator('.ct-cms__gate-form button').click();
+    await expect(page.locator('content-tools-cms')).toHaveAttribute('state', 'ready');
+
+    // The library is its own place in the nav, under its own heading.
+    await shell(page).locator('.ct-cms__nav-link').last().click();
+    await expect(shell(page).locator('.ct-cms__media-name')).toHaveText(['cat.png']);
+    /* Nothing to insert into from here, and the grid says so rather
+       than offering a button that would report success and do nothing. */
+    await expect(shell(page).locator('.ct-cms__media-insert')).toBeHidden();
+
+    // Now the same grid, under an open entry, where it can insert.
+    await shell(page).locator('.ct-cms__nav-link').first().click();
+    await shell(page).locator('.ct-cms__entry-link').first().click();
+    await shell(page).locator('.ct-cms__entry-media').click();
+
+    const insert = shell(page).locator('.ct-cms__media-insert');
+    /* Enabled only once something decoded. The wait is the assertion:
+       the button starts disabled, the public URL fails, the blob read
+       answers, and the tile becomes insertable -- in that order. */
+    await expect(insert).toBeEnabled();
+    expect(fake.requests.some(([method, path]) =>
+        method === 'GET' && path.includes('/git/blobs/'))).toBe(true);
+
+    await insert.click();
+    await shell(page).locator('.ct-cms__entry-submit').click();
+    await expect(shell(page).locator('.ct-cms__entry-pull')).toContainText('Pull request');
+
+    /* The URL the tile previewed is the URL the entry references, and
+       one commit carries it: the picture is already in the repository,
+       so nothing is staged and nothing is uploaded again. */
+    const saved = fake.read('content/blog/hello.md', 'cms/blog/hello');
+    expect(saved).toContain('![cat.png](/images/cat.png)');
+    expect(saved.startsWith('---\ntitle: Hello\n---\n')).toBe(true);
+    expect(fake.history('cms/blog/hello').length).toBe(2);
 
     expect(errors).toEqual([]);
     expect(logged).toEqual([]);

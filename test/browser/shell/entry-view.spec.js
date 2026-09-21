@@ -40,16 +40,17 @@ const ENTRY = {
 /** The state the shell holds for an entry that has only just been asked for. */
 const LOADING = {
     entry: null, saving: false, saved: null, conflict: null, leaving: false,
-    deletable: false, deleting: false,
+    deletable: false, deleting: false, mediaOpen: false,
     /* No form. The fields are their own view with their own spec, and
        every assertion here is about the chrome around them. */
     fields: null
 };
 
-function view(state = {}) {
+function view(state = {}, handlers = {}) {
     const built = buildEntry(document, {
         submit() {}, reload() {}, stay() {}, discard() {},
-        askDelete() {}, confirmDelete() {}
+        askDelete() {}, confirmDelete() {}, showMedia() {},
+        ...handlers
     });
     built.update({...LOADING, ...state});
     return {
@@ -187,5 +188,44 @@ describe('the entry view', () => {
             const {find} = view({entry: ENTRY, conflict: '# Mine\n'});
             return expect(find('.ct-cms__conflict-text').readOnly).toBe(true);
         });
+    });
+});
+
+describe('the media toggle', function() {
+
+    it('is dead until there is an entry to insert into', function() {
+        /* Same reason Submit is: an entry that has not loaded has
+           nothing to put a picture in, and a button that answers a press
+           by doing nothing reads as a broken page. */
+        expect(view().find('.ct-cms__entry-media').disabled).toBe(true);
+        return expect(view({entry: ENTRY}).find('.ct-cms__entry-media').disabled)
+            .toBe(false);
+    });
+
+    it('says whether the panel is open, where a screen reader can hear it',
+       function() {
+        /* The panel it controls is further down the page, past the
+           frontmatter form, so the state on the control itself is the
+           only thing telling somebody the press did anything. */
+        expect(view({entry: ENTRY}).find('.ct-cms__entry-media')
+               .getAttribute('aria-expanded')).toBe('false');
+        return expect(view({entry: ENTRY, mediaOpen: true})
+                      .find('.ct-cms__entry-media')
+                      .getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('asks for the opposite of what is showing', function() {
+        /* The state it reports is kept beside the attribute rather than
+           read back off it. Reading it back is the same answer spelled
+           as a string comparison, and a typo there makes every press
+           ask to OPEN -- so the panel can be opened and never closed. */
+        const asked = [];
+        const {built} = view({entry: ENTRY, mediaOpen: true},
+                             {showMedia: open => asked.push(open)});
+        built.node.querySelector('.ct-cms__entry-media').click();
+
+        built.update({...LOADING, entry: ENTRY, mediaOpen: false});
+        built.node.querySelector('.ct-cms__entry-media').click();
+        return expect(asked).toEqual([false, true]);
     });
 });

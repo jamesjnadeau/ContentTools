@@ -566,6 +566,65 @@ textarea.ct-cms__field-input {
     }
 }
 
+// --- the media library ----------------------------------------------------
+
+// A grid rather than a list, because a picture identified by its thumbnail
+// is found by eye and one identified by its filename is not -- and the
+// filenames here are `safeFilename`'s work, so they are lowercase and
+// hyphenated and look alike at a glance.
+//
+// `grid-template-columns` with `auto-fill` rather than a media query: this
+// panel sits in the main pane, whose width depends on the nav beside it as
+// well as on the viewport, so a viewport query would be measuring the wrong
+// box. Note `minmax` and not `contain: layout` -- see the header.
+.ct-cms__media-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.ct-cms__media-item {
+    border: 1px solid $border-color;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px;
+}
+
+// A fixed box with the image contained inside it, so a portrait and a
+// landscape picture produce the same tile. `object-fit: contain` rather
+// than `cover`: a cropped thumbnail is a different picture from the one
+// that will be inserted, which is the one thing a preview must not be.
+.ct-cms__media-thumb {
+    background: $panel-background;
+    height: 90px;
+    object-fit: contain;
+    width: 100%;
+}
+
+// Wrapped on any character, because these are single hyphenated words with
+// no spaces to break at -- left alone, one long filename widens its grid
+// column and every other column with it.
+.ct-cms__media-name {
+    overflow-wrap: anywhere;
+    @include type-text($font-size: 11px, $line-height: 15px);
+}
+
+.ct-cms__media-note {
+    color: $muted-action-color;
+    margin: 0;
+    @include type-text($font-size: 11px, $line-height: 15px);
+}
+
+.ct-cms__media-folder {
+    color: $muted-action-color;
+    font-family: $monospace;
+    @include type-text($font-size: 12px, $line-height: 16px);
+}
+
 .ct-cms__hint {
     color: $muted-action-color;
     margin: 12px 0 0;

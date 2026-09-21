@@ -176,10 +176,14 @@ export default [
 
            208 kB -> 212 kB with create and delete: the naming view and
            its live filename preview, the confirm panel, and the two
-           collision checks. Same shape again. */
+           collision checks. Same shape again.
+
+           212 kB -> 216 kB with the media library: the grid, the tile
+           state machine behind its public-URL-first thumbnails, the
+           insert path into the open editor, and their rules. */
         name: 'shell entry + its chunks',
         path: closureOf('dist/shell.js'),
-        limit: '212 kB',
+        limit: '216 kB',
         gzip: true
     },
     {

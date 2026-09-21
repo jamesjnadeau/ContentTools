@@ -39,6 +39,15 @@ function header(headers, name) {
     return '';
 }
 
+/** Bytes as base64, for the JSON form of a blob read. */
+function encode64(bytes) {
+    let binary = '';
+    for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+    }
+    return btoa(binary);
+}
+
 /** Deterministic 40-hex object ids, so failures read the same twice. */
 function makeSha(kind, n) {
     return `${kind}${String(n).padStart(38 - kind.length, '0')}0`.slice(0, 40).padEnd(40, '0');
@@ -83,6 +92,31 @@ export function createFakeGitHub(options = {}) {
         return new TextDecoder().decode(bytes);
     }
 
+    /**
+     * A blob's BYTES, whatever it was stored as.
+     *
+     * Separate from `blobText` on purpose. The media library reads
+     * pictures through `/git/blobs`, and running those through
+     * `TextDecoder` and back would replace every byte above 0x7f with
+     * U+FFFD -- so a fake that only spoke text would hand the shell a
+     * corrupted PNG and call it a pass.
+     */
+    function blobBytes(sha) {
+        const blob = blobs.get(sha);
+        if (!blob) {
+            return null;
+        }
+        if (blob.encoding !== 'base64') {
+            return new TextEncoder().encode(blob.content);
+        }
+        const binary = atob(blob.content.replace(/\s+/g, ''));
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+    }
+
     function putTree(entries) {
         const sha = next('t');
         trees.set(sha, entries);
@@ -95,10 +129,22 @@ export function createFakeGitHub(options = {}) {
         return sha;
     }
 
-    /** Seed the default branch with `{path: text}`. */
+    /**
+     * Seed the default branch with `{path: text}`.
+     *
+     * A value may also be `{base64}`, for a file that is not text. A
+     * media folder seeded as a string would round-trip through
+     * `TextEncoder` and decode as a picture nothing can read, which is
+     * the fake lying about the one thing the media tests are checking.
+     */
     function seed(files) {
-        const entries = Object.entries(files).map(([path, text]) => ({
-            path, mode: '100644', type: 'blob', sha: putBlob(text)
+        const entries = Object.entries(files).map(([path, content]) => ({
+            path,
+            mode: '100644',
+            type: 'blob',
+            sha: typeof content === 'string'
+                ? putBlob(content)
+                : putBlob(content.base64, 'base64')
         }));
         const commit = putCommit(putTree(entries), [], 'seed');
         refs.set(defaultBranch, commit);
@@ -236,6 +282,23 @@ export function createFakeGitHub(options = {}) {
             const sha = next('b');
             blobs.set(sha, {content: body.content, encoding: body.encoding ?? 'utf-8'});
             return json({sha}, 201);
+        }
+
+        // GET /git/blobs/{sha}
+        if (rest.startsWith('/git/blobs/') && method === 'GET') {
+            const sha = decodeURIComponent(rest.slice('/git/blobs/'.length));
+            const bytes = blobBytes(sha);
+            if (!bytes) {
+                return fail(404, 'Not Found');
+            }
+            /* Raw BYTES for a raw accept, not a string: the client reads
+               this with `arrayBuffer()`, and a `Response` built from a
+               string would UTF-8 encode it on the way out -- turning
+               every byte above 0x7f into two and producing an image the
+               browser refuses, from a fake that looked fine. */
+            return accept.includes('raw')
+                ? new Response(bytes, {status: 200})
+                : json({sha, encoding: 'base64', content: encode64(bytes)});
         }
 
         // GET /git/commits/{sha}

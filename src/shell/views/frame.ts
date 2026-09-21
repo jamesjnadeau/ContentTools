@@ -19,6 +19,8 @@ import {buildEntry} from './entry.js';
 import type {EntryHandlers, EntryState, EntryView} from './entry.js';
 import {buildCreate} from './create.js';
 import type {CreateHandlers, CreateView} from './create.js';
+import {buildMedia} from './media.js';
+import type {MediaHandlers, MediaState, MediaView} from './media.js';
 import type {WidgetSource} from './fields.js';
 import {formatRoute} from '../routes.js';
 import type {Route} from '../routes.js';
@@ -29,7 +31,7 @@ import type {CmsConfig} from '../../cms/config.js';
 /** Where the editor element is slotted. Its light-DOM home is the host. */
 export const EDITOR_SLOT = 'editor';
 
-export interface FrameHandlers extends EntryHandlers, CreateHandlers {
+export interface FrameHandlers extends EntryHandlers, CreateHandlers, MediaHandlers {
     signOut(): void;
 }
 
@@ -45,6 +47,8 @@ export interface FrameState {
     entry: EntryState;
     /** A create is in flight, so the Create button is held. */
     creating: boolean;
+    /** The media folder: its own route, and the panel under an open entry. */
+    media: MediaState;
 }
 
 /**
@@ -64,6 +68,28 @@ export interface Frame {
     /** The slot the editor is rendered through. Never re-created. */
     readonly slot: HTMLSlotElement;
     update(state: FrameState): void;
+}
+
+/**
+ * The open entry, with the media folder under it when it is open.
+ *
+ * The grid is a SIBLING of the entry's own node rather than a child of
+ * it, and it sits between the frontmatter form and `<slot name="editor">`
+ * -- directly above the editor it inserts into. One `MediaView` serves
+ * this and the `#/media` route, so a tile that has already paid for an
+ * authenticated thumbnail keeps it across the two.
+ */
+function withMedia(
+        state: FrameState,
+        media: MediaView,
+        entry: EntryView
+        ): HTMLElement[] {
+    entry.update(state.entry);
+    if (!state.entry.mediaOpen) {
+        return [entry.node];
+    }
+    media.update(state.media);
+    return [entry.node, media.node];
 }
 
 /** What the main pane says, for a route M5-1 does not render yet. */
@@ -124,11 +150,11 @@ function createView(
         state: FrameState,
         create: CreateView,
         entry: EntryView,
+        media: MediaView,
         name: string
         ): HTMLElement[] {
     if (state.entry.entry) {
-        entry.update(state.entry);
-        return [entry.node];
+        return withMedia(state, media, entry);
     }
     const collection = state.config.collections.find(c => c.name === name);
     if (!collection) {
@@ -155,7 +181,8 @@ function mainView(
         state: FrameState,
         entries: Entries,
         entry: EntryView,
-        create: CreateView
+        create: CreateView,
+        media: MediaView
         ): HTMLElement[] {
     switch (state.route.kind) {
     case 'home':
@@ -167,14 +194,16 @@ function mainView(
     case 'collection':
         return collectionView(doc, state, entries, state.route.collection);
     case 'new':
-        return createView(doc, state, create, entry, state.route.collection);
+        return createView(doc, state, create, entry, media, state.route.collection);
     case 'entry':
         /* Built once and merely re-shown, for the same reason the list
            is -- and with a second reason of its own from M5-4, when the
            frontmatter fields land inside it and a rebuild per render
            starts eating keystrokes. */
-        entry.update(state.entry);
-        return [entry.node];
+        return withMedia(state, media, entry);
+    case 'media':
+        media.update(state.media);
+        return [media.node];
     default:
         return placeholder(doc, state);
     }
@@ -187,10 +216,21 @@ export function buildFrame(
         ): Frame {
     const repo = h(doc, 'span', {class: 'ct-cms__repo'});
     const navList = h(doc, 'ul', {class: 'ct-cms__nav-list'});
+    /* The media folder is not a collection -- it holds no entries and has
+       no pull requests -- so it gets its own heading rather than a row
+       among them. Its own `<ul>` too, because `list()` owns `navList`'s
+       children entirely and a hand-added `<li>` in there has no
+       `data-key`, so the next reconciliation walks straight past it and
+       leaves it wherever it happens to be. */
+    const mediaLink = h(doc, 'a', {
+        class: 'ct-cms__nav-link',
+        href: formatRoute({kind: 'media'})
+    }, ['Media']);
     const view = h(doc, 'div', {class: 'ct-cms__view'});
     const entries = buildEntries(doc);
     const entry = buildEntry(doc, handlers, widgets);
     const create = buildCreate(doc, handlers);
+    const media = buildMedia(doc, handlers);
     const alert = alertRegion(doc);
 
     const slot = doc.createElement('slot');
@@ -215,7 +255,11 @@ export function buildFrame(
                are what make an entry linkable and reloadable at all. */
             h(doc, 'nav', {class: 'ct-cms__nav', 'aria-label': 'Collections'}, [
                 h(doc, 'h2', {class: 'ct-cms__nav-heading'}, ['Collections']),
-                navList
+                navList,
+                h(doc, 'h2', {class: 'ct-cms__nav-heading'}, ['Library']),
+                h(doc, 'ul', {class: 'ct-cms__nav-list'}, [
+                    h(doc, 'li', {}, [mediaLink])
+                ])
             ]),
             h(doc, 'main', {class: 'ct-cms__main'}, [alert, view, slot])
         ])
@@ -233,6 +277,19 @@ export function buildFrame(
             const current = state.route.kind === 'collection'
                 ? state.route.collection
                 : null;
+
+            const onMedia = state.route.kind === 'media';
+            mediaLink.className = 'ct-cms__nav-link'
+                + (onMedia ? ' ct-cms__nav-link--current' : '');
+            /* `aria-current` as well as the class, for the same reason
+               the collection links carry it: the highlight is the only
+               thing saying where you are, and a class says nothing to a
+               screen reader. */
+            if (onMedia) {
+                mediaLink.setAttribute('aria-current', 'page');
+            } else {
+                mediaLink.removeAttribute('aria-current');
+            }
 
             /* Keyed reconciliation rather than a rebuild. The collections
                rarely change, so this is almost always a no-op on the
@@ -263,7 +320,7 @@ export function buildFrame(
                 }
             );
 
-            view.replaceChildren(...mainView(doc, state, entries, entry, create));
+            view.replaceChildren(...mainView(doc, state, entries, entry, create, media));
         }
     };
 }

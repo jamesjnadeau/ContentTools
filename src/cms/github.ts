@@ -349,6 +349,29 @@ export class GitHub {
         });
     }
 
+    /**
+     * A blob's bytes, by sha.
+     *
+     * Content-addressed, so unlike `readFile` there is no ref for this to
+     * be stale against and a 404 means the sha is wrong rather than "not
+     * committed yet" -- which is why this one throws on every failure
+     * instead of answering null.
+     *
+     * Read as `raw`, and handed back as BYTES rather than text. A blob
+     * reached this way is an image: decoding it as a string would replace
+     * every byte the encoder does not recognise with U+FFFD, and the
+     * damage shows up as a picture that will not render rather than as an
+     * error anybody can trace back to here.
+     */
+    async readBlob(sha: string): Promise<Uint8Array> {
+        const at = this.repoPath(`/git/blobs/${encodeURIComponent(sha)}`);
+        const response = await this.send('GET', at, {accept: 'application/vnd.github.raw'});
+        if (!response.ok) {
+            throw await errorFor('GET', at, response);
+        }
+        return new Uint8Array(await response.arrayBuffer());
+    }
+
     async createBlob(content: string, encoding: 'utf-8' | 'base64'): Promise<string> {
         const blob = await this.request<{sha: string}>('POST', this.repoPath('/git/blobs'), {
             body: {content, encoding}

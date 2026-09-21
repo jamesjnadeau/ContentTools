@@ -40,6 +40,9 @@ export interface EntryHandlers {
     askDelete(asking: boolean): void;
     /** Delete it, as a pull request. */
     confirmDelete(): void;
+    /** Show or hide the media folder, for inserting a picture that is
+        already in the repository. */
+    showMedia(open: boolean): void;
 }
 
 export interface EntryState {
@@ -67,6 +70,8 @@ export interface EntryState {
     deletable: boolean;
     /** The delete confirmation is showing. */
     deleting: boolean;
+    /** The media folder is open below the form. */
+    mediaOpen: boolean;
 }
 
 export interface EntryView {
@@ -110,6 +115,24 @@ export function buildEntry(
         onclick: () => handlers.submit()
     }, ['Submit for review']);
     const note = h(doc, 'p', {class: 'ct-cms__note'});
+
+    /* A toggle rather than a link, because the media folder is not a
+       PLACE while an entry is open: navigating to `#/media` closes the
+       entry -- `_navigate` releases the editor's lease before it fetches
+       anything -- so a link would throw away the unsaved work somebody
+       opened the picker to add a picture to.
+
+       `aria-expanded` rather than a class alone: the panel it controls is
+       further down the page, so the only thing telling a screen-reader
+       user whether pressing this did anything is the state on the
+       control itself. */
+    let mediaOpen = false;
+    const media = h(doc, 'button', {
+        class: 'ct-cms__button ct-cms__button--muted ct-cms__entry-media',
+        type: 'button',
+        'aria-expanded': 'false',
+        onclick: () => handlers.showMedia(!mediaOpen)
+    }, ['Media']);
 
     /* Beside Submit rather than tucked away, and deliberately not behind a
        menu: it is one of two things a person does to an entry, and hiding
@@ -182,6 +205,7 @@ export function buildEntry(
         h(doc, 'div', {class: 'ct-cms__entry-head'}, [
             heading, badge, pull,
             h(doc, 'span', {class: 'ct-cms__spacer'}),
+            media,
             remove,
             submit
         ]),
@@ -250,6 +274,17 @@ export function buildEntry(
             remove.hidden = !state.deletable;
             (remove as HTMLButtonElement).disabled = state.saving || entry === null;
             deleting.hidden = !state.deleting;
+
+            /* Kept beside the attribute rather than read back off it: the
+               click handler needs to know what pressing it means NOW, and
+               `getAttribute('aria-expanded') === 'true'` is the same
+               answer spelled as a string comparison that a typo makes
+               silently always-open. */
+            mediaOpen = state.mediaOpen;
+            media.setAttribute('aria-expanded', String(state.mediaOpen));
+            /* Nothing to insert into until the entry has loaded, for the
+               same reason Submit is disabled then. */
+            (media as HTMLButtonElement).disabled = entry === null;
 
             note.textContent = entry === null
                 ? 'Loading…'

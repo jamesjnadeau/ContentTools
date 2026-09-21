@@ -7,7 +7,8 @@
    about not committing bytes nobody asked for. */
 
 import {parseConfig} from '../../../src/cms/config.js';
-import {MediaStore, mediaUploader, safeFilename} from '../../../src/cms/media.js';
+import {MediaStore, mediaUploader, safeFilename, imageType}
+    from '../../../src/cms/media.js';
 
 const CONFIG = parseConfig({
     backend: {repo: 'owner/site'},
@@ -47,6 +48,58 @@ describe('safeFilename', function() {
            space ends the destination and what renders is broken, with no
            error anywhere. */
         return expect(safeFilename('a b(c)d#e.png')).toBe('a-b-c-d-e.png');
+    });
+});
+
+describe('imageType', function() {
+
+    it.each([
+        ['cat.png', 'image/png'],
+        ['cat.jpg', 'image/jpeg'],
+        ['cat.jpeg', 'image/jpeg'],
+        ['cat.gif', 'image/gif'],
+        ['cat.webp', 'image/webp'],
+        ['cat.avif', 'image/avif'],
+        ['logo.svg', 'image/svg+xml']
+    ])('types %s', function(name, type) {
+        return expect(imageType(name)).toBe(type);
+    });
+
+    it('does not care how the extension was spelled', function() {
+        /* A file committed from a phone is as likely to be `IMG_1.JPG` as
+           anything else, and a case-sensitive lookup would show it as an
+           unreadable tile with no Insert -- a picture the library can see
+           in the listing and claims it cannot open. */
+        return expect(imageType('IMG_0001.JPG')).toBe('image/jpeg');
+    });
+
+    it('refuses what a browser will not draw in an <img>', function() {
+        /* Null is not a rejection of the file, it is a refusal to PREVIEW
+           and INSERT it. A PDF in the media folder is a reasonable thing
+           to have; an `<img>` pointing at one is a broken picture in
+           somebody's post. */
+        expect(imageType('notes.pdf')).toBe(null);
+        return expect(imageType('data.json')).toBe(null);
+    });
+
+    it('reads a dotfile as a name rather than an extension', function() {
+        /* `.png` is the whole name of a hidden file. Treating the dot as
+           a separator would make `.gitkeep` -- which every empty media
+           folder in git has -- into a file of type `gitkeep`, and any
+           dotfile named after an image format into a picture. */
+        expect(imageType('.png')).toBe(null);
+        return expect(imageType('.gitkeep')).toBe(null);
+    });
+
+    it('refuses a name with no extension at all', function() {
+        return expect(imageType('README')).toBe(null);
+    });
+
+    it('reads only the LAST extension', function() {
+        /* `cat.png.txt` is a text file somebody renamed. Matching the
+           first dot would preview it as a PNG and offer to insert it. */
+        expect(imageType('cat.png.txt')).toBe(null);
+        return expect(imageType('archive.tar.png')).toBe('image/png');
     });
 });
 
