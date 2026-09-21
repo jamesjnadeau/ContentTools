@@ -16,6 +16,8 @@ import {ConflictError} from '../../../src/cms/github.js';
 import {
     CmsRepo, NothingToSaveError, branchFor, entryForBranch
 } from '../../../src/cms/repo.js';
+import {MediaStore} from '../../../src/cms/media.js';
+import {statusOf} from '../../../src/cms/status.js';
 import {createFakeGitHub} from './fake-github.js';
 
 const CONFIG = parseConfig({
@@ -329,6 +331,31 @@ describe('saveEntry', function() {
                 .toContain('![cat](/images/cat.png)');
         });
 
+        it('goes from a staged object URL to a committed file in one save', async function() {
+            /* The two halves joined, which is the only place the whole
+               path is visible: the uploader stages bytes against the URL
+               the editor shows, `rewrite` turns that URL into the one the
+               file will have, and the save commits both. An object URL
+               left in the content renders fine in the editor and is a
+               broken link to everybody else, with nothing failing
+               anywhere along the way. */
+            const {fake, repo} = open();
+            const store = new MediaStore({config: CONFIG, taken: []});
+            const cat = store.stage({
+                token: 'blob:abc', filename: 'Cat Photo.png', bytes: bytes('CAT')
+            });
+
+            const {html, media} = store.rewrite(`<p><img src="${cat.token}"></p>`);
+            await repo.saveEntry('blog', 'hello', {content: `# Edited\n\n${html}\n`, media});
+
+            const saved = fake.read('content/blog/hello.md', 'cms/blog/hello');
+            expect(saved).not.toContain('blob:');
+            expect(saved).toContain('/images/cat-photo.png');
+            // One commit, and the bytes really arrived with it.
+            expect(fake.history('cms/blog/hello').length).toBe(2);
+            return expect(fake.read('static/images/cat-photo.png', 'cms/blog/hello')).toBe('CAT');
+        });
+
         it('preserves bytes that are not text', async function() {
             /* A PNG is not UTF-8, and an encoder that assumes it is
                produces a file that is the right length and the wrong
@@ -444,6 +471,117 @@ describe('saveEntry', function() {
                 content: '# Two\n', parent: entry.commit
             })).changed).toBe(true);
         });
+    });
+});
+
+describe('editorial status', function() {
+
+    /** The `cms/*` labels on the entry's pull request, in the API's order. */
+    const labelsOn = fake => fake.pulls()[0].labels.map(label => label.name);
+
+    it('labels a new pull request as a draft', async function() {
+        /* Every pull request this tool opens carries exactly one status,
+           so a shell never has to render an entry whose state is
+           "none". */
+        const {fake, repo} = open();
+        const result = await repo.saveEntry('blog', 'hello', {content: '# One\n'});
+
+        expect(labelsOn(fake)).toEqual(['cms/draft']);
+        // ...and the returned pull request says so without a re-read.
+        return expect(statusOf(result.pull)).toBe('draft');
+    });
+
+    it('opens at the status the caller asked for', async function() {
+        const {fake, repo} = open();
+        await repo.saveEntry('blog', 'hello', {content: '# One\n', status: 'in-review'});
+        return expect(labelsOn(fake)).toEqual(['cms/in-review']);
+    });
+
+    it('is not a GitHub draft unless asked', async function() {
+        /* Deliberately not tied to the `cms/draft` label. REST can set
+           that flag and cannot clear it -- clearing is a GraphQL
+           mutation -- so a pull request opened as a draft needs a human
+           to press a button before it can ever merge. */
+        const {fake, repo} = open();
+        await repo.saveEntry('blog', 'hello', {content: '# One\n'});
+        return expect(fake.pulls()[0].draft).toBe(false);
+    });
+
+    it('leaves a status a reviewer set alone on the next save', async function() {
+        /* A save is not a reason to drag an entry somebody marked ready
+           back to draft. */
+        const {fake, repo} = open();
+        const first = await repo.saveEntry('blog', 'hello', {content: '# One\n'});
+        await repo.setStatus(first.pull, 'ready');
+
+        await repo.saveEntry('blog', 'hello', {content: '# Two\n'});
+        return expect(labelsOn(fake)).toEqual(['cms/ready']);
+    });
+
+    it('moves the status when a save asks for one', async function() {
+        const {fake, repo} = open();
+        await repo.saveEntry('blog', 'hello', {content: '# One\n'});
+        const second = await repo.saveEntry('blog', 'hello', {
+            content: '# Two\n', status: 'in-review'
+        });
+
+        expect(labelsOn(fake)).toEqual(['cms/in-review']);
+        return expect(statusOf(second.pull)).toBe('in-review');
+    });
+
+    it('keeps labels that are not ours', async function() {
+        /* A repository has labels of its own, and a status change that
+           swept them off would quietly undo somebody's triage. */
+        const {fake, repo} = open();
+        const first = await repo.saveEntry('blog', 'hello', {content: '# One\n'});
+        fake.pulls()[0].labels.push({name: 'needs-photo'});
+
+        const moved = await repo.setStatus({...first.pull, labels: fake.pulls()[0].labels}, 'ready');
+        expect(labelsOn(fake).sort()).toEqual(['cms/ready', 'needs-photo']);
+        return expect(moved.labels.map(l => l.name)).toEqual(['needs-photo', 'cms/ready']);
+    });
+
+    it('adds the new label before removing the old one', async function() {
+        /* Never briefly unlabelled: a board built on label queries would
+           drop the card. The other way round leaves both labels for an
+           instant, which `statusOf` resolves in favour of the furthest
+           along. */
+        const {fake, repo} = open();
+        const first = await repo.saveEntry('blog', 'hello', {content: '# One\n'});
+        const before = fake.requests.length;
+        await repo.setStatus(first.pull, 'ready');
+
+        return expect(fake.requests.slice(before).map(([method]) => method))
+            .toEqual(['POST', 'DELETE']);
+    });
+
+    it('asks for no removals on a pull request that has no status yet', async function() {
+        // Two DELETEs that 404 on every entry ever created is not free.
+        const {fake, repo} = open();
+        const before = fake.requests.length;
+        await repo.saveEntry('blog', 'hello', {content: '# One\n'});
+
+        return expect(fake.requests.slice(before)
+            .filter(([method]) => method === 'DELETE')).toEqual([]);
+    });
+
+    it('does nothing to a status that is already set', async function() {
+        const {fake, repo} = open();
+        const first = await repo.saveEntry('blog', 'hello', {content: '# One\n'});
+        const before = fake.requests.length;
+
+        await repo.setStatus(first.pull, 'draft');
+        expect(fake.requests.length).toBe(before);
+        return expect(labelsOn(fake)).toEqual(['cms/draft']);
+    });
+
+    it('reports the status of everything in flight', async function() {
+        const {repo} = open();
+        const saved = await repo.saveEntry('blog', 'hello', {content: '# One\n'});
+        await repo.setStatus(saved.pull, 'in-review');
+
+        const flight = await repo.listInFlight();
+        return expect(flight.map(entry => statusOf(entry.pull))).toEqual(['in-review']);
     });
 });
 

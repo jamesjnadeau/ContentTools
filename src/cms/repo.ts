@@ -14,6 +14,8 @@ import {entryPath, findCollection, slugFromPath} from './config.js';
 import {ConfigError} from './config.js';
 import {GitHub, encodeBase64} from './github.js';
 import type {PullRequest, TokenSource, TreeEntry} from './github.js';
+import {labelFor, statusForLabel} from './status.js';
+import type {EditorialStatus} from './status.js';
 
 /**
  * The branch namespace this tool owns.
@@ -80,8 +82,28 @@ export interface SaveOptions {
     message?: string;
     /** Pull request body, used only when one is opened. */
     body?: string;
-    /** Open the pull request as a draft. Ignored when one already exists. */
+    /**
+     * Open the pull request as one of GitHub's own drafts.
+     *
+     * Off by default, and deliberately separate from `status`. REST can
+     * set this flag and cannot clear it -- that is a GraphQL mutation --
+     * so a pull request opened as a draft stays one until a human presses
+     * the button, whatever the `cms/*` label says. Defaulting it on would
+     * mean every entry this tool ever opened needed that press before it
+     * could merge.
+     */
     draft?: boolean;
+    /**
+     * Where the entry is in review.
+     *
+     * A new pull request is labelled `cms/draft` unless this says
+     * otherwise, so that everything in the `cms/` namespace carries
+     * exactly one status and a shell never has to render an entry whose
+     * state is "none". On a pull request that is already open it is left
+     * alone unless asked: a save is not a reason to drag an entry a
+     * reviewer marked ready back to draft.
+     */
+    status?: EditorialStatus;
     /**
      * The commit this edit was made against -- `Entry.commit` from the
      * read that opened it.
@@ -275,19 +297,52 @@ export class CmsRepo {
             await this.github.resetBranch(branch, commit);
         }
 
+        const open = pull ?? await this.github.createPull({
+            title: message,
+            body: options.body ?? '',
+            head: branch,
+            base: this.base,
+            draft: Boolean(options.draft)
+        });
+
+        /* Only a new pull request gets a status it did not ask for. */
+        const status = options.status ?? (pull ? null : 'draft');
+
         return {
             branch,
             commit,
             changed: true,
             reset,
-            pull: pull ?? await this.github.createPull({
-                title: message,
-                body: options.body ?? '',
-                head: branch,
-                base: this.base,
-                draft: Boolean(options.draft)
-            })
+            pull: status ? await this.setStatus(open, status) : open
         };
+    }
+
+    /**
+     * Move an entry's pull request to a status.
+     *
+     * The new label goes on before the old one comes off, so a pull
+     * request is never briefly unlabelled -- a board built on label
+     * queries would drop the card. The other way round, a failure between
+     * the two leaves both labels, which `statusOf` resolves in favour of
+     * the furthest along.
+     *
+     * The pull request comes back with its labels as they now stand,
+     * computed rather than re-read: it saves a request, and the caller's
+     * copy would otherwise still describe the status it just changed.
+     */
+    async setStatus(pull: PullRequest, status: EditorialStatus): Promise<PullRequest> {
+        const wanted = labelFor(status);
+        const labels = pull.labels.filter(label => !statusForLabel(label.name));
+
+        if (!pull.labels.some(label => label.name === wanted)) {
+            await this.github.addLabels(pull.number, [wanted]);
+        }
+        for (const label of pull.labels) {
+            if (statusForLabel(label.name) && label.name !== wanted) {
+                await this.github.removeLabel(pull.number, label.name);
+            }
+        }
+        return {...pull, labels: [...labels, {name: wanted}]};
     }
 
     /** The base branch's head, which everything here is measured from. */

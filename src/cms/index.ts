@@ -72,3 +72,15 @@ export type {
     SaveOptions,
     SaveResult
 } from './repo.js';
+
+/* Media, and where an entry is in review. `safeFilename` is public because
+ * a shell that shows the name an upload will get has to agree with the
+ * store about it, and re-deriving that rule is how the two come to differ.
+ */
+export {MediaStore, mediaUploader, safeFilename} from './media.js';
+export type {
+    ImageDialogLike, MediaStoreOptions, MediaUploaderOptions, StagedMedia
+} from './media.js';
+
+export {STATUSES, labelFor, statusForLabel, statusOf} from './status.js';
+export type {EditorialStatus} from './status.js';
