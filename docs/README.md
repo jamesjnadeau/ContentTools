@@ -8,6 +8,8 @@
   and the byte-preserving save that turns an edit into a one-line diff.
 - **[The git-backed half](cms.md)** — the runtime config, the GitHub client, and the
   branch-per-entry pull request workflow a save becomes.
+- **[The shell](shell.md)** — `<content-tools-cms>`: the application authors open, and
+  how a deployment is configured and installed.
 - **[Content scope: Mode A and Mode B](content-scope.md)** — where the editable content lives,
   and why the default leaves it in the light DOM.
 - **[`RootContext` — the host seam](root-context.md)** — the single object every `document` and

@@ -22,6 +22,10 @@ import {
 Everything here works with no DOM, apart from `mediaUploader`, which is the
 one piece that touches the image dialog.
 
+If you want the application rather than the machinery, [the
+shell](shell.md) is this half with a UI on it, and is what a site's authors
+actually open.
+
 ## The shape of it
 
 One deployment edits **one repository**, configured at runtime. The same

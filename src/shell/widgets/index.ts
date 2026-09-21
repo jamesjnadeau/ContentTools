@@ -259,10 +259,12 @@ const imageWidget: WidgetFactory = (doc, field, value) => {
     /* The preview IS the widget. Getting the path wrong is the common
        failure for an image field and it is invisible in a text box until
        somebody looks at the built site; a broken thumbnail says it here.
-       Choosing from what the repository already holds arrives with the
-       media library in M5-6 -- there is deliberately no upload button,
-       because media has to travel in the same commit as the entry that
-       references it and only the editor's own dialog does that today. */
+       The field is still a PATH: M5-6's media grid inserts into the
+       editor's body, not into a field, so choosing from what the
+       repository already holds is not wired up here. There is
+       deliberately no upload button either -- media has to travel in the
+       same commit as the entry that references it, and only the editor's
+       own dialog stages it that way. */
     const preview = h(doc, 'img', {class: 'ct-cms__field-preview', alt: ''});
     const paint = () => {
         preview.hidden = control.value === '';

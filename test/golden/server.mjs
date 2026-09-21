@@ -26,10 +26,12 @@ const TYPES = {
 
 createServer(async (req, res) => {
     let urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-    // The repo root holds no index.html, and `npm run dev` exists to show the
-    // playground, so point the bare host at it instead of 404ing.
+    // The repo root holds no index.html, so point the bare host somewhere
+    // useful instead of 404ing. `/app/` rather than `/playground/`: the app
+    // is the deliverable now, and the playground pages are each reachable
+    // by name from the line this server prints.
     if (urlPath === '/') {
-        res.writeHead(302, {Location: '/playground/'}).end();
+        res.writeHead(302, {Location: '/app/'}).end();
         return;
     }
     // A directory request resolves to its index.html, as static servers do.
@@ -55,4 +57,6 @@ createServer(async (req, res) => {
     } catch {
         res.writeHead(404).end('not found');
     }
-}).listen(PORT, () => console.log(`serving the repo on http://127.0.0.1:${PORT}/ (playground at /playground/)`));
+}).listen(PORT, () => console.log(
+    `serving the repo on http://127.0.0.1:${PORT}/`
+    + ' (the CMS at /app/, the playground at /playground/)'));

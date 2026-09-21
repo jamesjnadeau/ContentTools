@@ -8,20 +8,35 @@ which has been unmaintained since 2022.
 
 ## Status
 
-**`2.0.0-beta.0` — Milestone 1 is complete: the library is modernized and the
-editor also runs as a custom element. The CMS is not built yet.**
+**Milestones 1 through 5 are complete: the library is modernized, the editor
+runs as a custom element, it can be constrained to what markdown expresses,
+and there is a CMS shell on top of it that edits a git repository by pull
+request.**
+
+`2.0.0-beta.0` is the last published version and covers Milestone 1 only;
+everything from markdown mode onwards is on `master` and unreleased.
+
+| | |
+|---|---|
+| 1 | TypeScript ESM library, ContentEdit absorbed as source, one `RootContext` seam, and `<content-tools-editor>` with its chrome in a shadow root |
+| 2 | markdown mode — the editor constrained to what markdown expresses — and a save that keeps untouched blocks byte-identical; a repeatable editor lifecycle |
+| 3 | runtime config, a GitHub client of our own, one branch and one pull request per entry |
+| 4 | the fine-grained PAT adapter. The GitHub App OAuth proxy is the piece still to come |
+| 5 | the shell: collections, entries, frontmatter widgets, a media library and the editorial workflow |
 
 What changed from v1.6.16:
 
 | | v1.6.16 | now |
 |---|---|---|
 | Language | CoffeeScript 1.x | TypeScript |
-| Modules | one shared closure, concatenated | 81 ES modules |
+| Modules | one shared closure, concatenated | 119 ES modules |
 | Build | Grunt + PhantomJS (unrunnable on Node 22) | Vite |
 | Dependencies | ContentEdit/ContentSelect/HTMLString vendored as one prebuilt file | absorbed as source |
-| Tests | 127 assertions, PhantomJS | 667, real browser, plus five suites against the built artifacts |
+| Tests | 127 assertions, PhantomJS | 1,470 in real Chromium, plus nine Playwright suites against the built artifacts |
 | Host access | bare `document`/`window` throughout | one `RootContext` seam |
 | Embedding | mounts chrome into `document.body` | `<content-tools-editor>`, chrome in a shadow root |
+| Output | HTML in, HTML out | that, or markdown with a one-line diff |
+| Backend | none: `saved` hands you a string | that, or a git repository edited by pull request |
 
 ContentEdit, ContentSelect and HTMLString are no longer external: their
 upstream sources were verified byte-identical to what was vendored, then
@@ -87,12 +102,36 @@ own styles. By default the editable content stays in the light DOM, so your
 page still styles it and preview fidelity is free — which is why you link
 `content.css` for the content rules.
 
-**One element per page.** `ContentTools.EditorApp` and `ContentEdit.Root` are
-still singletons, so a second connected element goes inert and emits
-`ct-error`. De-singletoning is Milestone 2.
+**One element per page**, deliberately. `ContentTools.EditorApp` and
+`ContentEdit.Root` are singletons, and a second connected element goes inert
+and emits `ct-error` rather than fighting the first. Milestone 2 made that
+rule cheap to live with instead of trying to lift it: an element can be
+booted and torn down as many times as you like, and the Nth time behaves
+exactly like the first.
 
 Full attribute, property, method and event reference:
 **[docs/element.md](docs/element.md)**.
+
+### As a CMS
+
+```html
+<content-tools-cms config="./cms-config.yml"></content-tools-cms>
+<script type="module" src="./dist/shell.js"></script>
+```
+
+That tag is the whole application. It loads the config for the one
+repository that deployment edits, signs an author in with their own
+fine-grained token, lists what they can edit, and turns each save into a
+branch, a commit and a pull request for a human to review. `app/` is a
+working deployment of it — copy `app/` and `dist/` to any static host.
+
+Editing one paragraph produces a one-line diff, because the markdown save
+splices the blocks nobody touched back in verbatim. That is the property the
+whole thing rests on: a pull request nobody can read is a review that does
+not happen.
+
+**[docs/shell.md](docs/shell.md)**, and
+**[docs/cms.md](docs/cms.md)** for the same machinery without the UI.
 
 ## Documentation
 
@@ -100,6 +139,7 @@ Full attribute, property, method and event reference:
 - [`<content-tools-editor>`](docs/element.md)
 - [Markdown mode](docs/markdown-mode.md)
 - [The git-backed half](docs/cms.md)
+- [The shell](docs/shell.md)
 - [Content scope: Mode A and Mode B](docs/content-scope.md)
 - [`RootContext` — the host seam](docs/root-context.md)
 
@@ -116,16 +156,17 @@ npm test             # lint, typecheck, browser tests, golden master, equivalenc
 npm run test:coverage
 ```
 
-`npm run dev` builds and serves the playground at
-`http://127.0.0.1:8931/playground/`, the custom-element version at
-`http://127.0.0.1:8931/playground/element.html`, markdown mode at
-`markdown.html`, and the git-backed CMS at `cms.html`.
+`npm run dev` builds and serves the CMS at `http://127.0.0.1:8931/app/` —
+the same page the dist suite drives — and the playground at
+`/playground/`: the editor, the custom-element version at `element.html`,
+markdown mode at `markdown.html`, and the headless git layer at
+`cms.html`.
 
 ### How this is tested
 
-Six suites, deliberately covering different things:
+Deliberately covering different things:
 
-- **`test/browser/`** — 1,021 tests in real Chromium, run against the SOURCE so
+- **`test/browser/`** — 1,470 tests in real Chromium, run against the SOURCE so
   coverage can attribute. Includes upstream ContentEdit's own 329 specs,
   inherited with the code.
 - **`test/golden/golden.spec.mjs`** — a characterisation harness that drives
@@ -167,6 +208,21 @@ Six suites, deliberately covering different things:
   themselves under test. It found the default `fetch` being called unbound on
   its first run.
 
+- **`test/golden/shell-dist.spec.mjs`** — the same technique one layer up,
+  against `app/index.html` and the built `dist/shell.js`: sign in, list a
+  collection, open an entry, edit one paragraph, submit, and assert the pull
+  request it produced carries a one-line diff and a byte-identical
+  frontmatter block. The deliverable and the fixture are the same page on
+  purpose, so neither can quietly stop working while the other passes.
+
+- **`test/golden/markdown-dist.spec.mjs`**, **`styles.spec.mjs`** and
+  **`chunk-closure.spec.mjs`** — the remaining properties of the artifacts
+  rather than of the code: that `dist/markdown.js` resolves its own
+  dependencies once bundled, that the three stylesheets partition the rules
+  exactly (nothing in both halves, nothing in neither), and that every file
+  in `dist/chunks/` is inside some size budget's transitive closure. A chunk
+  in nobody's budget ships unmeasured.
+
 `build/` holds the frozen v1.6.16 artifacts as the reference those suites
 compare against. Do not rebuild them.
 
@@ -175,28 +231,28 @@ compare against. Do not rebuild them.
 Bugs found during the port and deliberately left as-is, because fixing each
 changes behaviour and needs verifying on its own:
 
-- `editor.ts` — `(!region.type() === 'Fixture')` compares a boolean with a
-  string, so the branch that blanks the HTML of a single-empty-child region
-  has never executed.
-- `html-string/strings.ts` — CoffeeScript's implicit-call syntax bound every
-  argument to `concat`, so one parser transition is registered with a single
-  argument instead of four.
+- `src/scripts/editor.ts` — `(!region.type() === 'Fixture')` compares a
+  boolean with a string, so the branch that blanks the HTML of a
+  single-empty-child region has never executed.
+- `vendor-src/html-string/strings.ts` — CoffeeScript's implicit-call syntax
+  bound every argument to `concat`, so one parser transition is registered
+  with a single argument instead of four.
 - `HTMLString.Tag.SELF_CLOSING` is an object, but membership is tested with
   array semantics, so the test never matches.
-- `EditorApp` is a singleton, and `init()` only assigns `fixtureTest` when the
-  argument is truthy — so passing `null` cannot restore the default, and a
-  custom test persists for every later caller.
+- `init()` only assigns `fixtureTest` when the argument is truthy, so passing
+  `null` cannot restore the default on an app that already has a custom one.
+  Milestone 2 bounded it rather than fixing it: `destroy()` is terminal now,
+  so the next `EditorApp.get()` is a fresh instance with the default back.
 
 ## Roadmap
 
-Milestone 1b is complete: the editor runs as `<content-tools-editor>` with
-its chrome in a shadow root, and the element-driven page is proven to behave
-identically to the imperative one on Chromium, Firefox and WebKit.
+Milestone 5 closed the original plan: there is a deployable CMS, and a
+change made in it arrives as a pull request somebody can read.
 
-Next: markdown round-tripping and de-singletoning the editor, then a git/PR
-backend over Octokit, pluggable auth, and the CMS shell — collection browser,
-entry editor and editorial workflow, with every change submitted as a pull
-request.
+What is left is the piece Milestone 4 deliberately deferred — a GitHub App
+OAuth proxy as a second `AuthAdapter`, so a site's authors sign in rather
+than pasting a token. Beyond that: a preview pane, which needs the site's
+own templates and so is a config key and a piece of work of its own.
 
 ## Licence
 

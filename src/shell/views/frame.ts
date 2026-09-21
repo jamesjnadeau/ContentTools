@@ -102,24 +102,24 @@ function withMedia(
     return [entry.node, media.node];
 }
 
-/** What the main pane says, for a route M5-1 does not render yet. */
-function placeholder(doc: Document, state: FrameState): HTMLElement[] {
-    const route = state.route;
-    if (route.kind === 'unknown') {
-        /* The hash is echoed rather than swallowed. Sending an
-           unrecognised URL silently home renders the dashboard for a stale
-           bookmark, which is indistinguishable from the root -- so the
-           reader concludes the entry was deleted. */
-        return [
-            h(doc, 'h2', {class: 'ct-cms__heading'}, ['Not found']),
-            h(doc, 'p', {class: 'ct-cms__note'},
-              ['Nothing here answers to ', h(doc, 'code', {}, [route.hash]), '.'])
-        ];
-    }
+/**
+ * What the main pane says for a hash that names no route.
+ *
+ * Every route the grammar carries is rendered now, so this is the only
+ * thing left for `mainView` to fall through to -- the "arrives in a later
+ * step" half it shared with an unbuilt route went with M5-8, which is the
+ * step it was waiting for.
+ *
+ * The hash is echoed rather than swallowed. Sending an unrecognised URL
+ * silently home renders the dashboard for a stale bookmark, which is
+ * indistinguishable from the root -- so the reader concludes the entry was
+ * deleted.
+ */
+function notFound(doc: Document, hash: string): HTMLElement[] {
     return [
-        h(doc, 'h2', {class: 'ct-cms__heading'}, ['Not built yet']),
+        h(doc, 'h2', {class: 'ct-cms__heading'}, ['Not found']),
         h(doc, 'p', {class: 'ct-cms__note'},
-          ['This part of the shell arrives in a later step.'])
+          ['Nothing here answers to ', h(doc, 'code', {}, [hash]), '.'])
     ];
 }
 
@@ -227,7 +227,7 @@ function mainView(
         });
         return [review.node];
     default:
-        return placeholder(doc, state);
+        return notFound(doc, state.route.hash);
     }
 }
 
