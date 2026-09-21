@@ -93,7 +93,7 @@ describe('the caret, with an entry open in the shell', function() {
         ContentTools.ToolShelf.fetch('bold').apply(block, block.selection(), () => {});
         expect(block.content.html()).toBe('One <b>two</b> three');
 
-        const submit = el.shadowRoot.querySelector('.ct-cms__entry-view .ct-cms__button');
+        const submit = el.shadowRoot.querySelector('.ct-cms__entry-submit');
         submit.click();
         await until(() => !submit.disabled, 'the save to finish');
 

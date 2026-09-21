@@ -253,11 +253,19 @@ $panel-background: #f7f7f7;
 
 // --- the open entry -------------------------------------------------------
 
+// The entry list's head row and the open entry's are the same shape for
+// the same reason: a heading, then whatever acts on what is under it,
+// pushed to the far end by the spacer between them.
+.ct-cms__entries-head,
 .ct-cms__entry-head {
     align-items: baseline;
     display: flex;
     gap: 8px;
     margin: 0 0 4px;
+}
+
+.ct-cms__entries-head .ct-cms__heading {
+    margin: 0;
 }
 
 // The heading is the slug and the slug is a filename, so it wraps for the
@@ -280,6 +288,7 @@ $panel-background: #f7f7f7;
 // lose, so both are bordered in the warning colour rather than sitting in
 // the page as ordinary content.
 .ct-cms__conflict,
+.ct-cms__confirm,
 .ct-cms__leave {
     border: 1px solid $cancel-action-color;
     display: flex;
@@ -289,12 +298,14 @@ $panel-background: #f7f7f7;
     padding: 12px;
 }
 
+.ct-cms__confirm,
 .ct-cms__leave {
     align-items: flex-start;
     flex-direction: row;
     flex-wrap: wrap;
 }
 
+.ct-cms__confirm-note,
 .ct-cms__leave-note {
     flex: 1 1 100%;
     margin: 0;
@@ -425,6 +436,19 @@ textarea.ct-cms__field-input {
     max-width: 100%;
 }
 
+// --- naming a new entry ---------------------------------------------------
+
+// Narrow on purpose. The field holds a filename, not an article, and a
+// box the width of the pane invites a sentence into a name that will be
+// part of a URL for as long as the page exists.
+.ct-cms__create-form {
+    max-width: 480px;
+}
+
+.ct-cms__create-form .ct-cms__button {
+    margin: 12px 0 0;
+}
+
 // --- the sign-in gate -----------------------------------------------------
 
 // Full screen, and it pre-empts routing: with no token there is nothing to
@@ -519,6 +543,14 @@ textarea.ct-cms__field-input {
         // shell would then have to explain.
         background: $muted-action-color;
         cursor: default;
+    }
+
+    // An <a>, not a <button>: a new entry is a place with an address.
+    // So it needs what an anchor does not bring -- the text un-underlined
+    // and the box sized like the buttons it sits beside.
+    &--add {
+        display: inline-block;
+        text-decoration: none;
     }
 
     &--muted {

@@ -17,8 +17,33 @@
  * any, so a save that only edited the body produces a diff in the body.
  */
 
+import type {Field} from '../cms/config.js';
+
 /** The values a form reported, keyed by field name. */
 export type FieldValues = Readonly<Record<string, unknown>>;
+
+/**
+ * What a NEW entry's frontmatter starts as.
+ *
+ * A field with no `default` is LEFT OUT rather than written as null or
+ * an empty string, for the same reason a widget reports an untouched
+ * optional field as absent: a key in every new file is a key in every
+ * later diff of it, and `draft:` with nothing after it is not what a
+ * site's templates read.
+ *
+ * Applied only at creation, never when an existing entry is opened.
+ * Filling a missing key in on open would turn the next save of a file
+ * somebody wrote by hand into a frontmatter rewrite.
+ */
+export function fieldDefaults(fields: readonly Field[]): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const field of fields) {
+        if (field.default !== undefined) {
+            out[field.name] = field.default;
+        }
+    }
+    return out;
+}
 
 /** A frontmatter block the shell may write over. */
 export function isMergeable(data: unknown): data is Record<string, unknown> | null {

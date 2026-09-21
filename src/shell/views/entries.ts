@@ -16,6 +16,7 @@
  * precisely because the join is the product decision and nothing else is.
  */
 import {h, list} from '../render.js';
+import {refuseCreate} from './create.js';
 import {formatRoute} from '../routes.js';
 import type {ListedEntry} from '../merge.js';
 import type {Collection} from '../../cms/config.js';
@@ -117,15 +118,48 @@ function fill(el: HTMLElement, collection: Collection, entry: ListedEntry): void
 
 export function buildEntries(doc: Document): Entries {
     const heading = h(doc, 'h2', {class: 'ct-cms__heading'});
+    /* A real link, like the nav's, rather than a button: a new entry is a
+       place -- it has an address, it survives a reload, and somebody can
+       hand it to a colleague. It is also how a keyboard reaches it. */
+    const add = h(doc, 'a', {class: 'ct-cms__button ct-cms__button--add'}, ['New entry']);
     const note = h(doc, 'p', {class: 'ct-cms__note'});
     const rows = h(doc, 'ul', {class: 'ct-cms__entry-list'});
-    const node = h(doc, 'div', {class: 'ct-cms__entries'}, [heading, note, rows]);
+    const node = h(doc, 'div', {class: 'ct-cms__entries'}, [
+        h(doc, 'div', {class: 'ct-cms__entries-head'}, [
+            heading,
+            h(doc, 'span', {class: 'ct-cms__spacer'}),
+            add
+        ]),
+        note,
+        rows
+    ]);
 
     return {
         node,
 
         update(state: EntriesState): void {
             heading.textContent = state.collection.label;
+
+            /* The same question the create view asks, asked through the
+               same function. A file collection is a fixed list somebody
+               declared in the config, so there is no button to offer;
+               `create: false` is a deployment saying authors may read
+               this but not add to it. The route still exists and still
+               refuses -- a hand-typed URL is not a permission -- and
+               asking it twice in two spellings is how the link comes to
+               offer what the route turns away. */
+            const creatable = refuseCreate(state.collection) === null;
+            add.hidden = !creatable;
+            if (creatable) {
+                add.setAttribute('href', formatRoute({
+                    kind: 'new', collection: state.collection.name
+                }));
+            } else {
+                /* Removed rather than emptied: a hidden `<a href="">` is
+                   a link to the current page, and a screen reader in
+                   links mode still offers it. */
+                add.removeAttribute('href');
+            }
 
             const entries = state.entries;
             /* "Loading" and "nothing here" are different answers and the

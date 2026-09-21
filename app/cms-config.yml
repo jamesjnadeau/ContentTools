@@ -25,7 +25,12 @@ collections:
   - name: blog
     label: Blog
     folder: content/blog
+    # Both off by default, and named here because this file is the
+    # example a deployment copies. `delete` is separate from `create` on
+    # purpose: letting authors add posts is not the same permission as
+    # letting them take pages down.
     create: true
+    delete: true
     fields:
       - {name: title, widget: string}
       - {name: date, widget: datetime}

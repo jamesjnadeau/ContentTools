@@ -36,6 +36,10 @@ export interface EntryHandlers {
     stay(): void;
     /** Leave anyway, losing the unsaved work. */
     discard(): void;
+    /** Ask whether to delete, or withdraw the question. */
+    askDelete(asking: boolean): void;
+    /** Delete it, as a pull request. */
+    confirmDelete(): void;
 }
 
 export interface EntryState {
@@ -59,6 +63,10 @@ export interface EntryState {
     leaving: boolean;
     /** The frontmatter form: which fields, holding what. Null when closed. */
     fields: FieldsState | null;
+    /** Whether this collection lets entries be removed at all. */
+    deletable: boolean;
+    /** The delete confirmation is showing. */
+    deleting: boolean;
 }
 
 export interface EntryView {
@@ -91,12 +99,54 @@ export function buildEntry(
         target: '_blank',
         rel: 'noopener noreferrer'
     });
+    /* Named as well as classed, and so is Delete below. They sit in one
+       row, so `.ct-cms__entry-view .ct-cms__button` stopped meaning
+       "Submit" the moment a second button arrived beside it -- and a
+       selector that silently starts matching the destructive one is not
+       a failure anybody wants to debug from a screenshot. */
     const submit = h(doc, 'button', {
-        class: 'ct-cms__button',
+        class: 'ct-cms__button ct-cms__entry-submit',
         type: 'button',
         onclick: () => handlers.submit()
     }, ['Submit for review']);
     const note = h(doc, 'p', {class: 'ct-cms__note'});
+
+    /* Beside Submit rather than tucked away, and deliberately not behind a
+       menu: it is one of two things a person does to an entry, and hiding
+       it makes the shell feel like it cannot do something it can. What
+       protects the entry is the confirmation below and the fact that a
+       delete is a pull request like any other, not the button being hard
+       to find. */
+    const remove = h(doc, 'button', {
+        class: 'ct-cms__button ct-cms__button--cancel ct-cms__entry-delete',
+        type: 'button',
+        onclick: () => handlers.askDelete(true)
+    }, ['Delete entry']);
+
+    /* Its own block rather than a second `.ct-cms__leave`. The two panels
+       look alike and are asked for opposite reasons -- one is about work
+       you are about to lose, the other about a page you meant to remove
+       -- and a test reaching for "the leave panel" must not be able to
+       find this one. */
+    const deleting = h(doc, 'div', {class: 'ct-cms__confirm', role: 'group'}, [
+        /* Says what actually happens. "Are you sure?" invites a reflex;
+           "nothing is removed from the site until somebody merges it" is
+           the fact that makes this a safe thing to press, and a person who
+           knows it will not come back asking where their page went. */
+        h(doc, 'p', {class: 'ct-cms__confirm-note'},
+          ['Deleting opens a pull request. Nothing is removed from the site '
+           + 'until somebody reviews and merges it.']),
+        h(doc, 'button', {
+            class: 'ct-cms__button',
+            type: 'button',
+            onclick: () => handlers.askDelete(false)
+        }, ['Keep it']),
+        h(doc, 'button', {
+            class: 'ct-cms__button ct-cms__button--cancel',
+            type: 'button',
+            onclick: () => handlers.confirmDelete()
+        }, ['Delete it'])
+    ]);
 
     const conflictText = h(doc, 'textarea', {
         class: 'ct-cms__conflict-text',
@@ -132,11 +182,13 @@ export function buildEntry(
         h(doc, 'div', {class: 'ct-cms__entry-head'}, [
             heading, badge, pull,
             h(doc, 'span', {class: 'ct-cms__spacer'}),
+            remove,
             submit
         ]),
         back,
         note,
         leaving,
+        deleting,
         conflict,
         /* Above the slot the editor lands in, because the frontmatter is
            the top of the file and reading the screen in file order is
@@ -190,6 +242,14 @@ export function buildEntry(
                the conflict -- so the button would generate the error the
                conflict panel then explains. */
             (submit as HTMLButtonElement).disabled = state.saving || entry === null;
+
+            /* Hidden for a collection that does not allow it, and disabled
+               mid-save rather than hidden: a button that vanishes under
+               the pointer is worse than one that refuses. An entry that
+               has not loaded has no path to delete. */
+            remove.hidden = !state.deletable;
+            (remove as HTMLButtonElement).disabled = state.saving || entry === null;
+            deleting.hidden = !state.deleting;
 
             note.textContent = entry === null
                 ? 'Loading…'

@@ -33,9 +33,11 @@
  * renders; `_nav` guards the ordering; `_guard` catches.
  */
 
-import {fieldsFor, findCollection, loadConfig, ConfigError} from '../cms/config.js';
-import type {CmsConfig, Collection} from '../cms/config.js';
-import {CmsRepo} from '../cms/repo.js';
+import {
+    expandSlug, fieldsFor, findCollection, loadConfig, ConfigError
+} from '../cms/config.js';
+import type {CmsConfig, Collection, Field, FolderCollection} from '../cms/config.js';
+import {CmsRepo, EntryExistsError} from '../cms/repo.js';
 import type {Entry, MediaFile} from '../cms/repo.js';
 import {MediaStore, mediaUploader} from '../cms/media.js';
 import {PatAuthAdapter} from '../auth/pat.js';
@@ -57,7 +59,7 @@ import {MarkdownDocument} from '../markdown/document.js';
 
 import {mergeEntries} from './merge.js';
 import type {ListedEntry} from './merge.js';
-import {cannotPush, describeError, NOTHING_TO_SAVE} from './errors.js';
+import {cannotPush, deletedNotice, describeError, NOTHING_TO_SAVE} from './errors.js';
 import type {Described} from './errors.js';
 import {formatRoute, HOME, parseRoute} from './routes.js';
 import type {Route} from './routes.js';
@@ -70,7 +72,9 @@ import {buildStatus} from './views/status.js';
 import type {Status} from './views/status.js';
 import type {EntryState} from './views/entry.js';
 import type {FieldsState} from './views/fields.js';
-import {frontmatterChanged, isMergeable, mergeFrontmatter} from './frontmatter.js';
+import {
+    fieldDefaults, frontmatterChanged, isMergeable, mergeFrontmatter
+} from './frontmatter.js';
 import {DEFAULT_WIDGETS} from './widgets/index.js';
 import type {WidgetFactory} from './widgets/index.js';
 
@@ -172,6 +176,11 @@ export class ContentToolsCms extends HTMLElement {
     declare private _saved: string | null;
     declare private _conflict: string | null;
     /** A navigation held back until the person answers the leave panel. */
+    /** A create is in flight: the button is held while the check runs. */
+    declare private _creating: boolean;
+    /** The delete confirmation is showing. */
+    declare private _deleting: boolean;
+
     declare private _pendingLeave: Route | null;
     /** Set while restoring the hash, so the resulting event is ignored. */
     declare private _restoring: boolean;
@@ -206,7 +215,10 @@ export class ContentToolsCms extends HTMLElement {
             submit: () => this._submit(),
             reload: () => this._reopen(),
             stay: () => this._stay(),
-            discard: () => this._discard()
+            discard: () => this._discard(),
+            askDelete: asking => this._askDelete(asking),
+            confirmDelete: () => this._delete(),
+            create: title => this._create(title)
         /* A GETTER, not a snapshot. The frame is built here, in the
            constructor, and a host page sets `el.widgets` afterwards --
            it has no element to set it on until this has returned. A
@@ -222,6 +234,8 @@ export class ContentToolsCms extends HTMLElement {
         this._repo = null;
         this._entries = null;
         this._truncated = false;
+        this._creating = false;
+        this._deleting = false;
         this._entry = null;
         this._doc = null;
         this._store = null;
@@ -382,7 +396,8 @@ export class ContentToolsCms extends HTMLElement {
                 error: shownOn('ready'),
                 entries: this._entries,
                 truncated: this._truncated,
-                entry: this._entryState()
+                entry: this._entryState(),
+                creating: this._creating
             });
             this._gateView().update({
                 repo: config.backend.repo,
@@ -405,6 +420,8 @@ export class ContentToolsCms extends HTMLElement {
         saving?: boolean;
         saved?: string | null;
         conflict?: string | null;
+        creating?: boolean;
+        deleting?: boolean;
     }): void {
         if ('config' in patch) {
             this._config = patch.config ?? null;
@@ -432,6 +449,12 @@ export class ContentToolsCms extends HTMLElement {
         }
         if ('conflict' in patch) {
             this._conflict = patch.conflict ?? null;
+        }
+        if ('creating' in patch) {
+            this._creating = patch.creating ?? false;
+        }
+        if ('deleting' in patch) {
+            this._deleting = patch.deleting ?? false;
         }
         this._render();
     }
@@ -588,7 +611,9 @@ export class ContentToolsCms extends HTMLElement {
            conservative, and the gate it was protecting -- "the lease is
            free after navigating away" -- is satisfied directly. */
         this._closeEntry();
-        this._setState({route, error: null, entries: null, truncated: false});
+        this._setState({
+            route, error: null, entries: null, truncated: false, creating: false
+        });
         void this._guard(() => this._loadRoute(at));
     }
 
@@ -666,10 +691,26 @@ export class ContentToolsCms extends HTMLElement {
             return;
         }
 
-        const doc = MarkdownDocument.parse(entry.content ?? '');
+        this._mount(entry, MarkdownDocument.parse(entry.content ?? ''),
+                    folder.map(file => file.name));
+    }
+
+    /**
+     * Put an editor on the page for an entry, however it was arrived at.
+     *
+     * Shared by opening an existing entry and creating a new one, and it
+     * is the same code on purpose: the only thing a new entry does
+     * differently is where its `MarkdownDocument` came from. Everything
+     * after that -- the form, the media store, the editor, the dirty
+     * check, the save -- must not be able to tell the two apart, or a
+     * created entry becomes a second set of rules nobody exercises until
+     * somebody writes one.
+     */
+    private _mount(entry: Entry, doc: MarkdownDocument, taken: string[]): void {
+        const config = this._config as CmsConfig;
         this._doc = doc;
-        this._store = new MediaStore({config, taken: folder.map(file => file.name)});
-        this._openForm(doc, collection, slug);
+        this._store = new MediaStore({config, taken});
+        this._openForm(doc, entry.collection, entry.slug);
 
         const editor = this._buildEditor(doc, this._store);
         this._setEditor(editor);
@@ -680,6 +721,156 @@ export class ContentToolsCms extends HTMLElement {
            regions to report: `_regions` is populated by `start()`. */
         editor.start();
         this._setState({entry});
+    }
+
+    /**
+     * Name a new entry and open an editor for it.
+     *
+     * Nothing is committed here. The file appears in the repository at
+     * the first Submit, so an author who names a post, reads what they
+     * were about to write and closes the tab leaves nothing behind --
+     * the same rule staged media follows, and for the same reason.
+     *
+     * The collision IS checked here even though `saveEntry` checks it
+     * again at write time, and the second check is not the first one
+     * repeated: this one runs before the editor opens, and the other
+     * runs after somebody has spent an afternoon in it. Only the one at
+     * write time can settle a race; only this one can save the
+     * afternoon.
+     */
+    private _create(title: string): void {
+        const route = this._route;
+        const repo = this._repo;
+        /* Neither half of this is reachable from the view, and both
+           stay. `kind !== 'new'` is also what narrows the route so
+           `route.collection` exists -- the create view is only rendered
+           on that route, so nothing can call this from another one --
+           and `_creating` is the authoritative copy of the rule the
+           button shows: `_setState` renders synchronously, so the
+           second of two clicks lands on a disabled button and never
+           arrives. A second way in -- a keyboard shortcut, a method on
+           the element -- makes it live, and until then the state
+           belongs here rather than only in the control that displays
+           it. */
+        if (route.kind !== 'new' || !repo || this._creating) {
+            return;
+        }
+        /* A folder collection that allows this, guaranteed by the view:
+           `refuseCreate` hides the form otherwise, and it is the same
+           function the entry list asks before offering the link. */
+        const collection = findCollection(
+            this._config as CmsConfig, route.collection) as FolderCollection;
+        const slug = expandSlug(collection, title, new Date());
+        const at = this._nav;
+        this._setState({creating: true});
+
+        void this._guard(async () => {
+            let entry: Entry;
+            let folder: {name: string}[];
+            try {
+                /* `readEntry` answers both halves of the collision in one
+                   round trip -- is the file on the base branch, is a pull
+                   request open for this slug -- and pins the commit this
+                   entry will be written against. Asking the two questions
+                   separately would ask them at two different moments. */
+                [entry, folder] = await Promise.all([
+                    repo.readEntry(route.collection, slug),
+                    repo.github.listDirectory(
+                        (this._config as CmsConfig).media.folder, repo.base)
+                ]);
+            } finally {
+                /* Whatever happened, the check is over. Leaving it set
+                   disables Create for good, and the person who most needs
+                   to press it again is exactly the one whose first choice
+                   of name collided. */
+                this._creating = false;
+            }
+            if (at !== this._nav) {
+                return;
+            }
+            if (entry.content !== null || entry.pull) {
+                throw new EntryExistsError(route.collection, slug, entry.path);
+            }
+            this._mount(entry, this._blankDocument(fieldsFor(collection, slug)),
+                        folder.map(file => file.name));
+        });
+    }
+
+    /**
+     * The document a new entry starts from.
+     *
+     * The defaults go into the SOURCE, not into the form beside it. A
+     * form seeded separately would be a second description of what the
+     * file holds, and the byte-preserving comparison -- which asks
+     * whether the form now says something the file does not -- would be
+     * comparing the form against a document that never had them.
+     */
+    private _blankDocument(fields: readonly Field[]): MarkdownDocument {
+        const blank = MarkdownDocument.parse('');
+        const defaults = fieldDefaults(fields);
+        /* No keys, no block. A collection whose fields declare no
+           defaults must not give every new entry an empty `---\n---`
+           for every later diff to carry. */
+        return Object.keys(defaults).length === 0
+            ? blank
+            : MarkdownDocument.parse(blank.update('', {frontmatter: defaults}));
+    }
+
+    /** Ask before deleting, or take the question back. */
+    private _askDelete(asking: boolean): void {
+        this._setState({deleting: asking});
+    }
+
+    /**
+     * Remove the open entry, as a pull request like any other edit.
+     *
+     * The shell never deletes anything from the site: it opens a pull
+     * request that would, and a human merges it. So this is not a
+     * destructive action behind a confirmation -- it is an ordinary
+     * change, and the confirmation is there because the button sits
+     * beside Submit.
+     */
+    private _delete(): void {
+        void this._guard(async () => {
+            const repo = this._repo;
+            const entry = this._entry;
+            this._deleting = false;
+            if (!repo || !entry) {
+                return;
+            }
+            const back: Route = {kind: 'collection', collection: entry.collection};
+
+            /* An entry named but never saved has no file anywhere, so
+               there is nothing to open a pull request about: leaving is
+               the whole operation. Without this the repository is asked
+               to delete a path it has never held and correctly refuses,
+               which reads as a failure to do something that had already
+               happened. */
+            if (entry.content === null) {
+                this._navigate(back);
+                this._restoreHash();
+                return;
+            }
+
+            this._setState({saving: true, saved: null, conflict: null, error: null});
+            /* Pinned to the commit this entry was read at, for the same
+               reason a save is: a reviewer who pushed since then gets a
+               `ConflictError` rather than having their work deleted out
+               from under them by somebody who never saw it. */
+            const result = await repo.deleteEntry(entry.collection, entry.slug, {
+                parent: entry.commit,
+                message: `Delete ${entry.path}`
+            });
+
+            /* Back to the list, because there is nothing left to edit
+               here. The entry is still IN that list -- it is on the base
+               branch until somebody merges -- now carrying the pull
+               request that removes it, which is the honest picture and
+               the reason the notice says so. */
+            this._navigate(back);
+            this._restoreHash();
+            this._setState({error: deletedNotice(result.pull.number)});
+        });
     }
 
     /**
@@ -805,19 +996,35 @@ export class ContentToolsCms extends HTMLElement {
         this._store = null;
         this._edited = null;
         this._form = null;
+        /* A confirmation belongs to the entry it was asked about. Left
+           standing, the next entry opens with "Delete it" already on
+           screen -- and the person who presses it is answering a
+           question about a file they have closed. */
+        this._deleting = false;
         this._saving = false;
         this._saved = null;
         this._conflict = null;
     }
 
     private _entryState(): EntryState {
+        const entry = this._entry;
+        const collection = entry && this._config
+            ? findCollection(this._config, entry.collection)
+            : null;
         return {
-            entry: this._entry,
+            entry,
             saving: this._saving,
             saved: this._saved,
             conflict: this._conflict,
             leaving: this._pendingLeave !== null,
-            fields: this._form
+            fields: this._form,
+            /* Asked of the CONFIG every render rather than remembered
+               from the open, because it is a property of the deployment
+               and not of this entry -- and a remembered copy is a second
+               answer that can disagree with the one the list used to
+               decide whether to offer a New entry link. */
+            deletable: collection?.kind === 'folder' && collection.delete,
+            deleting: this._deleting
         };
     }
 
@@ -962,13 +1169,28 @@ export class ContentToolsCms extends HTMLElement {
             const {content, media} = pending;
             this._setState({saving: true, saved: null, conflict: null, error: null});
 
+            /* Derived from the entry, never stored beside it. `content`
+               is null exactly when there is no file at this path -- which
+               is what `readEntry` reports for a slug that was just named,
+               and what the save turns into a string. So a second submit
+               is an update without anything having to remember that the
+               first one was not. */
+            const fresh = entry.content === null;
+
             let result;
             try {
                 result = await repo.saveEntry(entry.collection, entry.slug, {
                     content,
                     media,
                     parent: entry.commit,
-                    message: `Update ${entry.path}`
+                    /* Asked for, not inferred. The shell checked this
+                       before opening the editor; this is the check that
+                       settles the race the first one cannot -- two
+                       authors who both passed it and are both now
+                       pressing Submit. Without it the second one's post
+                       is committed onto the first one's pull request. */
+                    create: fresh,
+                    message: `${fresh ? 'Create' : 'Update'} ${entry.path}`
                 });
             } catch (error) {
                 /* Whatever happens next, the save is over. Leaving
@@ -997,6 +1219,25 @@ export class ContentToolsCms extends HTMLElement {
                    request. Catching it here would leave a revoked token
                    in place and every later save failing the same way. */
                 throw error;
+            }
+
+            /* The entry is real now, so the address bar catches up with
+               it -- in place, without re-reading. A `_navigate` here
+               would tear down the editor the person is still looking at
+               and fetch back the bytes it just sent; the hash is the
+               only thing that was out of date. */
+            /* The route alone, and `fresh` was written beside it and
+               removed: on the `new` route the entry is always fresh,
+               because `_create` refuses to open one that is not, and
+               the second save of a created entry is already on the
+               `entry` route this put it on. The two terms cannot
+               disagree without `_create`'s collision check being gone,
+               and that has its own tests. */
+            if (this._route.kind === 'new') {
+                this._route = {
+                    kind: 'entry', collection: entry.collection, slug: entry.slug
+                };
+                this._restoreHash();
             }
 
             /* `content` is now what the repository holds, so it becomes

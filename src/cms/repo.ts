@@ -131,7 +131,24 @@ export interface SaveOptions {
      * turns that into a `ConflictError` the shell can catch and re-read.
      */
     parent?: string;
+    /**
+     * This save is CREATING the entry, so an existing one is an error.
+     *
+     * Checked here rather than by the caller because the two questions a
+     * caller can ask from outside -- does the file exist on the base
+     * branch, is a pull request open for this slug -- are asked inside
+     * this method one line apart, and a caller asking them separately
+     * asks them at a different moment than the write happens at. Two
+     * authors naming a post the same thing on the same afternoon is the
+     * case: without this the second one's work is committed onto the
+     * first one's branch, and the pull request the first is waiting on
+     * quietly becomes somebody else's article.
+     */
+    create?: boolean;
 }
+
+/** Options for removing an entry. Everything a save takes but its content. */
+export type DeleteOptions = Omit<SaveOptions, 'content' | 'media' | 'create'>;
 
 export interface SaveResult {
     branch: string;
@@ -279,11 +296,20 @@ export class CmsRepo {
         const message = options.message ?? `Update ${name}/${slug}`;
 
         const pull = await this.github.findPull(branch);
+        const current = await this.github.readFile(path, pull ? branch : this.base);
+
+        /* Before the first blob, which is the only place it can go. Both
+           halves are refused: a file already on the base branch, and a
+           pull request already open for this slug -- an entry created an
+           hour ago and still in review is not on the base branch yet, and
+           a create that ignored that would commit onto its branch. */
+        if (options.create && (current !== null || pull)) {
+            throw new EntryExistsError(name, slug, path);
+        }
 
         /* Nothing to say is not a commit. A user who opens an entry,
            changes their mind and saves anyway should not produce an empty
            pull request for somebody to review. */
-        const current = await this.github.readFile(path, pull ? branch : this.base);
         if (current === options.content && media.length === 0) {
             if (pull) {
                 return {branch, pull, commit: null, changed: false, reset: false};
@@ -291,6 +317,60 @@ export class CmsRepo {
             throw new NothingToSaveError(name, slug);
         }
 
+        return this.push(branch, pull, message, options,
+                         await this.treeEntries(path, options.content, media));
+    }
+
+    /**
+     * Remove an entry, as a pull request like any other edit.
+     *
+     * A deletion is a change to the site, so it goes through the same
+     * branch, the same review and the same merge as a typo fix. There is
+     * deliberately no direct write: a tool that can delete a page without
+     * anybody seeing it first has removed the review gate this whole
+     * workflow exists to be.
+     */
+    async deleteEntry(name: string, slug: string, options: DeleteOptions = {}): Promise<SaveResult> {
+        const collection = this.collection(name);
+        const path = entryPath(collection, slug);
+        const branch = branchFor(name, slug);
+        const message = options.message ?? `Delete ${name}/${slug}`;
+
+        const pull = await this.github.findPull(branch);
+
+        /* Checked, not attempted. Removing a path a tree does not hold is
+           either an error or a no-op depending on who is serving the API,
+           and the no-op is the bad one: an empty commit and a pull request
+           whose diff says nothing, waiting for somebody to review it. */
+        if (await this.github.readFile(path, pull ? branch : this.base) === null) {
+            throw new EntryMissingError(name, slug, path);
+        }
+
+        /* `sha: null` is how the git data API spells a removal, and it is
+           why a delete can travel the same road as a save: it is an
+           ordinary tree entry, so the branch, the pull request and the
+           label are all the same code. */
+        return this.push(branch, pull, message, options,
+                         [{path, mode: '100644', type: 'blob', sha: null}]);
+    }
+
+    /**
+     * Commit a tree to an entry's branch and make sure a pull request is open.
+     *
+     * Shared by saving and deleting, and extracted the moment there were
+     * two of them. Every line below is an invariant about the `cms/`
+     * namespace -- which parent a commit gets, when a branch may be
+     * forced, which pull request a status goes on -- and a second copy
+     * that drifted from this one would put a deletion on a branch under
+     * different rules from an edit to the same file.
+     */
+    private async push(
+        branch: string,
+        pull: PullRequest | null,
+        message: string,
+        options: DeleteOptions,
+        entries: TreeEntry[]
+    ): Promise<SaveResult> {
         const existing = await this.github.branchSha(branch);
         const baseSha = await this.baseSha();
 
@@ -308,8 +388,7 @@ export class CmsRepo {
         const reset = Boolean(existing) && !pull;
 
         const tree = await this.github.createTree(
-            await this.github.commitTree(parent),
-            await this.treeEntries(path, options.content, media));
+            await this.github.commitTree(parent), entries);
         const commit = await this.github.createCommit(message, tree, [parent]);
 
         if (!existing) {
@@ -459,5 +538,42 @@ export class NothingToSaveError extends Error {
         this.name = 'NothingToSaveError';
         this.collection = collection;
         this.slug = slug;
+    }
+}
+
+/**
+ * Creating an entry over one that is already there.
+ *
+ * Carries the PATH as well as the slug, because the slug is derived from
+ * a title through a template the author never sees and the path is the
+ * thing they can go and look at. "hello-world already exists" is a
+ * puzzle when the title they typed was `Hello, World!`.
+ */
+export class EntryExistsError extends Error {
+    readonly collection: string;
+    readonly slug: string;
+    readonly path: string;
+
+    constructor(collection: string, slug: string, path: string) {
+        super(`${path} already exists, so ${collection}/${slug} cannot be created`);
+        this.name = 'EntryExistsError';
+        this.collection = collection;
+        this.slug = slug;
+        this.path = path;
+    }
+}
+
+/** Deleting an entry that is not there -- already deleted, or never was. */
+export class EntryMissingError extends Error {
+    readonly collection: string;
+    readonly slug: string;
+    readonly path: string;
+
+    constructor(collection: string, slug: string, path: string) {
+        super(`${path} does not exist, so ${collection}/${slug} cannot be deleted`);
+        this.name = 'EntryMissingError';
+        this.collection = collection;
+        this.slug = slug;
+        this.path = path;
     }
 }

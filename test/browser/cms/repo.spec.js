@@ -14,7 +14,8 @@
 import {parseConfig} from '../../../src/cms/config.js';
 import {ConflictError, DIRECTORY_LIMIT} from '../../../src/cms/github.js';
 import {
-    CmsRepo, NothingToSaveError, branchFor, entryForBranch
+    CmsRepo, NothingToSaveError, EntryExistsError, EntryMissingError,
+    branchFor, entryForBranch
 } from '../../../src/cms/repo.js';
 import {MediaStore} from '../../../src/cms/media.js';
 import {statusOf} from '../../../src/cms/status.js';
@@ -681,5 +682,185 @@ describe('listInFlight', function() {
     it('is empty when nothing is in flight', async function() {
         const {repo} = open();
         return expect(await repo.listInFlight()).toEqual([]);
+    });
+});
+
+describe('creating an entry', function() {
+
+    it('writes one commit on its own branch and opens one pull request', async function() {
+        const {fake, repo} = open();
+        const result = await repo.saveEntry('blog', 'fresh', {
+            content: '# Fresh\n', create: true
+        });
+
+        expect(fake.read('content/blog/fresh.md', 'cms/blog/fresh')).toBe('# Fresh\n');
+        expect(fake.history('cms/blog/fresh').length).toBe(2);
+        expect(fake.pulls().length).toBe(1);
+        // Nothing reaches the published site until somebody merges it.
+        expect(fake.read('content/blog/fresh.md')).toBe(null);
+        return expect(result.changed).toBe(true);
+    });
+
+    /* The collision, and the assertion that matters is the SECOND one:
+       refusing after the blob is written leaves an orphan in the
+       repository's object store and, worse, leaves the caller unable to
+       tell a refusal from a half-finished write. */
+    it('refuses one that already exists, before writing anything', async function() {
+        const {fake, repo} = open();
+        const before = fake.requests.length;
+
+        await expect(repo.saveEntry('blog', 'hello', {content: '# Mine\n', create: true}))
+            .rejects.toBeInstanceOf(EntryExistsError);
+
+        expect(fake.branches()).toEqual(['main']);
+        expect(fake.pulls().length).toBe(0);
+        return expect(fake.requests.slice(before).map(([method]) => method))
+            .toEqual(['GET', 'GET']);
+    });
+
+    /* The case a base-branch check alone would miss, and the one that
+       loses somebody's work: an entry created this morning is not on the
+       base branch yet, so without this the second author's post is
+       committed onto the first author's open pull request. */
+    it('refuses one that exists only inside an open pull request', async function() {
+        const {fake, repo} = open();
+        fake.openPull('blog', 'fresh');
+        await repo.saveEntry('blog', 'fresh', {content: '# Theirs\n'});
+
+        expect(fake.read('content/blog/fresh.md')).toBe(null);
+        await expect(repo.saveEntry('blog', 'fresh', {content: '# Mine\n', create: true}))
+            .rejects.toBeInstanceOf(EntryExistsError);
+        return expect(fake.read('content/blog/fresh.md', 'cms/blog/fresh')).toBe('# Theirs\n');
+    });
+
+    /* The pull request half on its own, which the test above cannot
+       reach: there the file is on the branch too, so a base-and-branch
+       check refuses it without ever consulting the pull request. A
+       DELETE under review is the arrangement where they disagree -- the
+       branch has already removed the file -- and committing a new entry
+       onto it produces one pull request that deletes the page and adds
+       it back, for a reviewer to make sense of. */
+    it('refuses one whose slug is being deleted under review', async function() {
+        const {fake, repo} = open();
+        await repo.deleteEntry('blog', 'hello');
+        expect(fake.read('content/blog/hello.md', 'cms/blog/hello')).toBe(null);
+
+        await expect(repo.saveEntry('blog', 'hello', {content: '# Mine\n', create: true}))
+            .rejects.toBeInstanceOf(EntryExistsError);
+        return expect(fake.pulls().length).toBe(1);
+    });
+
+    /* The path, because the slug is derived from a title through a
+       template the author never sees: "hello already exists" is a puzzle
+       when what they typed was `Hello, World!`. */
+    it('names the file it found, not just the slug', async function() {
+        const {repo} = open();
+        let thrown = null;
+        try {
+            await repo.saveEntry('blog', 'hello', {content: 'x', create: true});
+        } catch (error) {
+            thrown = error;
+        }
+        expect(thrown.path).toBe('content/blog/hello.md');
+        return expect(thrown.message).toContain('content/blog/hello.md');
+    });
+
+    /* Without `create` the same call is a legitimate edit. Stated so that
+       the flag is not mistaken for something `saveEntry` infers. */
+    it('is only refused when the caller said it was a create', async function() {
+        const {fake, repo} = open();
+        await repo.saveEntry('blog', 'hello', {content: '# Edited\n'});
+        return expect(fake.read('content/blog/hello.md', 'cms/blog/hello')).toBe('# Edited\n');
+    });
+});
+
+describe('deleting an entry', function() {
+
+    it('commits a tree without the path, and opens one pull request', async function() {
+        const {fake, repo} = open();
+        const result = await repo.deleteEntry('blog', 'hello');
+
+        expect(fake.paths('cms/blog/hello')).not.toContain('content/blog/hello.md');
+        // Everything else is still there: a delete is one path, not a sweep.
+        expect(fake.paths('cms/blog/hello')).toContain('content/blog/second.md');
+        expect(fake.history('cms/blog/hello').length).toBe(2);
+        expect(fake.pulls().length).toBe(1);
+        return expect(result.changed).toBe(true);
+    });
+
+    /* It is a pull request like any other edit, so the published site is
+       untouched until a human merges it. A tool that can delete a page
+       without anybody seeing it first has removed the review gate. */
+    it('leaves the base branch alone', async function() {
+        const {fake, repo} = open();
+        await repo.deleteEntry('blog', 'hello');
+        return expect(fake.read('content/blog/hello.md')).toBe('# Hello\n');
+    });
+
+    it('labels the new pull request a draft, like a save does', async function() {
+        const {repo} = open();
+        const result = await repo.deleteEntry('blog', 'hello');
+        return expect(statusOf(result.pull)).toBe('draft');
+    });
+
+    it('says what it did in the commit message', async function() {
+        const {fake, repo} = open();
+        await repo.deleteEntry('blog', 'hello');
+        return expect(fake.history('cms/blog/hello')[0].message).toBe('Delete blog/hello');
+    });
+
+    /* One entry, one branch, one pull request -- whichever kind of change
+       it is. Deleting an entry somebody is already reviewing an edit to
+       adds a commit to that review rather than opening a second one for
+       the same file. */
+    it('adds to the entry pull request that is already open', async function() {
+        const {fake, repo} = open();
+        await repo.saveEntry('blog', 'hello', {content: '# Edited\n'});
+        await repo.deleteEntry('blog', 'hello');
+
+        expect(fake.pulls().length).toBe(1);
+        expect(fake.paths('cms/blog/hello')).not.toContain('content/blog/hello.md');
+        return expect(fake.history('cms/blog/hello').length).toBe(3);
+    });
+
+    /* Refused rather than attempted: removing a path a tree does not hold
+       is an error or a no-op depending on who is serving the API, and the
+       no-op is the bad one -- an empty commit and a pull request whose
+       diff says nothing, waiting for somebody to review it. */
+    it('refuses one that is not there, before writing anything', async function() {
+        const {fake, repo} = open();
+        const before = fake.requests.length;
+
+        await expect(repo.deleteEntry('blog', 'gone'))
+            .rejects.toBeInstanceOf(EntryMissingError);
+
+        expect(fake.branches()).toEqual(['main']);
+        return expect(fake.requests.slice(before).map(([method]) => method))
+            .toEqual(['GET', 'GET']);
+    });
+
+    /* Deleted once on its branch, then deleted again: the second attempt
+       reads the branch, not the base, so it correctly finds nothing. */
+    it('refuses a second time, having read the branch it already emptied', async function() {
+        const {repo} = open();
+        await repo.deleteEntry('blog', 'hello');
+        return expect(repo.deleteEntry('blog', 'hello'))
+            .rejects.toBeInstanceOf(EntryMissingError);
+    });
+
+    it('works for a file collection, whose path comes from the config', async function() {
+        const {fake, repo} = open();
+        await repo.deleteEntry('settings', 'about');
+        return expect(fake.paths('cms/settings/about')).not.toContain('content/about.md');
+    });
+
+    it('takes a message and a body like a save', async function() {
+        const {fake, repo} = open();
+        const result = await repo.deleteEntry('blog', 'hello', {
+            message: 'Retire the welcome post', body: 'Superseded.'
+        });
+        expect(fake.history('cms/blog/hello')[0].message).toBe('Retire the welcome post');
+        expect(result.pull.title).toBe('Retire the welcome post');
+        return expect(result.pull.body).toBe('Superseded.');
     });
 });

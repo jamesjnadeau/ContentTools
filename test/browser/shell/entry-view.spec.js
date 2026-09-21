@@ -40,6 +40,7 @@ const ENTRY = {
 /** The state the shell holds for an entry that has only just been asked for. */
 const LOADING = {
     entry: null, saving: false, saved: null, conflict: null, leaving: false,
+    deletable: false, deleting: false,
     /* No form. The fields are their own view with their own spec, and
        every assertion here is about the chrome around them. */
     fields: null
@@ -47,7 +48,8 @@ const LOADING = {
 
 function view(state = {}) {
     const built = buildEntry(document, {
-        submit() {}, reload() {}, stay() {}, discard() {}
+        submit() {}, reload() {}, stay() {}, discard() {},
+        askDelete() {}, confirmDelete() {}
     });
     built.update({...LOADING, ...state});
     return {
@@ -89,7 +91,34 @@ describe('the entry view', () => {
                nothing, on the one screen where the person is waiting for
                something to happen. */
             const {find} = view();
-            return expect(find('.ct-cms__button').disabled).toBe(true);
+            return expect(find('.ct-cms__entry-submit').disabled).toBe(true);
+        });
+    });
+
+    describe('the delete button', () => {
+        it('is disabled before the entry has arrived', () => {
+            /* Hidden is not the answer here -- the collection is known
+               from the route, so the button is offered as soon as the
+               screen is -- and an entry that has not loaded has no path
+               to delete. A live button there opens a pull request
+               against whatever the last entry was. */
+            const {find} = view({deletable: true});
+            expect(find('.ct-cms__entry-delete').hidden).toBe(false);
+            return expect(find('.ct-cms__entry-delete').disabled).toBe(true);
+        });
+
+        it('is disabled while a save is in flight', () => {
+            /* The two write the same branch. Pressing Delete during a
+               save builds a second commit on the same parent, and the
+               second one loses -- so the two buttons would race to
+               produce the conflict panel that explains the race. */
+            const {find} = view({entry: ENTRY, saving: true});
+            return expect(find('.ct-cms__entry-delete').disabled).toBe(true);
+        });
+
+        it('is live once there is an entry and no save running', () => {
+            const {find} = view({entry: ENTRY, deletable: true});
+            return expect(find('.ct-cms__entry-delete').disabled).toBe(false);
         });
     });
 

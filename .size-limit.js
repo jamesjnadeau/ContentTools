@@ -101,10 +101,18 @@ export default [
            `element` share, because it imports nothing from the library --
            scripts/build.mjs asserts that against the artifact. A shell
            loads it alongside one of those entries; a site that only edits
-           pays none of it. */
+           pays none of it.
+
+           11 kB -> 12 kB with create and delete: `slugify`, `expandSlug`
+           and the slug-template rules, `deleteEntry`, and the `create`
+           flag that settles the two-authors race. `slugify` is shared
+           with `safeFilename` rather than written twice, which is the
+           only reason this is 1 kB and not two -- a media file and an
+           entry named from the same title have to agree on what a
+           filename is. */
         name: 'cms entry',
         path: closureOf('dist/cms.js'),
-        limit: '11 kB',
+        limit: '12 kB',
         gzip: true
     },
     {
@@ -164,10 +172,14 @@ export default [
            editor and parser above, which is the shape this number keeps
            having -- the shell's own code is a rounding error against
            what a shell that mounts an editor and parses markdown
-           carries. */
+           carries.
+
+           208 kB -> 212 kB with create and delete: the naming view and
+           its live filename preview, the confirm panel, and the two
+           collision checks. Same shape again. */
         name: 'shell entry + its chunks',
         path: closureOf('dist/shell.js'),
-        limit: '208 kB',
+        limit: '212 kB',
         gzip: true
     },
     {

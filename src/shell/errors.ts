@@ -105,6 +105,33 @@ export function describeError(error: unknown): Described {
         return NOTHING_TO_SAVE;
     }
 
+    /* The author typed a TITLE and the repository is answering about a
+       FILENAME, so the path is the whole message: `hello-world already
+       exists` is a puzzle to somebody who wrote `Hello, World!` under a
+       `{{year}}-{{slug}}` template they have never seen. */
+    if (name === 'EntryExistsError') {
+        return {
+            title: 'There is already an entry with that name.',
+            detail: `${readString(error, 'path')} exists, either on the site or in a `
+                + 'pull request waiting for review. Choose a different name.',
+            kind: 'notice',
+            path: ''
+        };
+    }
+
+    /* A notice rather than a failure: the entry being gone is the outcome
+       the person asked for. It happens when two tabs are open, or when
+       somebody else's pull request deleting it has already merged. */
+    if (name === 'EntryMissingError') {
+        return {
+            title: 'That entry is already gone.',
+            detail: `${readString(error, 'path')} is not in the repository, so there `
+                + 'is nothing to delete.',
+            kind: 'notice',
+            path: ''
+        };
+    }
+
     /* Before the `GitHubError` branch, because `ConflictError` extends it
        and would otherwise be reported as an ordinary 422. It is the one
        API failure a shell HANDLES rather than reports: the person's work
@@ -191,6 +218,24 @@ export function cannotPush(repo: string): Described {
         detail: 'It needs Contents and Pull requests set to read and write, '
               + 'not read-only.',
         kind: 'forbidden',
+        path: ''
+    };
+}
+
+/**
+ * A deletion that was opened for review.
+ *
+ * A notice, because it is the outcome somebody asked for -- and it has to
+ * say the second sentence out loud. The entry is still in the list
+ * afterwards, still on the site, and an author who is not told why will
+ * either press Delete again or conclude it did not work.
+ */
+export function deletedNotice(pull: number): Described {
+    return {
+        title: `Deletion opened as pull request #${pull}.`,
+        detail: 'The entry stays on the site, and in this list, until somebody '
+              + 'reviews and merges that pull request.',
+        kind: 'notice',
         path: ''
     };
 }

@@ -103,7 +103,7 @@ describe('media travels with its entry', function() {
     }
 
     async function submit() {
-        const button = el.shadowRoot.querySelector('.ct-cms__entry-view .ct-cms__button');
+        const button = el.shadowRoot.querySelector('.ct-cms__entry-submit');
         button.click();
         await until(() => !button.disabled, 'the save to finish');
     }

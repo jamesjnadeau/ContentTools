@@ -51,8 +51,10 @@ collections:
   - name: blog
     label: Blog
     folder: content/blog
-    create: true
+    create: true        # default: false -- may authors add entries?
+    delete: true        # default: false -- and may they remove them?
     extension: md       # default: md
+    slug: "{{year}}-{{slug}}"   # default: "{{slug}}"
     fields:
       - {name: title, widget: string}
   - name: pages
@@ -77,6 +79,30 @@ ever hit.
 `fields` is **validated and rendered nowhere**. The widgets are the shell's
 job; the shape is fixed now so a site's config file does not have to change
 later.
+
+`create` and `delete` are separate permissions and both default to false.
+Letting authors add posts is not the same as letting them take pages down,
+and a collection that says neither is read-only.
+
+`slug` is the filename template for new entries, expanded from the title the
+author types. The tokens are `{{slug}}`, `{{year}}`, `{{month}}` and
+`{{day}}`, and the dates are the author's own calendar day rather than UTC.
+It is checked at parse time rather than at create time: an unknown token, a
+`/`, a brace that is not part of a token, or a template with no `{{slug}}`
+in it is a `ConfigError` naming `collections[0].slug`. The alternative is a
+collection that quietly names every file `hello-{draft}.md`, or names them
+all the same thing and then refuses the second one.
+
+```js
+import {slugify, expandSlug} from '@jamesjnadeau/content-tools/cms';
+
+slugify('Hello, World!');                      // 'hello-world'
+expandSlug(collection, 'Hello World!', new Date());   // '2026-hello-world'
+```
+
+`slugify` is the same function `safeFilename` uses for uploads, on purpose: a
+post and an image named from the same title have to agree on what a filename
+is.
 
 ## Signing in
 
@@ -171,6 +197,28 @@ A `cms/...` branch whose pull request is no longer open is treated as this
 tool's leftover and reset onto the base branch, which `SaveResult.reset`
 reports. That discards a branch, not the work on it — a closed pull request's
 commits stay reachable through the pull request itself.
+
+### Creating and deleting
+
+```js
+await repo.saveEntry('blog', slug, {content, create: true});
+```
+
+`create: true` says this save is expected to make a new file, and the save is
+refused with an `EntryExistsError` if the slug is already taken — on the base
+branch **or** by an open pull request. A shell that checks before opening its
+editor should still pass it: that check saves somebody's afternoon, and this
+one settles the race between two authors who both passed it.
+
+```js
+await repo.deleteEntry('blog', 'hello', {parent: entry.commit});
+```
+
+A delete is a pull request like any other change: one commit whose tree no
+longer holds the path, on the entry's own branch, for a human to merge. The
+entry stays on the site — and in `listEntries` — until they do. Deleting a
+path the repository does not hold throws an `EntryMissingError` rather than
+committing nothing and opening a pull request with an empty diff.
 
 ## Media
 

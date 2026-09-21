@@ -33,9 +33,9 @@ async function openHello(options = {}) {
 
 /** Press Submit and wait for the save to finish. */
 async function submit(el) {
-    el.shadowRoot.querySelector('.ct-cms__entry-view .ct-cms__button').click();
+    el.shadowRoot.querySelector('.ct-cms__entry-submit').click();
     await until(
-        () => !el.shadowRoot.querySelector('.ct-cms__entry-view .ct-cms__button').disabled,
+        () => !el.shadowRoot.querySelector('.ct-cms__entry-submit').disabled,
         'the save to finish');
 }
 
@@ -581,7 +581,7 @@ describe('the entry editor', function() {
         retype(el, 'Goodbye.');
         revoked = true;
 
-        el.shadowRoot.querySelector('.ct-cms__entry-view .ct-cms__button').click();
+        el.shadowRoot.querySelector('.ct-cms__entry-submit').click();
         await until(() => el.getAttribute('state') === 'signed-out', 'the gate');
 
         expect(alertText(el)).toContain('GitHub rejected that token');
@@ -780,7 +780,7 @@ describe('the entry editor', function() {
                 ['{name: title, required: true}']);
             control(el, 'title').value = '';
             retype(el, 'Goodbye.');
-            el.shadowRoot.querySelector('.ct-cms__entry-view .ct-cms__button').click();
+            el.shadowRoot.querySelector('.ct-cms__entry-submit').click();
             await until(() => alertText(el) !== '', 'the refusal');
 
             expect(alertText(el)).toContain('One field needs filling in');
@@ -798,7 +798,7 @@ describe('the entry editor', function() {
                 '{name: summary, required: true}'
             ]);
             control(el, 'title').value = '';
-            el.shadowRoot.querySelector('.ct-cms__entry-view .ct-cms__button').click();
+            el.shadowRoot.querySelector('.ct-cms__entry-submit').click();
             await until(() => alertText(el) !== '', 'the refusal');
             return expect(alertText(el)).toContain('2 fields need filling in');
         });
@@ -807,7 +807,7 @@ describe('the entry editor', function() {
             const {el, fake} = await openWith('---\ntitle: Hello\n---\n\nWorld.\n',
                                               ['{name: title, required: true}']);
             control(el, 'title').value = '';
-            el.shadowRoot.querySelector('.ct-cms__entry-view .ct-cms__button').click();
+            el.shadowRoot.querySelector('.ct-cms__entry-submit').click();
             await until(() => alertText(el) !== '', 'the refusal');
 
             control(el, 'title').value = 'Filled';

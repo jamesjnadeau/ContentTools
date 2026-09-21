@@ -20,7 +20,7 @@
  */
 
 import type {CmsConfig} from './config.js';
-import {mediaPath, mediaURL} from './config.js';
+import {mediaPath, mediaURL, slugify} from './config.js';
 import type {MediaFile} from './repo.js';
 
 /** A file waiting for the save that will commit it. */
@@ -69,23 +69,16 @@ export function safeFilename(filename: string): string {
     const stem = at > 0 ? filename.slice(0, at) : filename;
     const extension = at > 0 ? filename.slice(at + 1) : '';
 
-    const clean = (part: string) => part
-        .toLowerCase()
-        /* Accents come off rather than being replaced: `ünïcode.png`
-           should be `unicode.png`, not `n-code.png`, and a European
-           filename is not an edge case. Anything with no ASCII form at
-           all -- a name written in Chinese, say -- still ends up as
-           dashes, which is the best a name a URL can carry unescaped can
-           do for it. */
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '');
-
-    /* `file` rather than an empty name, which is what a name written
-       entirely in a script this rule cannot spell would otherwise leave. */
-    const safe = clean(stem) || 'file';
-    const suffix = clean(extension);
+    /* The same rule a new ENTRY's filename is made with, and it lives in
+       `config.ts` so that there is only one of it. A picture and the post
+       it illustrates carrying two different spellings of the same two
+       words is not a bug anybody reports; it is just an untidy repository
+       nobody can explain. */
+    const safe = slugify(stem) || 'file';
+    const suffix = slugify(extension);
+    /* `file` rather than an empty name: `slugify` returns nothing at all
+       for a name written entirely in a script it cannot spell, and a file
+       called `.png` is not a filename. */
     return suffix ? `${safe}.${suffix}` : safe;
 }
 

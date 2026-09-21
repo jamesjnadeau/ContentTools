@@ -25,6 +25,9 @@ export {
     entryPath,
     fieldsFor,
     slugFromPath,
+    slugify,
+    expandSlug,
+    SLUG_TOKENS,
     mediaPath,
     mediaURL
 } from './config.js';
@@ -60,6 +63,8 @@ export type {
 export {
     CmsRepo,
     NothingToSaveError,
+    EntryExistsError,
+    EntryMissingError,
     BRANCH_PREFIX,
     branchFor,
     entryForBranch
@@ -73,7 +78,8 @@ export type {
     InFlightEntry,
     MediaFile,
     SaveOptions,
-    SaveResult
+    SaveResult,
+    DeleteOptions
 } from './repo.js';
 
 /* Media, and where an entry is in review. `safeFilename` is public because

@@ -17,6 +17,8 @@ import {buildEntries} from './entries.js';
 import type {Entries} from './entries.js';
 import {buildEntry} from './entry.js';
 import type {EntryHandlers, EntryState, EntryView} from './entry.js';
+import {buildCreate} from './create.js';
+import type {CreateHandlers, CreateView} from './create.js';
 import type {WidgetSource} from './fields.js';
 import {formatRoute} from '../routes.js';
 import type {Route} from '../routes.js';
@@ -27,7 +29,7 @@ import type {CmsConfig} from '../../cms/config.js';
 /** Where the editor element is slotted. Its light-DOM home is the host. */
 export const EDITOR_SLOT = 'editor';
 
-export interface FrameHandlers extends EntryHandlers {
+export interface FrameHandlers extends EntryHandlers, CreateHandlers {
     signOut(): void;
 }
 
@@ -41,6 +43,8 @@ export interface FrameState {
     truncated: boolean;
     /** The open entry, and everything the editor's chrome shows about it. */
     entry: EntryState;
+    /** A create is in flight, so the Create button is held. */
+    creating: boolean;
 }
 
 /**
@@ -91,16 +95,8 @@ function collectionView(
         ): HTMLElement[] {
     const collection = state.config.collections.find(c => c.name === name);
     if (!collection) {
-        /* A link that no longer matches the config -- an old bookmark, or
-           a collection somebody renamed. Named, because "empty" and "gone"
-           look the same on screen and only one of them is worth telling
-           somebody about. */
-        return [
-            h(doc, 'h2', {class: 'ct-cms__heading'}, ['No such collection']),
-            h(doc, 'p', {class: 'ct-cms__note'},
-              ['This deployment has no collection named ',
-               h(doc, 'code', {}, [name]), '.'])
-        ];
+        // An old bookmark, or a collection somebody renamed.
+        return missing(doc, name);
     }
     /* The one view that is built once and merely re-shown. Everything else
        in the main pane is rebuilt per render, which is fine for a heading
@@ -114,11 +110,52 @@ function collectionView(
     return [entries.node];
 }
 
+/**
+ * Naming a new entry, or editing the one that naming produced.
+ *
+ * The create route holds an OPEN EDITOR once the entry has been named,
+ * and that is why this is a branch rather than a second route: the entry
+ * is not in the repository yet, so there is no slug to link to and
+ * nothing to navigate to. The address bar catches up when the first save
+ * makes the entry real.
+ */
+function createView(
+        doc: Document,
+        state: FrameState,
+        create: CreateView,
+        entry: EntryView,
+        name: string
+        ): HTMLElement[] {
+    if (state.entry.entry) {
+        entry.update(state.entry);
+        return [entry.node];
+    }
+    const collection = state.config.collections.find(c => c.name === name);
+    if (!collection) {
+        return missing(doc, name);
+    }
+    create.update({collection, busy: state.creating});
+    return [create.node];
+}
+
+/** A link or a bookmark naming a collection this config does not have. */
+function missing(doc: Document, name: string): HTMLElement[] {
+    /* Named, because "empty" and "gone" look the same on screen and only
+       one of them is worth telling somebody about. */
+    return [
+        h(doc, 'h2', {class: 'ct-cms__heading'}, ['No such collection']),
+        h(doc, 'p', {class: 'ct-cms__note'},
+          ['This deployment has no collection named ',
+           h(doc, 'code', {}, [name]), '.'])
+    ];
+}
+
 function mainView(
         doc: Document,
         state: FrameState,
         entries: Entries,
-        entry: EntryView
+        entry: EntryView,
+        create: CreateView
         ): HTMLElement[] {
     switch (state.route.kind) {
     case 'home':
@@ -129,6 +166,8 @@ function mainView(
         ];
     case 'collection':
         return collectionView(doc, state, entries, state.route.collection);
+    case 'new':
+        return createView(doc, state, create, entry, state.route.collection);
     case 'entry':
         /* Built once and merely re-shown, for the same reason the list
            is -- and with a second reason of its own from M5-4, when the
@@ -151,6 +190,7 @@ export function buildFrame(
     const view = h(doc, 'div', {class: 'ct-cms__view'});
     const entries = buildEntries(doc);
     const entry = buildEntry(doc, handlers, widgets);
+    const create = buildCreate(doc, handlers);
     const alert = alertRegion(doc);
 
     const slot = doc.createElement('slot');
@@ -223,7 +263,7 @@ export function buildFrame(
                 }
             );
 
-            view.replaceChildren(...mainView(doc, state, entries, entry));
+            view.replaceChildren(...mainView(doc, state, entries, entry, create));
         }
     };
 }

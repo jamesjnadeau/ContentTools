@@ -91,9 +91,28 @@ export interface FolderCollection {
     readonly folder: string;
     /** Whether the shell may add entries to it. */
     readonly create: boolean;
+    /**
+     * Whether the shell may remove entries from it.
+     *
+     * Separate from `create` and defaulting to false on its own. They are
+     * not two halves of one permission: a collection an author adds to
+     * every week may still be one nobody should be able to take a page
+     * out of, and deriving the second from the first would grant that
+     * silently the moment somebody turned on the first.
+     */
+    readonly delete: boolean;
     /** Without the dot. */
     readonly extension: string;
-    /** Filename template for new entries. Expanded by the shell, not here. */
+    /**
+     * Filename template for new entries, e.g. `{{year}}-{{slug}}`.
+     *
+     * Validated at parse time and expanded by `expandSlug`. Both live
+     * here, and the second is the reason the first can be strict: a
+     * template nothing rejects is a template the shell silently writes
+     * into a filename, and `{{Year}}` -- which is not a token, because
+     * the tokens are lower case -- would arrive in the repository
+     * spelled exactly like that.
+     */
     readonly slug: string;
     readonly fields: readonly Field[];
 }
@@ -128,6 +147,36 @@ const DEFAULT_BRANCH = 'main';
 const DEFAULT_API_BASE = 'https://api.github.com';
 const DEFAULT_EXTENSION = 'md';
 const DEFAULT_SLUG = '{{slug}}';
+
+/**
+ * The names a `slug` template may use.
+ *
+ * Deliberately four. Every one of them is answerable at the moment an
+ * entry is created from the title and the clock, with nothing else to
+ * consult -- which is what lets the filename be decided, shown to the
+ * author, and checked for a collision before anything is written. A token
+ * naming a FIELD would move that decision to after the form is filled in,
+ * so the name the author was shown and the name the file gets could
+ * differ.
+ */
+export const SLUG_TOKENS: readonly string[] = Object.freeze(
+    ['slug', 'year', 'month', 'day']);
+
+/**
+ * Anything written as a token, known or not.
+ *
+ * One pattern for BOTH the check and the expansion, which is the whole
+ * reason it is a constant. A looser check than the expansion accepts
+ * lets a typo through to be written literally into a filename; a
+ * stricter one rejects a config that would have worked. They cannot
+ * disagree if there is only one of them.
+ *
+ * `[^{}]*` rather than a lazy `.*?` is intent, not behaviour: with the
+ * stray-brace check below, no template that survives parsing can tell
+ * the two apart, and every template that could is refused by both. It
+ * stays because it says what a token may contain.
+ */
+const SLUG_TOKEN = /\{\{([^{}]*)\}\}/g;
 
 // --- reading untyped input ------------------------------------------------
 
@@ -229,6 +278,65 @@ function parseFields(value: unknown, path: string): Field[] {
     });
 }
 
+/**
+ * A `slug` template, checked.
+ *
+ * Every rule here names a failure that is invisible once the file is
+ * written: a template the shell expands into a name nobody asked for, or
+ * into a path the listing will then refuse to show.
+ */
+function slugTemplate(raw: unknown, path: string): string {
+    const template = optionalStr(raw, path, DEFAULT_SLUG);
+
+    /* A slug is ONE path segment. `{{year}}/{{slug}}` produces
+       `content/blog/2026/hello.md`, which `slugFromPath` correctly
+       refuses to read back as an entry of this collection -- so the
+       author creates a page and watches it vanish from the list. It also
+       makes `../` unwritable, which is worth having for its own sake. */
+    if (template.includes('/')) {
+        throw new ConfigError(
+            path, `"${template}" contains "/"; a slug names one file, not a path`);
+    }
+
+    const used = new Set<string>();
+    for (const [, name] of template.matchAll(SLUG_TOKEN)) {
+        const token = name.trim();
+        if (!SLUG_TOKENS.includes(token)) {
+            throw new ConfigError(
+                path,
+                `"{{${name}}}" is not a slug token; expected one of `
+                + SLUG_TOKENS.map(t => `{{${t}}}`).join(', '));
+        }
+        used.add(token);
+    }
+
+    /* A brace nothing above accounted for. `{{slug}}-{draft}` passes
+       every check so far -- it has its `{{slug}}`, and the single-braced
+       word is not a token at all, so no rule looks at it -- and then
+       every file the collection ever creates is called
+       `hello-{draft}.md`. Nobody connects that to the config, because
+       the config looks like it worked. */
+    const rest = template.replace(SLUG_TOKEN, '');
+    if (/[{}]/.test(rest)) {
+        throw new ConfigError(
+            path,
+            `"${template}" has a brace that is not part of a token;`
+            + ' a token is written {{slug}}');
+    }
+
+    /* Without `{{slug}}` the template says the same thing for every
+       entry, so the second one an author writes this year collides with
+       the first and the shell refuses to create it. That refusal names
+       the file, which is a true statement about a config nobody will
+       connect to it -- so the config is what says so. */
+    if (!used.has('slug')) {
+        throw new ConfigError(
+            path,
+            `"${template}" has no {{slug}}, so every new entry would be named the same`);
+    }
+    return template;
+}
+
 function parseCollection(raw: unknown, path: string): Collection {
     const input = object(raw, path);
     const name = str(input.name, `${path}.name`);
@@ -271,11 +379,12 @@ function parseCollection(raw: unknown, path: string): Collection {
         label,
         folder: trimSlashes(str(input.folder, `${path}.folder`)),
         create: optionalBool(input.create, `${path}.create`, false),
+        delete: optionalBool(input.delete, `${path}.delete`, false),
         /* A leading dot is the natural way to write this and means the same
            thing, so accept it rather than rejecting a config that is right
            in every way a reader would care about. */
         extension: optionalStr(input.extension, `${path}.extension`, DEFAULT_EXTENSION).replace(/^\./, ''),
-        slug: optionalStr(input.slug, `${path}.slug`, DEFAULT_SLUG),
+        slug: slugTemplate(input.slug, `${path}.slug`),
         fields: Object.freeze(parseFields(input.fields, `${path}.fields`))
     });
 }
@@ -398,6 +507,60 @@ export function fieldsFor(collection: Collection, slug: string): readonly Field[
         return collection.files.find(f => f.name === slug)?.fields ?? [];
     }
     return collection.fields;
+}
+
+/**
+ * The ASCII, URL-safe form of a piece of text.
+ *
+ * ONE rule, shared by the name an uploaded image gets and the name a new
+ * entry gets. Two spellings of it would put `uber-uns.png` beside
+ * `ueber-uns.md` in the same repository for the same two words, and
+ * neither would look wrong on its own.
+ *
+ * Comes back EMPTY for text with no ASCII form at all -- a title written
+ * in Chinese, say -- rather than guessing at one. The callers differ in
+ * what they do about that, which is why this does not decide: an upload
+ * falls back to a filename, and the shell refuses to create the entry and
+ * asks for a name it can use.
+ */
+export function slugify(text: string): string {
+    return text
+        .toLowerCase()
+        /* Accents come off rather than being replaced: `ünïcode` is
+           `unicode`, not `n-code`, and a European title is not an edge
+           case. */
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * The filename stem a new entry gets, from its title and the clock.
+ *
+ * Pure, and the date is a parameter rather than read here, for the
+ * reason every date in this project is: a function that asks the clock
+ * cannot be asserted about, and a filename is the one thing about an
+ * entry nobody can change afterwards without breaking its URL.
+ */
+export function expandSlug(collection: FolderCollection, title: string, at: Date): string {
+    const pad = (value: number) => String(value).padStart(2, '0');
+    const values: Record<string, string> = {
+        slug: slugify(title),
+        /* The AUTHOR's calendar day, not UTC's. Somebody writing at nine
+           in the evening in Berlin files a post under the day they wrote
+           it, which is the date they will later look for it under -- and
+           under UTC a third of their evenings would be filed under the
+           day before. */
+        year: String(at.getFullYear()),
+        month: pad(at.getMonth() + 1),
+        day: pad(at.getDate())
+    };
+    /* Every token here is known, because `parseConfig` refused the
+       template otherwise. That is the point of checking it there: this
+       cannot produce `{{Year}}-hello`, and there is no fallback here
+       whose behaviour anybody would have to guess at. */
+    return collection.slug.replace(SLUG_TOKEN, (_, name: string) => values[name.trim()]);
 }
 
 /** The slug a repository path corresponds to, or null if it is not one. */

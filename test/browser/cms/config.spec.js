@@ -10,7 +10,7 @@
 
 import {
     parseConfig, loadConfig, ConfigError, findCollection, fieldsFor,
-    entryPath, slugFromPath, mediaPath, mediaURL
+    entryPath, slugFromPath, mediaPath, mediaURL, slugify, expandSlug, SLUG_TOKENS
 } from '../../../src/cms/config.js';
 
 /** The smallest config that parses, as a fresh object each time. */
@@ -559,5 +559,229 @@ describe('paths', function() {
     it('locates media in the repository and in the document', function() {
         expect(mediaPath(config, 'cat.png')).toBe('static/images/cat.png');
         return expect(mediaURL(config, 'cat.png')).toBe('/images/cat.png');
+    });
+});
+
+describe('slugify', function() {
+
+    it.each([
+        ['Hello World!', 'hello-world', 'the ordinary case'],
+        ['Über uns', 'uber-uns', 'an accent comes off rather than becoming a dash'],
+        ['  spaced  out  ', 'spaced-out', 'the run of separators collapses, and the ends go'],
+        ['C++ & Rust', 'c-rust', 'punctuation is a separator, not a character'],
+        ['2026', '2026', 'digits survive'],
+        ['already-clean', 'already-clean', 'nothing to do'],
+        ['---', '', 'nothing but separators is nothing']
+    ])('%s -> %s (%s)', function(input, expected) {
+        return expect(slugify(input)).toBe(expected);
+    });
+
+    /* The case the callers disagree about, which is why this returns the
+       empty string rather than picking a name: `safeFilename` falls back
+       to `file` and the shell asks the author for a name it can use. A
+       `slugify` that invented one would make the second impossible. */
+    it('has no answer for text with no ASCII form at all', function() {
+        return expect(slugify('中文标题')).toBe('');
+    });
+});
+
+describe('expandSlug', function() {
+
+    /** A parsed folder collection with `slug` set to `template`. */
+    function collectionWith(template) {
+        return parseConfig(minimal({
+            collections: [{name: 'blog', folder: 'content/blog', slug: template}]
+        })).collections[0];
+    }
+
+    // 2026-09-21, local, deliberately not the first of a month.
+    const at = new Date(2026, 8, 21, 21, 30);
+
+    it('the default template is the title alone', function() {
+        return expect(expandSlug(collectionWith('{{slug}}'), 'Hello World!', at))
+            .toBe('hello-world');
+    });
+
+    /* The gate for this sub-phase, stated exactly as the plan states it.
+       `entryPath` is what adds the folder and the extension. */
+    it('Hello World! under {{year}}-{{slug}} is 2026-hello-world.md', function() {
+        const collection = collectionWith('{{year}}-{{slug}}');
+        const slug = expandSlug(collection, 'Hello World!', at);
+        expect(slug).toBe('2026-hello-world');
+        return expect(entryPath(collection, slug)).toBe('content/blog/2026-hello-world.md');
+    });
+
+    /* Zero-padded, because the point of a dated filename is that the
+       directory sorts. `2026-9-21` sorts after `2026-10-01`. */
+    it('pads the month and the day', function() {
+        return expect(expandSlug(collectionWith('{{year}}-{{month}}-{{day}}-{{slug}}'),
+                                 'Post', at)).toBe('2026-09-21-post');
+    });
+
+    /* The author's own calendar day. Nine-thirty in the evening east of
+       Greenwich is already tomorrow in UTC, so a UTC date would file a
+       third of somebody's evenings under the day after they wrote them.
+
+       Asserted against a stand-in whose two sets of accessors disagree,
+       rather than against a real `Date` near midnight. A real one proves
+       nothing where the suite usually runs: in a UTC runner every
+       `getUTC*` answers exactly what its local twin does, so the test
+       passes whichever pair the code reads and the bug it exists to
+       catch would ship green. */
+    it('dates by the local calendar, not UTC', function() {
+        const berlinEvening = {
+            getFullYear: () => 2026, getMonth: () => 11, getDate: () => 31,
+            getUTCFullYear: () => 2027, getUTCMonth: () => 0, getUTCDate: () => 1
+        };
+        return expect(expandSlug(collectionWith('{{year}}-{{month}}-{{day}}-{{slug}}'),
+                                 'Post', berlinEvening)).toBe('2026-12-31-post');
+    });
+
+    it('accepts whitespace inside a token, because people write it', function() {
+        return expect(expandSlug(collectionWith('{{ year }}-{{ slug }}'), 'Post', at))
+            .toBe('2026-post');
+    });
+
+    /* Every token `expandSlug` can meet has been through `parseConfig`,
+       so there is no unknown-token path here to have an opinion about. */
+    it('offers exactly the tokens the parser accepts', function() {
+        return expect([...SLUG_TOKENS]).toEqual(['slug', 'year', 'month', 'day']);
+    });
+});
+
+describe('the slug template', function() {
+
+    /** Parse a config whose one collection has this `slug`. */
+    function withSlug(slug) {
+        return parseConfig(minimal({
+            collections: [{name: 'blog', folder: 'content/blog', slug}]
+        }));
+    }
+
+    it('defaults to the title alone', function() {
+        return expect(parseConfig(minimal()).collections[0].slug).toBe('{{slug}}');
+    });
+
+    it.each([
+        ['{{slug}}'],
+        ['{{year}}-{{slug}}'],
+        ['{{year}}-{{month}}-{{day}}-{{slug}}'],
+        ['post-{{slug}}-draft']
+    ])('accepts %s', function(template) {
+        return expect(withSlug(template).collections[0].slug).toBe(template);
+    });
+
+    /* The gate: an unknown token names its own path in the config, so the
+       operator is sent to the line they wrote rather than to a filename. */
+    it('refuses an unknown token, naming where', function() {
+        let thrown = null;
+        try {
+            withSlug('{{title}}-{{slug}}');
+        } catch (error) {
+            thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(ConfigError);
+        expect(thrown.path).toBe('collections[0].slug');
+        return expect(thrown.message).toContain('{{title}}');
+    });
+
+    /* The tokens are lower case, so `{{Year}}` matches nothing and would
+       otherwise be copied into the filename exactly as written -- a post
+       called `{{Year}}-hello.md` that nobody would connect to the config
+       line that produced it. */
+    it('refuses a token that is merely mis-capitalised', function() {
+        return expect(() => withSlug('{{Year}}-{{slug}}')).toThrow(ConfigError);
+    });
+
+    /* Without `{{slug}}` every entry is named the same thing, so the
+       second one an author writes collides -- and that refusal talks
+       about a filename, which is a true statement about a config nobody
+       would connect to it. */
+    it('refuses a template with no {{slug}}', function() {
+        let thrown = null;
+        try {
+            withSlug('{{year}}-{{month}}');
+        } catch (error) {
+            thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(ConfigError);
+        expect(thrown.path).toBe('collections[0].slug');
+        return expect(thrown.message).toContain('{{slug}}');
+    });
+
+    /* A word in single braces is not a token at all, so nothing above
+       looks at it -- and every file the collection creates is then
+       called `hello-{draft}.md`, from a config line that looks correct. */
+    it.each([
+        ['{{slug}}-{draft}'],
+        ['{{slug}}}'],
+        ['{{ {{slug}} }}']
+    ])('refuses a stray brace in %s', function(template) {
+        let thrown = null;
+        try {
+            withSlug(template);
+        } catch (error) {
+            thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(ConfigError);
+        return expect(thrown.path).toBe('collections[0].slug');
+    });
+
+    /* A slug is one path segment. `{{year}}/{{slug}}` writes
+       `content/blog/2026/hello.md`, which `slugFromPath` then correctly
+       refuses to read back -- so the author creates a page and watches it
+       vanish from the list. It blocks `../` for free. */
+    it.each([
+        ['{{year}}/{{slug}}'],
+        ['../{{slug}}']
+    ])('refuses %s, which is a path rather than a name', function(template) {
+        return expect(() => withSlug(template)).toThrow(ConfigError);
+    });
+
+    it('a slug that escapes the folder would leave the collection', function() {
+        /* Stated as the thing the rule protects rather than as the rule:
+           `slugFromPath` is the other half, and a template producing a
+           path it cannot read back is the actual failure. */
+        const collection = parseConfig(minimal()).collections[0];
+        return expect(slugFromPath(collection, 'content/blog/2026/hello.md')).toBe(null);
+    });
+});
+
+describe('the delete flag', function() {
+
+    it('is off unless a config says otherwise', function() {
+        return expect(parseConfig(minimal()).collections[0].delete).toBe(false);
+    });
+
+    /* Independent of `create`, and that is the point: a collection
+       authors add to every week may be one nobody should be able to take
+       a page out of. Deriving one from the other would grant it
+       silently. */
+    it('is not implied by create', function() {
+        const config = parseConfig(minimal({
+            collections: [{name: 'blog', folder: 'content/blog', create: true}]
+        }));
+        expect(config.collections[0].create).toBe(true);
+        return expect(config.collections[0].delete).toBe(false);
+    });
+
+    it('is read when given', function() {
+        const config = parseConfig(minimal({
+            collections: [{name: 'blog', folder: 'content/blog', delete: true}]
+        }));
+        return expect(config.collections[0].delete).toBe(true);
+    });
+
+    it('refuses a non-boolean, naming where', function() {
+        let thrown = null;
+        try {
+            parseConfig(minimal({
+                collections: [{name: 'blog', folder: 'content/blog', delete: 'yes'}]
+            }));
+        } catch (error) {
+            thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(ConfigError);
+        return expect(thrown.path).toBe('collections[0].delete');
     });
 });

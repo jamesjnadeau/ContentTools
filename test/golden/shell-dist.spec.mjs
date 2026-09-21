@@ -220,7 +220,11 @@ test('opening an entry, editing it, and submitting one reviewable line',
     await page.keyboard.press('End');
     await page.keyboard.type(' Again.');
 
-    await shell(page).locator('.ct-cms__entry-view .ct-cms__button').first().click();
+    /* Named, not positional. `.ct-cms__entry-view .ct-cms__button` used
+       to mean Submit and stopped meaning it the moment Delete arrived
+       beside it in the same row -- and `.first()` would then click the
+       destructive one, from a line that reads as if nothing changed. */
+    await shell(page).locator('.ct-cms__entry-submit').click();
     await expect(shell(page).locator('.ct-cms__entry-pull')).toContainText('Pull request');
 
     /* One branch, one pull request, one commit -- and the file still
@@ -237,6 +241,89 @@ test('opening an entry, editing it, and submitting one reviewable line',
     const added = saved.split('\n').filter(
         line => line && !SEED.split('\n').includes(line));
     expect(added).toEqual(['Body. Again.']);
+
+    expect(errors).toEqual([]);
+    expect(logged).toEqual([]);
+});
+
+test('naming a new entry, writing it, and opening one pull request',
+     async ({page}) => {
+    /* The create path through the BUILT artifact. The slug is derived
+       from a title by `src/cms/config.ts`, which the shell inlines --
+       so this is also the only place that checks the inlined copy and
+       `dist/cms.js` agree about what a filename is. */
+    const errors = [];
+    page.on('pageerror', error => errors.push(`${error.name}: ${error.message}`));
+    const logged = collectConsoleErrors(page);
+
+    const fake = await serveGitHub(page);
+    await page.goto(PAGE);
+    await shell(page).locator('.ct-cms__input').fill(TOKEN);
+    await shell(page).locator('.ct-cms__gate-form button').click();
+    await expect(page.locator('content-tools-cms')).toHaveAttribute('state', 'ready');
+
+    await shell(page).locator('.ct-cms__nav-link').first().click();
+    await shell(page).locator('.ct-cms__button--add').click();
+
+    // The filename, shown while it is typed rather than after the fact.
+    await shell(page).locator('#ct-cms-new-title').fill('Hello World!');
+    await expect(shell(page).locator('.ct-cms__create-form .ct-cms__field-hint'))
+        .toHaveText('Saved as content/blog/hello-world.md');
+    await shell(page).locator('.ct-cms__create-form .ct-cms__button').click();
+
+    const editor = page.locator('content-tools-cms > content-tools-editor');
+    await expect(editor).toHaveAttribute('state', 'editing');
+    // Nothing is committed by naming it.
+    expect(fake.branches()).toEqual(['main']);
+
+    await editor.locator('[data-editable] p').first().click();
+    await page.keyboard.type('First post.');
+    await shell(page).locator('.ct-cms__entry-submit').click();
+    await expect(shell(page).locator('.ct-cms__entry-pull')).toContainText('Pull request');
+
+    expect(fake.branches()).toEqual(['cms/blog/hello-world', 'main']);
+    expect(fake.pulls().length).toBe(1);
+    expect(fake.read('content/blog/hello-world.md', 'cms/blog/hello-world'))
+        .toBe('First post.\n');
+    /* The address bar caught up with the entry, in place -- the editor
+       the person is still looking at was not torn down to do it. */
+    expect(new URL(page.url()).hash).toBe('#/c/blog/e/hello-world');
+
+    expect(errors).toEqual([]);
+    expect(logged).toEqual([]);
+});
+
+test('deleting an entry opens a pull request and says the page is still up',
+     async ({page}) => {
+    const errors = [];
+    page.on('pageerror', error => errors.push(`${error.name}: ${error.message}`));
+    const logged = collectConsoleErrors(page);
+
+    const fake = await serveGitHub(page);
+    await page.goto(PAGE);
+    await shell(page).locator('.ct-cms__input').fill(TOKEN);
+    await shell(page).locator('.ct-cms__gate-form button').click();
+    await expect(page.locator('content-tools-cms')).toHaveAttribute('state', 'ready');
+
+    await shell(page).locator('.ct-cms__nav-link').first().click();
+    await shell(page).locator('.ct-cms__entry-link').first().click();
+    await expect(page.locator('content-tools-cms > content-tools-editor'))
+        .toHaveAttribute('state', 'editing');
+
+    await shell(page).locator('.ct-cms__entry-delete').click();
+    await shell(page).locator('.ct-cms__confirm .ct-cms__button--cancel').click();
+
+    /* One commit whose tree no longer holds the path, one pull request,
+       and the file still on the base branch -- which is what the notice
+       has to say out loud, because the entry is still in the list. */
+    /* The frame's alert region, scoped: the gate has one of its own,
+       and the two are on the page at once because the frame is hidden
+       behind the gate rather than detached. */
+    await expect(shell(page).locator('.ct-cms__main .ct-cms__alert-region'))
+        .toContainText('stays on the site');
+    expect(fake.pulls().length).toBe(1);
+    expect(fake.paths('cms/blog/hello')).not.toContain('content/blog/hello.md');
+    expect(fake.read('content/blog/hello.md')).toBe(SEED);
 
     expect(errors).toEqual([]);
     expect(logged).toEqual([]);
