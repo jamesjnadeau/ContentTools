@@ -1,7 +1,7 @@
-# ContentTools 2 (beta)
+# ContentTools 2 (release candidate)
 
-A WYSIWYG editor for HTML content, being modernized into the editing surface
-for a git-backed markdown CMS.
+A WYSIWYG editor for HTML content, modernized into the editing surface for a
+git-backed markdown CMS.
 
 This is a fork of [GetmeUK/ContentTools](https://github.com/GetmeUK/ContentTools),
 which has been unmaintained since 2022.
@@ -14,8 +14,16 @@ and there is a CMS shell on top of it that edits a git repository by pull
 request — with authors signing in either with their own token or through a
 GitHub App.**
 
-`2.0.0-beta.0` is the last published version and covers Milestone 1 only;
-everything from markdown mode onwards is on `master` and unreleased.
+**`2.0.0-rc.0`** is the current release, and it carries all five: the API
+is frozen, every gate is green, and what is left before `2.0.0` is not
+code. Three things can only be checked by hand and have not been —
+the round trip against a real repository, a real GitHub App signing a real
+person in, and whether GitHub's App web flow *enforces* PKCE rather than
+merely accepting it. A tool that writes to somebody's git history should
+have written to one before it calls itself final.
+
+Not yet on npm. `npm pack` produces the artifact; the tag is
+`v2.0.0-rc.0`.
 
 | | |
 |---|---|
