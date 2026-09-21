@@ -26,8 +26,21 @@ export interface Frontmatter {
     /** Byte range of `raw` in the source. */
     start: number;
     end: number;
-    /** The parsed YAML, or null if it did not parse. */
+    /** The parsed YAML. Meaningless unless `valid`. */
     data: unknown;
+    /**
+     * Whether the YAML parsed at all.
+     *
+     * Separate from `data` because `data` cannot say it: an EMPTY block
+     * (`---\n---`, or one holding only comments) parses fine and yields
+     * null, and so does a block with a syntax error in it. Told apart
+     * they are opposite instructions -- the first is a file with no keys
+     * yet, which a form may add to, and the second is content nobody
+     * has read, which must be written back exactly as found. Conflated,
+     * a shell replaces somebody's broken-but-recoverable frontmatter
+     * with whatever its form happened to hold.
+     */
+    valid: boolean;
 }
 
 export interface ParsedMarkdown {
@@ -60,6 +73,7 @@ export function parseMarkdown(source: string): ParsedMarkdown {
         if (node.type === 'yaml') {
             const raw = source.slice(start, end);
             let data: unknown = null;
+            let valid = true;
             try {
                 data = parseYAML(String(node.value ?? ''));
             } catch {
@@ -69,8 +83,9 @@ export function parseMarkdown(source: string): ParsedMarkdown {
                    file would be a worse answer for the one person who most
                    needs to fix it. */
                 data = null;
+                valid = false;
             }
-            front = {raw, start, end, data};
+            front = {raw, start, end, data, valid};
             continue;
         }
 

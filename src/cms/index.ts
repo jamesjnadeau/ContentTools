@@ -23,6 +23,7 @@ export {
     ConfigError,
     findCollection,
     entryPath,
+    fieldsFor,
     slugFromPath,
     mediaPath,
     mediaURL
@@ -46,7 +47,8 @@ export type {
     FolderCollection,
     FileCollection,
     FileEntry,
-    Field
+    Field,
+    FieldOption
 } from './config.js';
 
 /* The entry workflow itself. `branchFor`/`entryForBranch` are public

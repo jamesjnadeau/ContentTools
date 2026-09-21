@@ -17,6 +17,7 @@ import {buildEntries} from './entries.js';
 import type {Entries} from './entries.js';
 import {buildEntry} from './entry.js';
 import type {EntryHandlers, EntryState, EntryView} from './entry.js';
+import type {WidgetSource} from './fields.js';
 import {formatRoute} from '../routes.js';
 import type {Route} from '../routes.js';
 import type {Described} from '../errors.js';
@@ -42,7 +43,19 @@ export interface FrameState {
     entry: EntryState;
 }
 
+/**
+ * The open entry's view, reachable from the frame.
+ *
+ * The frontmatter widgets ARE the state of the form -- there is no copy
+ * in the element to get out of step with what somebody is typing -- so
+ * the element has to read them back through here at save and dirty-check
+ * time. The alternative, an `onChange` pushing every keystroke up into
+ * `setState`, is a render per character and two places holding the same
+ * answer.
+ */
 export interface Frame {
+    /** The open entry's chrome, including the frontmatter form. */
+    readonly entry: EntryView;
     readonly node: HTMLElement;
     /** The slot the editor is rendered through. Never re-created. */
     readonly slot: HTMLSlotElement;
@@ -128,12 +141,16 @@ function mainView(
     }
 }
 
-export function buildFrame(doc: Document, handlers: FrameHandlers): Frame {
+export function buildFrame(
+        doc: Document,
+        handlers: FrameHandlers,
+        widgets?: WidgetSource
+        ): Frame {
     const repo = h(doc, 'span', {class: 'ct-cms__repo'});
     const navList = h(doc, 'ul', {class: 'ct-cms__nav-list'});
     const view = h(doc, 'div', {class: 'ct-cms__view'});
     const entries = buildEntries(doc);
-    const entry = buildEntry(doc, handlers);
+    const entry = buildEntry(doc, handlers, widgets);
     const alert = alertRegion(doc);
 
     const slot = doc.createElement('slot');
@@ -167,6 +184,7 @@ export function buildFrame(doc: Document, handlers: FrameHandlers): Frame {
     return {
         node,
         slot,
+        entry,
 
         update(state: FrameState): void {
             repo.textContent = state.config.backend.repo;

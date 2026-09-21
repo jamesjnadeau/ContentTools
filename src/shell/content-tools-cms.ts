@@ -33,8 +33,8 @@
  * renders; `_nav` guards the ordering; `_guard` catches.
  */
 
-import {loadConfig, ConfigError} from '../cms/config.js';
-import type {CmsConfig} from '../cms/config.js';
+import {fieldsFor, findCollection, loadConfig, ConfigError} from '../cms/config.js';
+import type {CmsConfig, Collection} from '../cms/config.js';
 import {CmsRepo} from '../cms/repo.js';
 import type {Entry, MediaFile} from '../cms/repo.js';
 import {MediaStore, mediaUploader} from '../cms/media.js';
@@ -69,8 +69,29 @@ import type {Gate} from './views/gate.js';
 import {buildStatus} from './views/status.js';
 import type {Status} from './views/status.js';
 import type {EntryState} from './views/entry.js';
+import type {FieldsState} from './views/fields.js';
+import {frontmatterChanged, isMergeable, mergeFrontmatter} from './frontmatter.js';
+import {DEFAULT_WIDGETS} from './widgets/index.js';
+import type {WidgetFactory} from './widgets/index.js';
 
 export {EDITOR_SLOT, EDITOR_TAG, ContentToolsEditor};
+
+/**
+ * What a frontmatter block has to be before a form may write over it.
+ *
+ * A block whose YAML did not parse is preserved verbatim and the form is
+ * refused, because merging into content nobody has read replaces a
+ * person's broken-but-recoverable frontmatter with whatever the form
+ * happened to hold. A block that parsed to something that is not a
+ * mapping -- a bare list, a scalar -- is the same answer for the same
+ * reason.
+ */
+const NOT_A_MAPPING =
+    'This entry\u2019s frontmatter is not a set of keys, so it cannot be edited here. '
+    + 'It will be saved exactly as it is.';
+const UNREADABLE =
+    'This entry\u2019s frontmatter could not be read as YAML, so it cannot be edited '
+    + 'here. It will be saved exactly as it is, for you to fix in the repository.';
 
 /** The registered tag name. Declared here, re-exported by ./index.ts. */
 export const TAG_NAME = 'content-tools-cms';
@@ -135,6 +156,18 @@ export class ContentToolsCms extends HTMLElement {
      * empty.
      */
     declare private _edited: string | null;
+    /** The fields the open entry's collection declares, and their block. */
+    /**
+     * The frontmatter form's whole state, or null when no entry is open.
+     *
+     * ONE field rather than the four it started as -- the fields, the
+     * parsed data, the refusal and the key. Reset separately, three of
+     * the four were unkillable by any test: nothing can read them once
+     * the key says there is no form, and `_openForm` is the only writer
+     * and always sets all four together. A single value has one way to
+     * be wrong instead of four that can disagree.
+     */
+    declare private _form: FieldsState | null;
     declare private _saving: boolean;
     declare private _saved: string | null;
     declare private _conflict: string | null;
@@ -153,6 +186,7 @@ export class ContentToolsCms extends HTMLElement {
     declare private _offered: string | null;
 
     declare private _auth: AuthAdapter | null;
+    declare private _widgets: Readonly<Record<string, WidgetFactory>> | null;
     declare private _fetch: typeof globalThis.fetch | null;
 
     constructor() {
@@ -173,7 +207,12 @@ export class ContentToolsCms extends HTMLElement {
             reload: () => this._reopen(),
             stay: () => this._stay(),
             discard: () => this._discard()
-        });
+        /* A GETTER, not a snapshot. The frame is built here, in the
+           constructor, and a host page sets `el.widgets` afterwards --
+           it has no element to set it on until this has returned. A
+           registry read once would ignore it silently, for the life of
+           the page. */
+        }, () => this.widgets);
         this._gate = null;
         this._status = null;
 
@@ -188,6 +227,7 @@ export class ContentToolsCms extends HTMLElement {
         this._store = null;
         this._editor = null;
         this._edited = null;
+        this._form = null;
         this._saving = false;
         this._saved = null;
         this._conflict = null;
@@ -197,6 +237,7 @@ export class ContentToolsCms extends HTMLElement {
         this._booted = false;
         this._offered = null;
         this._auth = null;
+        this._widgets = null;
         this._fetch = null;
 
         this._onHashChange = () => this._readRoute();
@@ -242,6 +283,25 @@ export class ContentToolsCms extends HTMLElement {
 
     set fetch(value: typeof globalThis.fetch) {
         this._fetch = value;
+    }
+
+    /**
+     * The frontmatter widgets, so a site can add one without forking.
+     *
+     * MERGED over the defaults rather than replacing them: a deployment
+     * with one `relation` field of its own would otherwise lose `string`
+     * and the other eight, and every declared field would fall through
+     * to the read-only `unknown` control -- a form that silently stops
+     * editing anything. Overriding a default name is still possible, and
+     * is then a deliberate act rather than a side effect of registering
+     * something else.
+     */
+    get widgets(): Readonly<Record<string, WidgetFactory>> {
+        return this._widgets ?? DEFAULT_WIDGETS;
+    }
+
+    set widgets(value: Readonly<Record<string, WidgetFactory>>) {
+        this._widgets = Object.freeze({...DEFAULT_WIDGETS, ...value});
     }
 
     /** The repository client, once the config has loaded. */
@@ -609,6 +669,7 @@ export class ContentToolsCms extends HTMLElement {
         const doc = MarkdownDocument.parse(entry.content ?? '');
         this._doc = doc;
         this._store = new MediaStore({config, taken: folder.map(file => file.name)});
+        this._openForm(doc, collection, slug);
 
         const editor = this._buildEditor(doc, this._store);
         this._setEditor(editor);
@@ -619,6 +680,57 @@ export class ContentToolsCms extends HTMLElement {
            regions to report: `_regions` is populated by `start()`. */
         editor.start();
         this._setState({entry});
+    }
+
+    /**
+     * Decide what the frontmatter form shows, and whether it may be used.
+     *
+     * The fields come from the config and the values from the file, and
+     * either can be absent without the other mattering: a collection
+     * that declares none gets no form, and a file whose block cannot be
+     * read gets a refusal instead of one.
+     */
+    private _openForm(doc: MarkdownDocument, collection: string, slug: string): void {
+        const config = this._config as CmsConfig;
+        /* Non-null, and a fallback here was written and removed as
+           unreachable: `readEntry` resolves the same name one line
+           earlier in `_openEntry` and throws a `ConfigError` when the
+           config has no such collection, so this never runs for one. */
+        const found = findCollection(config, collection) as Collection;
+        const front = doc.frontmatter();
+        const data = front ? front.data : null;
+
+        /* `valid` and not `data === null`, because those are opposite
+           instructions that look identical: an empty block parses to
+           null and is a file with no keys yet, which a form may add to.
+           See `Frontmatter.valid`. */
+        let refusal: string | null = null;
+        if (front && !front.valid) {
+            refusal = UNREADABLE;
+        } else if (!isMergeable(data)) {
+            refusal = NOT_A_MAPPING;
+        }
+
+        this._form = {
+            /* What tells the form one entry from the next -- and NOT
+               the `Entry` object, because a save replaces that with a
+               copy re-pinned to the new commit, and keying on it would
+               rebuild every control under whoever was typing on every
+               press of Submit.
+
+               Its CONTENT survives mutation: any non-empty string
+               passes the whole suite today, because every entry-to-
+               entry move goes through `_closeEntry` and a closed form
+               rebuilds whatever it is handed next. Recorded rather than
+               simplified to a constant -- it becomes load-bearing the
+               first time the shell opens a different entry without
+               closing the one before it, and there a constant key shows
+               the previous file's answers over the new file's body. */
+            key: `${collection}/${slug}`,
+            fields: fieldsFor(found, slug),
+            data,
+            refusal
+        };
     }
 
     /**
@@ -692,6 +804,7 @@ export class ContentToolsCms extends HTMLElement {
         this._doc = null;
         this._store = null;
         this._edited = null;
+        this._form = null;
         this._saving = false;
         this._saved = null;
         this._conflict = null;
@@ -703,7 +816,8 @@ export class ContentToolsCms extends HTMLElement {
             saving: this._saving,
             saved: this._saved,
             conflict: this._conflict,
-            leaving: this._pendingLeave !== null
+            leaving: this._pendingLeave !== null,
+            fields: this._form
         };
     }
 
@@ -768,7 +882,27 @@ export class ContentToolsCms extends HTMLElement {
            separately what to commit can disagree, and the way they
            disagree is an entry referencing an image nobody uploaded. */
         const {html, media} = store.rewrite(this._currentHtml());
-        return {content: doc.update(html), media};
+        return {content: doc.update(html, this._frontmatterOption()), media};
+    }
+
+    /**
+     * The `frontmatter` option for `update`, or nothing at all.
+     *
+     * Returning `undefined` is not the same as returning `{frontmatter:
+     * <unchanged>}`: `update` preserves the original block BYTE FOR BYTE
+     * only when it is given no data, and a YAML round trip loses key
+     * order, comments and quoting style. So a save that only touched the
+     * body has to reach `update` with no options object, and this is the
+     * line that decides it.
+     */
+    private _frontmatterOption(): {frontmatter: unknown} | undefined {
+        const values = this._frame.entry.values();
+        if (values === null) {
+            return undefined;
+        }
+        const data = this._form?.data ?? null;
+        const merged = mergeFrontmatter(data, values);
+        return frontmatterChanged(data, merged) ? {frontmatter: merged} : undefined;
     }
 
     /**
@@ -802,6 +936,25 @@ export class ContentToolsCms extends HTMLElement {
         void this._guard(async () => {
             const repo = this._repo;
             const entry = this._entry;
+            /* Asked BEFORE anything is computed, because `validate()`
+               is also what puts each message under its own control --
+               so refusing after the rewrite would mark the fields and
+               then commit anyway. A required field left empty is a save
+               that produces a file the site cannot render, and the
+               person who would find out is a reader. */
+            const errors = this._frame.entry.errors();
+            if (errors.length > 0) {
+                this._setState({error: {
+                    title: errors.length === 1
+                        ? 'One field needs filling in.'
+                        : `${errors.length} fields need filling in.`,
+                    detail: errors.join(' '),
+                    kind: 'notice',
+                    path: ''
+                }});
+                return;
+            }
+
             const pending = this._pending();
             if (!repo || !entry || !pending) {
                 return;

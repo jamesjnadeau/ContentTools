@@ -9,7 +9,7 @@
    PATH, not merely that something threw. */
 
 import {
-    parseConfig, loadConfig, ConfigError, findCollection,
+    parseConfig, loadConfig, ConfigError, findCollection, fieldsFor,
     entryPath, slugFromPath, mediaPath, mediaURL
 } from '../../../src/cms/config.js';
 
@@ -355,6 +355,148 @@ describe('loadConfig', function() {
         // Well-formed YAML, wrong shape: the path still has to come through.
         const fetch = serving('backend:\n  repo: nope\nmedia:\n  folder: a\n  publicPath: /a\ncollections: []');
         return expect(loadConfig('/bad.yml', {fetch})).rejects.toThrow('backend.repo');
+    });
+});
+
+describe('fields', function() {
+
+    /** Parse one collection's worth of field declarations. */
+    function parseFields(fields) {
+        return parseConfig(minimal({
+            collections: [{name: 'blog', folder: 'content/blog', fields}]
+        })).collections[0].fields;
+    }
+
+    it('fills in every optional part of a field', function() {
+        const [field] = parseFields([{name: 'title'}]);
+        expect(field.label).toBe('title');
+        expect(field.widget).toBe('string');
+        expect(field.required).toBe(false);
+        expect(field.options).toEqual([]);
+        return expect(field.default).toBe(undefined);
+    });
+
+    it('keeps what a field was given', function() {
+        const [field] = parseFields([
+            {name: 'weight', label: 'Weight', widget: 'number', required: true,
+             default: 10}
+        ]);
+        expect(field.label).toBe('Weight');
+        expect(field.widget).toBe('number');
+        expect(field.required).toBe(true);
+        return expect(field.default).toBe(10);
+    });
+
+    it('keeps a default that is falsy', function() {
+        /* `draft: false` and `weight: 0` are the defaults a site is most
+           likely to write, and `field.default || undefined` would drop
+           both -- so every new entry would silently start unset. */
+        expect(parseFields([{name: 'draft', widget: 'boolean', default: false}])[0]
+            .default).toBe(false);
+        return expect(parseFields([{name: 'weight', widget: 'number', default: 0}])[0]
+            .default).toBe(0);
+    });
+
+    it('accepts options written as bare strings', function() {
+        /* What a person actually writes in YAML. Accepting only the
+           `{value, label}` form would make the common case the verbose
+           one for no gain. */
+        const [field] = parseFields([
+            {name: 'status', widget: 'select', options: ['draft', 'published']}
+        ]);
+        return expect(field.options).toEqual([
+            {value: 'draft', label: 'draft'},
+            {value: 'published', label: 'published'}
+        ]);
+    });
+
+    it('accepts options written as value and label', function() {
+        const [field] = parseFields([
+            {name: 'status', widget: 'select',
+             options: [{value: 'draft', label: 'Not ready'}, {value: 'live'}]}
+        ]);
+        return expect(field.options).toEqual([
+            {value: 'draft', label: 'Not ready'},
+            // A label left off falls back to the value, as `name` does.
+            {value: 'live', label: 'live'}
+        ]);
+    });
+
+    it('refuses a select with no options, naming the field', function() {
+        /* The one field shape that fails as a BLANK CONTROL rather than
+           as an error: an empty dropdown reads as a loading bug, and
+           somebody goes looking in the wrong layer for it. */
+        let error = errorFrom(minimal({
+            collections: [{name: 'blog', folder: 'content/blog',
+                           fields: [{name: 'status', widget: 'select'}]}]
+        }));
+        expect(error.path).toBe('collections[0].fields[0].options');
+        expect(error.message).toContain('select');
+
+        error = errorFrom(minimal({
+            collections: [{name: 'blog', folder: 'content/blog',
+                           fields: [{name: 'status', widget: 'select', options: []}]}]
+        }));
+        return expect(error.path).toBe('collections[0].fields[0].options');
+    });
+
+    it('lets any other widget have no options', function() {
+        return expect(parseFields([{name: 'title'}])[0].options).toEqual([]);
+    });
+
+    it('names the option that is wrong', function() {
+        const error = errorFrom(minimal({
+            collections: [{name: 'blog', folder: 'content/blog', fields: [
+                {name: 'status', widget: 'select', options: ['ok', {label: 'no value'}]}
+            ]}]
+        }));
+        return expect(error.path).toBe('collections[0].fields[0].options[1].value');
+    });
+
+    it('names options that are not a list at all', function() {
+        const error = errorFrom(minimal({
+            collections: [{name: 'blog', folder: 'content/blog', fields: [
+                {name: 'status', widget: 'select', options: 'draft'}
+            ]}]
+        }));
+        return expect(error.path).toBe('collections[0].fields[0].options');
+    });
+});
+
+describe('fieldsFor', function() {
+
+    const config = parseConfig(minimal({
+        collections: [
+            {name: 'blog', folder: 'content/blog', fields: [{name: 'title'}]},
+            {name: 'settings', files: [
+                {name: 'about', file: 'content/about.md', fields: [{name: 'body'}]},
+                {name: 'home', file: 'content/home.md'}
+            ]}
+        ]
+    }));
+
+    it('gives a folder collection\'s fields for any slug', function() {
+        expect(fieldsFor(findCollection(config, 'blog'), 'hello')
+            .map(f => f.name)).toEqual(['title']);
+        return expect(fieldsFor(findCollection(config, 'blog'), 'anything')
+            .map(f => f.name)).toEqual(['title']);
+    });
+
+    it('gives a file collection\'s fields PER FILE', function() {
+        /* Which is why this lives beside `entryPath` rather than in the
+           shell: two places resolving a slug to a file are two places
+           that can disagree about which file an entry is. */
+        const settings = findCollection(config, 'settings');
+        expect(fieldsFor(settings, 'about').map(f => f.name)).toEqual(['body']);
+        return expect(fieldsFor(settings, 'home')).toEqual([]);
+    });
+
+    it('gives nothing for a file the collection does not have', function() {
+        /* `entryPath` throws here, and this does not: a form with no
+           rows is a recoverable screen, and the shell has already
+           reported the path failure by the time anything asks. */
+        return expect(fieldsFor(findCollection(config, 'settings'), 'nope'))
+            .toEqual([]);
     });
 });
 

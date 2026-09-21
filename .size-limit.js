@@ -79,7 +79,16 @@ export default [
            constraint profile) is dependency-free and unaffected.
 
            Only a CMS shell that reads and writes markdown loads this, and
-           by then it has already loaded the editor. */
+           by then it has already loaded the editor.
+
+           10 kB -> 11 kB with the frontmatter field schema: `options`,
+           `default`, the pathed errors that refuse a `select` with
+           nothing to select from, and `fieldsFor`. That last one is here
+           rather than in the shell because a file collection declares
+           its fields per FILE, so resolving them is the same lookup
+           `entryPath` does -- and two places that resolve a slug to a
+           file are two places that can disagree about which file an
+           entry is. */
         name: 'markdown entry',
         path: closureOf('dist/markdown.js'),
         limit: '100 kB',
@@ -95,7 +104,7 @@ export default [
            pays none of it. */
         name: 'cms entry',
         path: closureOf('dist/cms.js'),
-        limit: '10 kB',
+        limit: '11 kB',
         gzip: true
     },
     {
@@ -148,10 +157,17 @@ export default [
            chunk. A JSON-configured site still downloads it here, which
            is honestly reported rather than argued away -- the parser
            beside it is 98 kB, so the asymmetry stopped being worth a
-           chunk boundary. `dist/cms.js`'s lazy copy is unaffected. */
+           chunk boundary. `dist/cms.js`'s lazy copy is unaffected.
+
+           205 kB -> 208 kB with the frontmatter form: ten widgets, the
+           merge and the rules for them. Small beside the ~186 kB of
+           editor and parser above, which is the shape this number keeps
+           having -- the shell's own code is a rounding error against
+           what a shell that mounts an editor and parses markdown
+           carries. */
         name: 'shell entry + its chunks',
         path: closureOf('dist/shell.js'),
-        limit: '205 kB',
+        limit: '208 kB',
         gzip: true
     },
     {

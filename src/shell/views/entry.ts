@@ -14,9 +14,12 @@
  */
 import {h} from '../render.js';
 import {formatRoute} from '../routes.js';
+import {buildFields} from './fields.js';
+import type {FieldsState, FieldsView, WidgetSource} from './fields.js';
 import {statusOf} from '../../cms/status.js';
 import type {Entry} from '../../cms/repo.js';
 import type {EditorialStatus} from '../../cms/status.js';
+import type {FieldValues} from '../frontmatter.js';
 
 const STATUS_LABELS: Record<EditorialStatus, string> = {
     'draft': 'Draft',
@@ -54,14 +57,32 @@ export interface EntryState {
     conflict: string | null;
     /** A navigation is being held back pending an answer. */
     leaving: boolean;
+    /** The frontmatter form: which fields, holding what. Null when closed. */
+    fields: FieldsState | null;
 }
 
 export interface EntryView {
     readonly node: HTMLElement;
     update(state: EntryState): void;
+    /** What the frontmatter form holds, or null when there is no form. */
+    values(): FieldValues | null;
+    /** Every complaint the form has, shown under the fields as a side effect. */
+    errors(): string[];
 }
 
-export function buildEntry(doc: Document, handlers: EntryHandlers): EntryView {
+/*
+ * `widgets` is a getter rather than a registry, because the view is built
+ * in the element's CONSTRUCTOR and `el.widgets = {...}` is set by a host
+ * page some time after that. Reading it at build time -- once per entry --
+ * means a site's own widget works on the first entry opened rather than
+ * on the second.
+ */
+export function buildEntry(
+        doc: Document,
+        handlers: EntryHandlers,
+        widgets?: WidgetSource
+        ): EntryView {
+    const fields: FieldsView = buildFields(doc, widgets);
     const heading = h(doc, 'h2', {class: 'ct-cms__heading'});
     const back = h(doc, 'a', {class: 'ct-cms__entry-back'});
     const badge = h(doc, 'span', {class: 'ct-cms__badge'});
@@ -116,11 +137,17 @@ export function buildEntry(doc: Document, handlers: EntryHandlers): EntryView {
         back,
         note,
         leaving,
-        conflict
+        conflict,
+        /* Above the slot the editor lands in, because the frontmatter is
+           the top of the file and reading the screen in file order is
+           one less thing to explain. */
+        fields.node
     ]);
 
     return {
         node,
+        values: () => fields.values(),
+        errors: () => fields.errors(),
 
         update(state: EntryState): void {
             const entry = state.entry;
@@ -171,6 +198,7 @@ export function buildEntry(doc: Document, handlers: EntryHandlers): EntryView {
             (conflictText as HTMLTextAreaElement).value = state.conflict ?? '';
             conflict.hidden = state.conflict === null;
             leaving.hidden = !state.leaving;
+            fields.update(state.fields);
         }
     };
 }

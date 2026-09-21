@@ -322,6 +322,109 @@ $panel-background: #f7f7f7;
     font-size: 12px;
 }
 
+// --- the frontmatter form -------------------------------------------------
+
+// Panelled rather than loose, because this pane holds two different
+// things being edited at once: the file's metadata and the file. Without
+// a surface the only boundary between them is a heading, and a heading is
+// what somebody skims past on the way to the text they came to change.
+.ct-cms__fields {
+    background: $panel-background;
+    border: 1px solid $border-color;
+    margin: 0 0 12px;
+    padding: 12px;
+}
+
+.ct-cms__fields-heading {
+    margin: 0 0 8px;
+    @include type-text($font-size: 14px, $line-height: 18px);
+}
+
+// Two across where there is room. `auto-fit` rather than a media query
+// because what decides the width here is the nav beside the pane, not the
+// viewport -- and a shadow root has nothing to ask about its own width.
+.ct-cms__field-rows {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.ct-cms__field {
+    // A grid item's automatic minimum is its content, so a `select`
+    // holding one long option would widen its column past the pane and
+    // put a horizontal scrollbar under the editor.
+    min-width: 0;
+}
+
+.ct-cms__field-label {
+    display: block;
+    font-weight: bold;
+    margin: 0 0 4px;
+    @include type-text($font-size: 12px, $line-height: 16px);
+}
+
+.ct-cms__field-input {
+    border: 1px solid $border-color;
+    display: block;
+    padding: 6px 8px;
+    width: 100%;
+    @include type-text();
+
+    &:focus-visible {
+        outline: 2px solid $edit-action-color;
+        outline-offset: -1px;
+    }
+
+    // The read-only control the `unknown` widget renders. Greyed so that
+    // it reads as "not yours to edit" before anybody clicks into it and
+    // finds out; the note under it says why.
+    &[readonly] {
+        background: $panel-background;
+        color: $muted-action-color;
+    }
+}
+
+// `text` and `list` both land here, and one line is not enough room to
+// see what is in either. Resizable vertically only: horizontally would
+// break out of the column.
+textarea.ct-cms__field-input {
+    min-height: 72px;
+    resize: vertical;
+}
+
+// The one control that must NOT be stretched: a full-width checkbox is a
+// tick mark adrift in an otherwise empty row, with the label it belongs
+// to twelve centimetres away.
+.ct-cms__field-check {
+    display: block;
+    margin: 2px 0;
+}
+
+.ct-cms__field-hint {
+    color: $muted-action-color;
+    margin: 4px 0 0;
+    @include type-text($font-size: 12px, $line-height: 16px);
+}
+
+// Carries `role="alert"` and is hidden until `validate()` fills it, so it
+// is announced when it appears rather than read past when it is empty.
+.ct-cms__field-error {
+    color: $cancel-action-color;
+    margin: 4px 0 0;
+    @include type-text($font-size: 12px, $line-height: 16px);
+}
+
+// The image widget's whole affordance: a wrong path is invisible in a
+// text box until somebody looks at the built site. Bounded, because the
+// file behind it is a photograph and the body is underneath.
+.ct-cms__field-preview {
+    border: 1px solid $border-color;
+    display: block;
+    margin: 4px 0 0;
+    max-height: 120px;
+    max-width: 100%;
+}
+
 // --- the sign-in gate -----------------------------------------------------
 
 // Full screen, and it pre-empts routing: with no token there is nothing to
@@ -359,11 +462,6 @@ $panel-background: #f7f7f7;
 .ct-cms__gate-permissions {
     margin: 0 0 12px;
     padding-left: 20px;
-}
-
-.ct-cms__field {
-    display: block;
-    margin: 0 0 12px;
 }
 
 .ct-cms__label {

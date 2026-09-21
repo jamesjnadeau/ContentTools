@@ -100,20 +100,25 @@ export class MarkdownDocument {
      *
      * Taken from the source when there is a body on both sides of it to
      * separate -- the frontmatter is always first, so the original gap
-     * still applies however the blocks after it were rearranged. The two
+     * still applies however the blocks after it were rearranged. The
      * other cases have no original gap to preserve: an emptied region
-     * makes the frontmatter the whole file, which ends in one newline,
-     * and a body typed into a file that had none gets the conventional
-     * blank line.
+     * makes the frontmatter the whole file, which ends in one newline;
+     * a body typed into a file that had none gets the conventional blank
+     * line; and a file that had no FRONTMATTER has no gap either, which
+     * is the case this used to assert its way past.
+     *
+     * `this.parsed.frontmatter` is null exactly when a caller adds
+     * frontmatter to a file that never had any -- the first time anybody
+     * fills in a field on a legacy `.md` -- and the cast that used to
+     * stand here threw a TypeError on that path, from inside a save.
      */
     private gapAfterFrontmatter(body: string): string {
         if (!body) {
             return '\n';
         }
-        return this.parsed.blocks.length
-            ? this.parsed.source.slice(
-                (this.parsed.frontmatter as Frontmatter).end,
-                this.parsed.blocks[0].start)
+        const front = this.parsed.frontmatter;
+        return front && this.parsed.blocks.length
+            ? this.parsed.source.slice(front.end, this.parsed.blocks[0].start)
             : DEFAULT_GAP;
     }
 

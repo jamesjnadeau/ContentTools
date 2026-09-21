@@ -593,6 +593,340 @@ describe('the entry editor', function() {
         return expect(ContentTools.EditorApp.current()).toBe(null);
     });
 
+
+    // --- the frontmatter form ---------------------------------------------
+
+    describe('the frontmatter form', function() {
+
+        /** A config whose `blog` collection declares exactly `fields`. */
+        function configWith(fields) {
+            return CONFIG_YAML_TEXT.replace(
+                /    fields:\n(?:      - .*\n)+/,
+                `    fields:\n${fields.map(line => `      - ${line}\n`).join('')}`);
+        }
+
+        /** Open `hello` against a seed and, optionally, a different config. */
+        async function openWith(seed, fields) {
+            const files = fields
+                ? {[CONFIG_URL]: configWith(fields)}
+                : undefined;
+            return open({fake: fakeWith({[ENTRY]: seed}), files});
+        }
+
+        /** The control the widget for `name` rendered. */
+        function control(el, name) {
+            return el.shadowRoot.querySelector(`#ct-cms-field-${name}`);
+        }
+
+        it('shows a control per declared field, holding what the file says',
+           async function() {
+            const {el} = await open();
+            expect(control(el, 'title').value).toBe('Hello');
+            expect(control(el, 'draft').checked).toBe(false);
+            // Declared, absent from the file, and therefore empty.
+            return expect(control(el, 'tags').value).toBe('');
+        });
+
+        it('leaves the frontmatter BYTE-identical on a body-only save',
+           async function() {
+            /* The gate for the whole sub-phase. `update` preserves the
+               original block verbatim only when it is handed no data, so
+               a form that always reported its values would put every
+               save through a YAML round trip -- comments gone, key order
+               sorted, quoting normalised, and a whole-file diff in a
+               pull request whose only reason to exist is that somebody
+               can read it. */
+            const seed = '---\n# who wrote it\ntitle: "Hello"\ndraft: false\n---\n\n'
+                + '# Hello\n\nWorld.\n';
+            const {el, fake} = await openWith(seed);
+            retype(el, 'Goodbye.');
+            await submit(el);
+
+            const saved = fake.read(ENTRY, BRANCH);
+            expect(saved.startsWith('---\n# who wrote it\ntitle: "Hello"\ndraft: false\n---\n'))
+                .toBe(true);
+            return expect(addedLines(seed, saved)).toEqual(['Goodbye.']);
+        });
+
+        it('writes a field that was edited, and only that key', async function() {
+            const {el, fake} = await openWith(
+                '---\nlayout: post\ntitle: Hello\naliases: ["/old/"]\n---\n\nWorld.\n');
+            control(el, 'title').value = 'Edited';
+            await submit(el);
+
+            const saved = fake.read(ENTRY, BRANCH);
+            /* The keys the config never declared are the assertion. A
+               merge that started from the form would delete `layout` and
+               `aliases`, and the page would stop rendering days later
+               with nothing connecting it to a title change. */
+            expect(saved).toContain('layout: post');
+            expect(saved).toContain('aliases:');
+            expect(saved).toContain('/old/');
+            expect(saved).toContain('title: Edited');
+            return expect(saved).toContain('World.');
+        });
+
+        it('treats a field edit ALONE as work worth committing', async function() {
+            /* The body is untouched, so an HTML-only dirty check would
+               report nothing to save and the button would do nothing at
+               all -- the worst available shape, because it looks like
+               the click was missed. */
+            const {el, fake} = await openWith('---\ntitle: Hello\n---\n\nWorld.\n');
+            control(el, 'title').value = 'Retitled';
+            await submit(el);
+            return expect(fake.read(ENTRY, BRANCH)).toContain('title: Retitled');
+        });
+
+        it('holds a navigation when only a field has been edited',
+           async function() {
+            const {el} = await openWith('---\ntitle: Hello\n---\n\nWorld.\n');
+            control(el, 'title').value = 'Retitled';
+            location.hash = '#/c/blog';
+            await until(() => el.shadowRoot.querySelector('.ct-cms__leave') !== null
+                && !el.shadowRoot.querySelector('.ct-cms__leave').hidden,
+                        'the leave panel');
+            // And the entry is still open behind it, edit intact.
+            expect(editorOf(el)).not.toBe(null);
+            return expect(control(el, 'title').value).toBe('Retitled');
+        });
+
+        it('adds frontmatter to a file that never had any', async function() {
+            /* This used to throw a TypeError from inside the save --
+               `gapAfterFrontmatter` read `.end` off a null frontmatter
+               through a cast. The first time anybody filled a field in
+               on a legacy `.md`, with their work in the editor and a
+               message about an undefined property on screen. */
+            const {el, fake} = await openWith('# Hello\n\nWorld.\n');
+            control(el, 'title').value = 'Now titled';
+            await submit(el);
+
+            const saved = fake.read(ENTRY, BRANCH);
+            expect(saved.startsWith('---\ntitle: Now titled\n---\n\n')).toBe(true);
+            return expect(saved).toContain('World.');
+        });
+
+        it('does not add an empty block to a file that had none', async function() {
+            // Nothing was filled in, so nothing about the file's
+            // frontmatter has changed -- including that it has none.
+            const {el, fake} = await openWith('# Hello\n\nWorld.\n');
+            retype(el, 'Goodbye.');
+            await submit(el);
+            return expect(fake.read(ENTRY, BRANCH).startsWith('---')).toBe(false);
+        });
+
+        it('refuses to edit a block the parser could not read', async function() {
+            /* Writing a merge over frontmatter nobody has read replaces
+               a broken-but-recoverable block with whatever the form
+               happened to hold -- which for an unparseable block is
+               every key gone. */
+            const broken = '---\ntitle: "unterminated\n  - nope\n---\n\nWorld.\n';
+            const {el, fake} = await openWith(broken);
+            expect(control(el, 'title')).toBe(null);
+            expect(el.shadowRoot.querySelector('.ct-cms__fields').textContent)
+                .toContain('could not be read');
+
+            retype(el, 'Goodbye.', 0);
+            await submit(el);
+            const saved = fake.read(ENTRY, BRANCH);
+            expect(saved.startsWith('---\ntitle: "unterminated\n  - nope\n---\n'))
+                .toBe(true);
+            return expect(saved).toContain('Goodbye.');
+        });
+
+        it('refuses to edit frontmatter that is not a set of keys',
+           async function() {
+            // `---\n- one\n- two\n---` parses fine and is a list.
+            const {el} = await openWith('---\n- one\n- two\n---\n\nWorld.\n');
+            expect(control(el, 'title')).toBe(null);
+            return expect(el.shadowRoot.querySelector('.ct-cms__fields').textContent)
+                .toContain('not a set of keys');
+        });
+
+        it('shows no form for a collection that declares no fields',
+           async function() {
+            // The panel is hidden rather than rendering a "Details"
+            // heading over nothing.
+            const {el} = await openWith(SEED, []);
+            expect(el.shadowRoot.querySelector('.ct-cms__fields').hidden).toBe(true);
+            return expect(control(el, 'title')).toBe(null);
+        });
+
+        it('takes a file collection\u2019s fields from the FILE', async function() {
+            /* A file collection declares its fields per entry, so the
+               fields for `about` are not the collection's. Resolving
+               them anywhere but beside `entryPath` is how two places
+               come to disagree about which file an entry is. */
+            const {el} = await openAt('#/c/pages/e/about', {
+                fake: createFakeGitHub({
+                    files: {'content/about.md': '---\nheading: Us\n---\n\n# About\n'}
+                })
+            });
+            mounted = {el};
+            await until(() => editorOf(el)?.state === 'editing', 'the editor');
+            expect(control(el, 'heading').value).toBe('Us');
+            // And `blog`'s fields are not on it.
+            return expect(control(el, 'tags')).toBe(null);
+        });
+
+        // --- refusing a save -------------------------------------------------
+
+        it('refuses to save while a required field is empty', async function() {
+            /* A file the site cannot render, and the person who finds
+               out is a reader. Checked before anything is computed,
+               because `validate()` is also what marks each field -- so
+               refusing afterwards would mark them and commit anyway. */
+            const {el, fake} = await openWith(
+                '---\ntitle: Hello\n---\n\n# Hello\n\nWorld.\n',
+                ['{name: title, required: true}']);
+            control(el, 'title').value = '';
+            retype(el, 'Goodbye.');
+            el.shadowRoot.querySelector('.ct-cms__entry-view .ct-cms__button').click();
+            await until(() => alertText(el) !== '', 'the refusal');
+
+            expect(alertText(el)).toContain('One field needs filling in');
+            expect(alertText(el)).toContain('title is required.');
+            // The message is also under the field it belongs to.
+            expect(el.shadowRoot.querySelector('.ct-cms__field-error').hidden)
+                .toBe(false);
+            // And nothing was written.
+            return expect(fake.history(BRANCH).length).toBe(0);
+        });
+
+        it('counts the fields when more than one is empty', async function() {
+            const {el} = await openWith('---\ntitle: Hello\n---\n\nWorld.\n', [
+                '{name: title, required: true}',
+                '{name: summary, required: true}'
+            ]);
+            control(el, 'title').value = '';
+            el.shadowRoot.querySelector('.ct-cms__entry-view .ct-cms__button').click();
+            await until(() => alertText(el) !== '', 'the refusal');
+            return expect(alertText(el)).toContain('2 fields need filling in');
+        });
+
+        it('saves once the required field is filled in', async function() {
+            const {el, fake} = await openWith('---\ntitle: Hello\n---\n\nWorld.\n',
+                                              ['{name: title, required: true}']);
+            control(el, 'title').value = '';
+            el.shadowRoot.querySelector('.ct-cms__entry-view .ct-cms__button').click();
+            await until(() => alertText(el) !== '', 'the refusal');
+
+            control(el, 'title').value = 'Filled';
+            await submit(el);
+            return expect(fake.read(ENTRY, BRANCH)).toContain('title: Filled');
+        });
+
+        // --- the form's own lifetime -------------------------------------------
+
+        it('keeps the controls across a save', async function() {
+            /* A save replaces the `Entry` object with a copy pinned to
+               the new commit. Keying the form on it would rebuild every
+               control under whoever was typing, on every Submit. */
+            const {el} = await openWith(
+                '---\ntitle: Hello\n---\n\n# Hello\n\nWorld.\n');
+            const before = control(el, 'title');
+            retype(el, 'Goodbye.');
+            await submit(el);
+            return expect(control(el, 'title')).toBe(before);
+        });
+
+        it('rebuilds the controls for a different entry', async function() {
+            const {el} = await open({
+                fake: fakeWith({
+                    [ENTRY]: SEED,
+                    'content/blog/other.md': '---\ntitle: Other\n---\n\nText.\n'
+                })
+            });
+            expect(control(el, 'title').value).toBe('Hello');
+            location.hash = '#/c/blog/e/other';
+            await until(() => control(el, 'title')?.value === 'Other',
+                        'the other entry’s form');
+            return expect(control(el, 'title').value).toBe('Other');
+        });
+
+        it('does not leave the last entry\u2019s form up while the next loads',
+           async function() {
+            /* The read is a round trip, and for its whole length the
+               route already says `other`. A form still holding
+               `hello`'s answers there is not merely stale: press
+               Submit while it is up and those answers are merged into
+               the file that is arriving. */
+            const fake = fakeWith({
+                [ENTRY]: SEED,
+                'content/blog/other.md': '---\ntitle: Other\n---\n\n# Other\n\nText.\n'
+            });
+            const gate = {hold: false, release: null};
+            const inner = fake.fetch;
+            const {el} = await openAt('#/c/blog/e/hello', {
+                fake,
+                fetch: async (input, init) => {
+                    const url = typeof input === 'string' ? input : String(input.url ?? input);
+                    if (url === CONFIG_URL) {
+                        return new Response(CONFIG_YAML_TEXT, {status: 200});
+                    }
+                    if (gate.hold && url.includes('other.md')) {
+                        await new Promise(resolve => {
+                            gate.release = resolve;
+                        });
+                    }
+                    return inner(input, init);
+                }
+            });
+            mounted = {el};
+            await until(() => editorOf(el)?.state === 'editing', 'the first entry');
+            expect(control(el, 'title').value).toBe('Hello');
+
+            gate.hold = true;
+            location.hash = '#/c/blog/e/other';
+            await until(() => gate.release !== null, 'the read to be in flight');
+            expect(control(el, 'title')).toBe(null);
+
+            gate.release();
+            return until(() => control(el, 'title')?.value === 'Other',
+                         'the second entry\u2019s form');
+        });
+
+        // --- what a site can change ----------------------------------------------
+
+        it('lets a site add a widget without losing the shipped ones',
+           async function() {
+            const {el} = await openWith('---\ntitle: Hello\n---\n\nWorld.\n',
+                                        ['{name: title, widget: colour}']);
+            el.widgets = {
+                colour: (doc, field, value) => {
+                    const node = doc.createElement('div');
+                    node.className = 'site-colour';
+                    return {node, value: () => value, validate: () => null};
+                }
+            };
+            // Set after boot, which is when a host page has the element
+            // to set it on -- so the frame reads the registry late.
+            location.hash = '#/c/blog';
+            await until(() => editorOf(el) === null, 'the listing');
+            location.hash = '#/c/blog/e/hello';
+            await until(() => el.shadowRoot.querySelector('.site-colour') !== null,
+                        'the site’s own widget');
+            // And `string`, which the site did not mention, still works.
+            expect(typeof el.widgets.string).toBe('function');
+            return expect(el.widgets.colour).not.toBe(undefined);
+        });
+
+        it('leaves a field alone when its widget is not one we have',
+           async function() {
+            /* `widget: strng` is a config somebody will ship. The key
+               passes through untouched rather than being flattened to
+               whatever a text box would hold. */
+            const {el, fake} = await openWith(
+                '---\ntitle: Hello\nmeta: {a: 1}\n---\n\n# Hello\n\nWorld.\n',
+                ['{name: title}', '{name: meta, widget: strng}']);
+            expect(control(el, 'meta').readOnly).toBe(true);
+            retype(el, 'Goodbye.');
+            await submit(el);
+            // Untouched means the block was never rewritten at all.
+            return expect(fake.read(ENTRY, BRANCH))
+                .toContain('---\ntitle: Hello\nmeta: {a: 1}\n---');
+        });
+    });
+
     // --- ordering ---------------------------------------------------------
 
     it('does not let a slow entry render over a newer route', async function() {

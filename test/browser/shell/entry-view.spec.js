@@ -38,7 +38,12 @@ const ENTRY = {
 };
 
 /** The state the shell holds for an entry that has only just been asked for. */
-const LOADING = {entry: null, saving: false, saved: null, conflict: null, leaving: false};
+const LOADING = {
+    entry: null, saving: false, saved: null, conflict: null, leaving: false,
+    /* No form. The fields are their own view with their own spec, and
+       every assertion here is about the chrome around them. */
+    fields: null
+};
 
 function view(state = {}) {
     const built = buildEntry(document, {

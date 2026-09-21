@@ -206,6 +206,14 @@ test('opening an entry, editing it, and submitting one reviewable line',
     await expect(editor).toHaveAttribute('slot', 'editor');
     await expect(editor.locator('[data-editable] h1')).toHaveText('Hello');
 
+    /* And the frontmatter form is above it, holding what the file says.
+       `date` is declared by app/cms-config.yml and absent from the seed,
+       so it is also the case that decides the assertion below: a widget
+       reporting an untouched optional field as `''` would add a key to
+       the block and rewrite the whole of it. */
+    await expect(shell(page).locator('#ct-cms-field-title')).toHaveValue('Hello');
+    await expect(shell(page).locator('#ct-cms-field-date')).toHaveValue('');
+
     // Type into the body, the way a person does.
     const paragraph = editor.locator('[data-editable] p').first();
     await paragraph.click();

@@ -202,12 +202,104 @@ describe('structural edits', function() {
         return expect(doc.update('')).toBe('---\na: 1\n---\n');
     });
 
+    it('preserves an unusual gap between the frontmatter and the body', function() {
+        /* The gap is taken from the source rather than assumed, so a
+           file written with two blank lines after its frontmatter keeps
+           them. Normalising it would put a line in the diff of every
+           such file the first time anybody edited a paragraph. */
+        const source = '---\na: 1\n---\n\n\nText.\n';
+        const doc = MarkdownDocument.parse(source);
+        expect(doc.update(doc.toHTML())).toBe(source);
+        return expect(doc.update(doc.toHTML().replace('Text.', 'New.')))
+            .toBe('---\na: 1\n---\n\n\nNew.\n');
+    });
+
     it('gives a body typed into a frontmatter-only file a blank line', function() {
         // The mirror case: there was no gap in the source to preserve,
         // so the conventional one is used.
         const source = '---\na: 1\n---\n';
         const doc = MarkdownDocument.parse(source);
         return expect(doc.update('<p>New.</p>')).toBe('---\na: 1\n---\n\nNew.\n');
+    });
+});
+
+describe('adding frontmatter to a file that never had any', function() {
+
+    /* The case a shell reaches the first time somebody fills in a field
+       on a legacy `.md`. It used to throw a TypeError from inside a save
+       -- `frontmatterText` returns the new block, so the gap calculation
+       ran and read `.end` off a null frontmatter through a cast. A save
+       that throws after the editor has been used is the worst place for
+       it: the work is in the DOM and the only thing on screen is a
+       message about an undefined property. */
+
+    it('writes the block and a blank line before the body', function() {
+        const source = 'Just text.\n';
+        const doc = MarkdownDocument.parse(source);
+        return expect(doc.update(doc.toHTML(), {frontmatter: {title: 'Added'}}))
+            .toBe('---\ntitle: Added\n---\n\nJust text.\n');
+    });
+
+    it('writes it above a file whose first block is not a paragraph', function() {
+        const source = '# Heading\n\nText.\n';
+        const doc = MarkdownDocument.parse(source);
+        const next = doc.update(doc.toHTML(), {frontmatter: {title: 'Added'}});
+        return expect(next).toBe('---\ntitle: Added\n---\n\n# Heading\n\nText.\n');
+    });
+
+    it('writes it into an empty file', function() {
+        /* No frontmatter AND no body: both halves of the gap rule are
+           absent at once, which is the shape that would have thrown
+           twice over. */
+        const doc = MarkdownDocument.parse('');
+        return expect(doc.update('', {frontmatter: {title: 'Added'}}))
+            .toBe('---\ntitle: Added\n---\n');
+    });
+
+    it('leaves a file with no frontmatter alone when asked for none', function() {
+        // The only thing that must stay true: a body-only save on a
+        // legacy file does not gain an empty `---\n---` block.
+        const source = 'Just text.\n';
+        const doc = MarkdownDocument.parse(source);
+        expect(doc.update(doc.toHTML())).toBe(source);
+        return expect(doc.update(doc.toHTML(), {frontmatter: null})).toBe(source);
+    });
+});
+
+describe('frontmatter that is not valid YAML', function() {
+
+    /* `data: null` alone cannot say which of two OPPOSITE instructions
+       applies: an empty block, which a shell may write over freely, and
+       a block the parser could not read, where writing a merge replaces
+       content nobody has seen. `valid` is what tells them apart. */
+
+    const BROKEN = '---\ntitle: "unterminated\n  - nope\n---\n\nText.\n';
+
+    it('is reported as unparsed rather than as empty', function() {
+        const front = MarkdownDocument.parse(BROKEN).frontmatter();
+        expect(front.valid).toBe(false);
+        return expect(front.data).toBe(null);
+    });
+
+    it('keeps the block exactly as written', function() {
+        /* The editor's job is to preserve what it cannot understand.
+           Refusing to open the file would be the worse answer for the
+           one person who most needs to fix it. */
+        const doc = MarkdownDocument.parse(BROKEN);
+        expect(doc.frontmatter().raw).toBe('---\ntitle: "unterminated\n  - nope\n---');
+        return expect(doc.update(doc.toHTML())).toBe(BROKEN);
+    });
+
+    it('calls a block that parsed to nothing valid', function() {
+        // `---\n---` is empty, not broken, and a shell may fill it in.
+        const front = MarkdownDocument.parse('---\n---\n\nText.\n').frontmatter();
+        expect(front.valid).toBe(true);
+        return expect(front.data).toBe(null);
+    });
+
+    it('calls an ordinary block valid', function() {
+        return expect(MarkdownDocument.parse('---\na: 1\n---\n').frontmatter().valid)
+            .toBe(true);
     });
 });
 

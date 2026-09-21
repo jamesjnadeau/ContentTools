@@ -43,18 +43,44 @@ export interface MediaConfig {
     readonly publicPath: string;
 }
 
+/** One choice in a `select` field. */
+export interface FieldOption {
+    readonly value: string;
+    readonly label: string;
+}
+
 /**
  * One frontmatter field.
  *
- * Declared and validated here, rendered nowhere: the widgets are the shell's
- * job (M5). It is in the schema now so that a site's config file does not
- * have to change shape later.
+ * Validated here and rendered by the shell's widgets. `widget` is an
+ * unconstrained string on purpose: a site may register its own, so an
+ * allowlist here would make that a fork of the build rather than a line of
+ * config. The shell's answer to a name it does not know is a read-only
+ * control that says so, never a text box -- silently editing a `relation`
+ * as text is how garbage gets written into somebody's data model.
  */
 export interface Field {
     readonly name: string;
     readonly label: string;
     readonly widget: string;
     readonly required: boolean;
+    /**
+     * The choices a `select` offers. Empty for every other widget.
+     *
+     * Required for `select` and checked HERE rather than at render time,
+     * because an empty dropdown looks like a loading bug and a config
+     * error looks like a config error.
+     */
+    readonly options: readonly FieldOption[];
+    /**
+     * What a NEW entry starts this field at. `undefined` for none.
+     *
+     * Applied when an entry is created (M5-5) and deliberately not when
+     * one is opened: filling a missing key in on open would turn every
+     * save of an existing file into a frontmatter rewrite, which is the
+     * whole-file diff this project exists to avoid.
+     */
+    readonly default: unknown;
 }
 
 /** Many entries under one folder, one file each. */
@@ -149,6 +175,29 @@ function trimSlashes(value: string): string {
     return value.replace(/^\/+|\/+$/g, '');
 }
 
+/**
+ * The choices for a `select`, in either spelling.
+ *
+ * `[draft, published]` is what a person writes in YAML and
+ * `[{value: draft, label: Draft}]` is what they write when the stored
+ * value and the visible one differ. Accepting only the second would make
+ * the common case the verbose one for no gain.
+ */
+function parseOptions(value: unknown, path: string): FieldOption[] {
+    return array(value, path).map((raw, i) => {
+        const at = `${path}[${i}]`;
+        if (typeof raw === 'string') {
+            return Object.freeze({value: raw, label: raw});
+        }
+        const option = object(raw, at);
+        const optionValue = str(option.value, `${at}.value`);
+        return Object.freeze({
+            value: optionValue,
+            label: optionalStr(option.label, `${at}.label`, optionValue)
+        });
+    });
+}
+
 function parseFields(value: unknown, path: string): Field[] {
     if (value === undefined || value === null) {
         return [];
@@ -157,11 +206,25 @@ function parseFields(value: unknown, path: string): Field[] {
         const at = `${path}[${i}]`;
         const field = object(raw, at);
         const name = str(field.name, `${at}.name`);
+        const widget = optionalStr(field.widget, `${at}.widget`, 'string');
+        const hasOptions = field.options !== undefined && field.options !== null;
+        /* A `select` with nothing to select from is the one field shape
+           that fails as a blank control rather than as an error, so it is
+           refused at parse time where the message can name the line. */
+        if (widget === 'select' && !hasOptions) {
+            throw new ConfigError(`${at}.options`, 'is required for a `select` field');
+        }
+        const options = hasOptions ? parseOptions(field.options, `${at}.options`) : [];
+        if (widget === 'select' && options.length === 0) {
+            throw new ConfigError(`${at}.options`, 'is empty');
+        }
         return Object.freeze({
             name,
             label: optionalStr(field.label, `${at}.label`, name),
-            widget: optionalStr(field.widget, `${at}.widget`, 'string'),
-            required: optionalBool(field.required, `${at}.required`, false)
+            widget,
+            required: optionalBool(field.required, `${at}.required`, false),
+            options: Object.freeze(options),
+            default: field.default
         });
     });
 }
@@ -320,6 +383,21 @@ export function entryPath(collection: Collection, slug: string): string {
         return entry.file;
     }
     return `${collection.folder}/${slug}.${collection.extension}`;
+}
+
+/**
+ * The fields declared for one entry of a collection.
+ *
+ * Here rather than in the shell because a file collection declares them
+ * per FILE, so the lookup is the same one `entryPath` does -- and two
+ * places that resolve a slug to a file are two places that can disagree
+ * about which file an entry is.
+ */
+export function fieldsFor(collection: Collection, slug: string): readonly Field[] {
+    if (collection.kind === 'file') {
+        return collection.files.find(f => f.name === slug)?.fields ?? [];
+    }
+    return collection.fields;
 }
 
 /** The slug a repository path corresponds to, or null if it is not one. */

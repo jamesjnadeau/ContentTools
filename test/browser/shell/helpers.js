@@ -21,6 +21,12 @@ export {createFakeGitHub};
 
 export const CONFIG_URL = '/test-cms-config.yml';
 
+/* Both collection shapes declare fields, and a FILE collection declares
+   them per file -- which is the only arrangement that can tell
+   `fieldsFor(collection, slug)` from `collection.fields`. None of them is
+   `required`: a required field refuses a save, and a spec about
+   navigation should not have to fill a form in to get past it. */
+
 export const CONFIG_YAML = `
 backend:
   repo: owner/site
@@ -33,10 +39,18 @@ collections:
     label: Blog
     folder: content/blog
     create: true
+    fields:
+      - {name: title, label: Title}
+      - {name: draft, label: Draft, widget: boolean}
+      - {name: tags, label: Tags, widget: list}
   - name: pages
     label: Pages
     files:
-      - {name: about, label: About, file: content/about.md}
+      - name: about
+        label: About
+        file: content/about.md
+        fields:
+          - {name: heading, label: Heading}
 `;
 
 /** A `fetch` serving `files` by exact URL, and the fake GitHub for the rest. */
