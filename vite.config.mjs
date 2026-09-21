@@ -7,6 +7,7 @@ import dts from 'vite-plugin-dts';
  *   (default)  dist/content-tools.js       IIFE, five browser globals, readable
  *   min        dist/content-tools.min.js   the same, minified
  *   esm        dist/index.js + element.js  ESM, sharing one library chunk
+ *   cms        dist/cms.js                 the git-backed half, standalone
  *   style      dist/content-tools.css      stylesheet + dist/images/
  *   style-min  dist/content-tools.min.css  the same, minified
  *
@@ -55,6 +56,42 @@ export default defineConfig(({mode}) => {
                         // The entry exists only to pull in the stylesheet; its
                         // JS output is empty and the build script removes it.
                         entryFileNames: `.${name}-entry.js`
+                    }
+                }
+            }
+        };
+    }
+
+    if (mode === 'cms') {
+        /* The git-backed half, in its OWN build rather than alongside the
+         * other three entries.
+         *
+         * `src/markdown/` had to join them because it imports `rootContext`,
+         * and a second copy of a module-level singleton is a bug you cannot
+         * see. `src/cms/` imports nothing from the library at all -- there is
+         * no singleton to duplicate -- and a test enforces that rather than a
+         * comment, which is what keeps this justified.
+         *
+         * Separate also keeps `dist/chunks/*.js` meaning what .size-limit.js
+         * says it means. `yaml` is already a static import of the markdown
+         * entry; adding a second entry that reaches it would hoist it into a
+         * shared chunk, and `index` and `element` would then fail a budget
+         * over bytes neither of them loads. Here the YAML parser is a lazy
+         * import of this entry alone, and is budgeted as one.
+         */
+        return {
+            // No `dts` here: the esm build already emits declarations for
+            // all of `src`, this entry's included.
+            build: {
+                ...shared,
+                lib: {
+                    entry: {cms: resolve(__dirname, 'src/cms/index.js')},
+                    formats: ['es']
+                },
+                rollupOptions: {
+                    output: {
+                        entryFileNames: '[name].js',
+                        chunkFileNames: 'cms-chunks/[name]-[hash].js'
                     }
                 }
             }

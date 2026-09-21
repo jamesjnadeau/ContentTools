@@ -77,6 +77,10 @@
       "types": "./dist/src/markdown/index.d.ts",
       "default": "./dist/markdown.js"
     },
+    "./cms": {
+      "types": "./dist/src/cms/index.d.ts",
+      "default": "./dist/cms.js"
+    },
     "./global": "./dist/content-tools.js",
     "./style.css": "./dist/content-tools.css",
     "./style.min.css": "./dist/content-tools.min.css",

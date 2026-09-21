@@ -76,6 +76,30 @@ export default [
         gzip: true
     },
     {
+        /* The git-backed half: config, the GitHub client, the entry
+           workflow. Its own build, not part of the chunk `index` and
+           `element` share, because it imports nothing from the library --
+           scripts/build.mjs asserts that against the artifact. A shell
+           loads it alongside one of those entries; a site that only edits
+           pays none of it. */
+        name: 'cms entry',
+        path: 'dist/cms.js',
+        limit: '4 kB',
+        gzip: true
+    },
+    {
+        /* The YAML parser, reached only by `loadConfig` and only when the
+           config file is not JSON -- so a JSON-configured site never
+           downloads it. It is a second copy of the `yaml` already inside
+           dist/markdown.js, which is the price of keeping the two entries
+           in separate builds; budgeted separately so the duplication is
+           visible rather than folded into a number nobody reads. */
+        name: 'cms lazy YAML chunk',
+        path: 'dist/cms-chunks/*.js',
+        limit: '45 kB',
+        gzip: true
+    },
+    {
         name: 'stylesheet',
         path: 'dist/content-tools.min.css',
         limit: '5.5 kB',

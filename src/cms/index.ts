@@ -1,0 +1,41 @@
+/* Public entry for `@jamesjnadeau/content-tools/cms`.
+ *
+ * The git-backed half: which repository this deployment edits, how to reach
+ * it, and how a save becomes a branch, a commit and a pull request.
+ *
+ * It is a LEAF. Nothing here imports the editor, the element, the
+ * RootContext or any vendored library, and `test/browser/cms/leaf.spec.js`
+ * fails the build if that stops being true. Two things rest on it: this
+ * entry is its own Vite build rather than sharing the chunk `index` and
+ * `element` share (the shared-singleton argument that forced the markdown
+ * entry into that build does not apply to code with no singletons), and it
+ * is usable from a worker, a test or a Node script with no DOM at all.
+ *
+ * The Milestone 1 obligation still holds in the other direction: the editor
+ * and the element know nothing about any of this, and their contract still
+ * ends at `ct-saved`. A shell composes the two halves; neither imports the
+ * other.
+ */
+
+export {
+    parseConfig,
+    loadConfig,
+    ConfigError,
+    findCollection,
+    entryPath,
+    slugFromPath,
+    mediaPath,
+    mediaURL
+} from './config.js';
+
+export type {
+    CmsConfig,
+    CmsConfigInput,
+    BackendConfig,
+    MediaConfig,
+    Collection,
+    FolderCollection,
+    FileCollection,
+    FileEntry,
+    Field
+} from './config.js';
