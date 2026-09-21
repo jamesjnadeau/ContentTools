@@ -42,6 +42,18 @@ import {
 import {snapshotGlobals, applyGlobals, restoreGlobals} from './globals.js';
 import type {GlobalsSnapshot} from './globals.js';
 
+/* The registered tag name.
+ *
+ * It lives here rather than in ./index.ts -- which is the `element` build
+ * ENTRY -- so that another entry can import the class without importing
+ * that module. Rollup turns an entry that a second entry imports into a
+ * facade and hoists its body into a shared chunk, which would move the
+ * `customElements.define` call out of `dist/element.js` and silently void
+ * the `sideEffects` allowlist that names that file. `./index.ts`
+ * re-exports this, so the public API is unchanged.
+ */
+export const TAG_NAME = 'content-tools-editor';
+
 /** Matches the v1.6.x documentation's suggested markup. */
 const DEFAULT_REGIONS = '[data-editable], [data-fixture]';
 

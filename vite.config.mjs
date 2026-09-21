@@ -6,7 +6,8 @@ import dts from 'vite-plugin-dts';
  *
  *   (default)  dist/content-tools.js       IIFE, five browser globals, readable
  *   min        dist/content-tools.min.js   the same, minified
- *   esm        dist/index.js + element.js  ESM, sharing one library chunk
+ *   esm        dist/index.js, element.js, markdown.js, shell.js
+ *                                          ESM, sharing one library chunk
  *   cms        dist/cms.js                 the git-backed half, standalone
  *   style      dist/content-tools.css      stylesheet + dist/images/
  *   style-min  dist/content-tools.min.css  the same, minified
@@ -99,7 +100,7 @@ export default defineConfig(({mode}) => {
     }
 
     if (mode === 'esm') {
-        /* TWO entries, ONE copy of the library.
+        /* FOUR entries, ONE copy of the library.
          *
          * `dist/index.js` stops being a single standalone file and that is
          * an accepted, visible change to a published artifact. The
@@ -124,7 +125,20 @@ export default defineConfig(({mode}) => {
                            second copy and therefore a second context. The
                            mdast dependencies still land in their own
                            chunk, because nothing else imports them. */
-                        markdown: resolve(__dirname, 'src/markdown/index.js')
+                        markdown: resolve(__dirname, 'src/markdown/index.js'),
+                        /* The shell imports the editor, markdown AND the
+                           git-backed half, so it has to be here: its own
+                           build would give the page a second copy of the
+                           library and therefore a second EditorApp, which
+                           is the failure this multi-entry build exists to
+                           prevent. `src/cms/` is inlined into it instead
+                           of shared with dist/cms.js -- a second copy in
+                           the PACKAGE, never on a page, and harmless
+                           because a leaf with no module-level singleton is
+                           inert in duplicate. That is the same property
+                           that lets dist/cms.js be built separately at
+                           all. */
+                        shell: resolve(__dirname, 'src/shell/index.js')
                     },
                     formats: ['es']
                 },

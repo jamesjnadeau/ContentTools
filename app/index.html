@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<!--
+  The deployable CMS.
+
+  This is the whole application: one tag, one config file. Copy `app/` and
+  `dist/` to a static host, point `config` at the file describing the one
+  repository that deployment edits, and that is the install.
+
+  It is ALSO the page test/golden/shell-dist.spec.mjs drives against the
+  built dist/shell.js, which is deliberate: the playground taught this repo
+  that a page nobody runs is a page that has quietly stopped working, and
+  one page that is both the deliverable and the fixture cannot drift from
+  itself.
+
+  The content stylesheet link is load-bearing, not decoration. In Mode A the
+  editable content stays in the document, so its rules -- the drop
+  indicators, the hover outlines, the drag cursors -- have to reach the
+  document too. Without it everything still LOOKS fine and none of the
+  editing affordances appear. A computed-style assertion in the dist spec
+  guards it.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Content</title>
+<link rel="stylesheet" href="../dist/content-tools-content.css">
+<style>
+    /* The page's only job is to give the shell the viewport. Everything
+       else it draws is inside its own shadow root. */
+    html, body { height: 100%; }
+    body { margin: 0; }
+    content-tools-cms { height: 100%; }
+</style>
+<script type="module" src="../dist/shell.js"></script>
+</head>
+<body>
+<content-tools-cms config="./cms-config.yml"></content-tools-cms>
+</body>
+</html>

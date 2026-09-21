@@ -6,11 +6,17 @@
  * call -- if Rollup ever hoists it into the shared chunk, the allowlist entry
  * would silently stop covering it and `import '@.../element'` would compile
  * to nothing, with the tag never registering and no error anywhere.
+ *
+ * That is also why `TAG_NAME` is DECLARED in ./content-tools-editor.ts and
+ * only re-exported here: this module is a build entry, and Rollup turns an
+ * entry that another entry imports into a facade, hoisting its body -- the
+ * `define` call included -- into a shared chunk. The shell imports the class
+ * and the name from that module instead, and test/browser/shell/imports.spec.js
+ * fails if it ever reaches for this one.
  */
-import {ContentToolsEditor} from './content-tools-editor.js';
+import {ContentToolsEditor, TAG_NAME} from './content-tools-editor.js';
 
-export {ContentToolsEditor};
-export const TAG_NAME = 'content-tools-editor';
+export {ContentToolsEditor, TAG_NAME};
 
 /* Re-exported here rather than from the root entry: it is only useful to
    someone who already has a shadow root, and this entry is the one such a

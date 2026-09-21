@@ -1,0 +1,29 @@
+# The runtime config THIS deployment is given, for the one site it edits.
+#
+# Point `backend.repo` at your own repository and describe your own
+# collections; nothing else about the install changes. One build, many
+# deployments, one of these files each.
+#
+# YAML rather than JSON on purpose: it is the form an operator actually
+# hand-edits, and it is the branch of `loadConfig` that pulls in the
+# parser, so the shipped page exercises the lazy import too.
+backend:
+  repo: owner/site
+  branch: main
+
+media:
+  folder: static/images
+  publicPath: /images
+
+collections:
+  - name: blog
+    label: Blog
+    folder: content/blog
+    create: true
+    fields:
+      - {name: title, widget: string}
+      - {name: date, widget: datetime}
+  - name: pages
+    label: Pages
+    files:
+      - {name: about, label: About, file: content/about.md}
