@@ -3,15 +3,22 @@
  * Three silent failures live here, and none of them produces an error at
  * the point of the mistake:
  *
- * 1. A `src/shell/` file importing `src/element/index.ts`. That module is
- *    the ELEMENT's build entry, and Rollup turns an entry another entry
- *    imports into a facade, hoisting its body -- the `customElements
- *    .define` call included -- into a shared chunk. `package.json` lists
- *    `./dist/element.js` in `sideEffects` by FILE, so the allowlist stops
- *    covering the call, `import '@.../element'` compiles to nothing for a
- *    consumer whose bundler trusts it, and `<content-tools-editor>` never
- *    registers. The build asserts the artifact; this asserts the source,
- *    which is the form a human sees in a diff.
+ * 1. A `src/shell/` file importing another ENTRY of the same Vite build.
+ *    Rollup turns an entry that another entry imports into a facade and
+ *    hoists its body into a shared chunk. For `src/element/index.ts` that
+ *    body includes `customElements.define`, and `package.json` lists
+ *    `./dist/element.js` in `sideEffects` by FILE -- so the allowlist
+ *    stops covering the call, `import '@.../element'` compiles to nothing
+ *    for a consumer whose bundler trusts it, and `<content-tools-editor>`
+ *    never registers. `src/markdown/index.ts` and `src/index.ts` are the
+ *    same hazard with a quieter symptom: a hoisted facade moves bytes
+ *    between the measured closures, so a budget starts charging an entry
+ *    for a parser it does not load. The build asserts the artifact; this
+ *    asserts the source, which is the form a human sees in a diff.
+ *
+ *    `src/cms/index.ts` is NOT on the list, and the difference is worth
+ *    stating: it is the entry of a SEPARATE Vite invocation (`--mode
+ *    cms`), so inside the esm build it is an ordinary module.
  *
  * 2. Anything below the shell importing the shell. The Milestone 1
  *    obligation is that the editor knows nothing about persistence and its
@@ -75,13 +82,22 @@ describe('the shell imports one way only', () => {
         expect(Object.keys(BELOW).length).toBeGreaterThan(0);
     });
 
-    it('never reaches for the element ENTRY, only the class module', () => {
+    it('never reaches for a sibling build ENTRY, only the class modules', () => {
+        /* The other three entries of the `esm` build, as vite.config.mjs
+           lists them. `src/shell/index.ts` is the fourth and is this
+           glob's own, so a file importing IT is caught by the count
+           below being wrong rather than by this. */
+        const ENTRIES = [
+            /\/src\/element\/index(\.js)?$/,
+            /\/src\/markdown\/index(\.js)?$/,
+            /\/src\/index(\.js)?$/
+        ];
         const violations = [];
         for (const [path, source] of Object.entries(SHELL)) {
             for (const specifier of specifiersOf(source)) {
                 if (!specifier.startsWith('.')) { continue; }
                 const resolved = resolveFrom(path, specifier);
-                if (/\/src\/element\/index(\.js)?$/.test(resolved)) {
+                if (ENTRIES.some(entry => entry.test(resolved))) {
                     violations.push(`${path} -> ${specifier}`);
                 }
             }

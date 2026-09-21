@@ -243,6 +243,77 @@ $panel-background: #f7f7f7;
     word-break: break-word;
 }
 
+// Not every message in the alert region is a failure. "Nothing to save" is
+// an ordinary answer to an ordinary press, and saying it in the same red
+// panel as a refused token is how people learn to read past the red panel.
+.ct-cms__alert--notice {
+    background: $panel-background;
+    border-color: $border-color;
+}
+
+// --- the open entry -------------------------------------------------------
+
+.ct-cms__entry-head {
+    align-items: baseline;
+    display: flex;
+    gap: 8px;
+    margin: 0 0 4px;
+}
+
+// The heading is the slug and the slug is a filename, so it wraps for the
+// same reason a row in the list does: without it the submit button is
+// pushed off the pane by a long name.
+.ct-cms__entry-head .ct-cms__heading {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.ct-cms__entry-back {
+    color: $edit-action-color;
+    display: inline-block;
+    margin: 0 0 12px;
+    @include type-text($font-size: 12px, $line-height: 16px);
+}
+
+// The two panels that interrupt. Both carry work the person is about to
+// lose, so both are bordered in the warning colour rather than sitting in
+// the page as ordinary content.
+.ct-cms__conflict,
+.ct-cms__leave {
+    border: 1px solid $cancel-action-color;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 0 12px;
+    padding: 12px;
+}
+
+.ct-cms__leave {
+    align-items: flex-start;
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.ct-cms__leave-note {
+    flex: 1 1 100%;
+    margin: 0;
+}
+
+// Selectable, monospaced and tall enough to read: this is the markdown a
+// refused save would have written, and copying it out is the only thing
+// standing between a conflict and losing the work.
+.ct-cms__conflict-text {
+    border: 1px solid $border-color;
+    font-family: $monospace;
+    font-size: 12px;
+    min-height: 160px;
+    padding: 8px;
+    resize: vertical;
+    white-space: pre;
+    width: 100%;
+}
+
 // The offending path from a ConfigError. Monospaced because it is a
 // coordinate into the operator's own file, and they are about to go and
 // look for it.
@@ -329,6 +400,27 @@ $panel-background: #f7f7f7;
     &:focus-visible {
         outline: 2px solid $edit-action-color;
         outline-offset: 2px;
+    }
+
+    // Destroys work when pressed: reloading over a conflict, and leaving
+    // an entry with unsaved changes. Coloured as a warning rather than
+    // laid out apart from the safe button beside it, because the two sit
+    // together and the colour is what survives being read quickly.
+    &--cancel {
+        background: $cancel-action-color;
+
+        &:hover {
+            background: color.adjust($cancel-action-color, $lightness: -8%);
+        }
+    }
+
+    &:disabled {
+        // A save in flight. Greyed AND not hoverable, so a second press
+        // during the round trip is visibly impossible rather than merely
+        // ignored -- two commits on one parent is the conflict this
+        // shell would then have to explain.
+        background: $muted-action-color;
+        cursor: default;
     }
 
     &--muted {

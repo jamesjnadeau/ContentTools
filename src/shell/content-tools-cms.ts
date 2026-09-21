@@ -36,14 +36,30 @@
 import {loadConfig, ConfigError} from '../cms/config.js';
 import type {CmsConfig} from '../cms/config.js';
 import {CmsRepo} from '../cms/repo.js';
+import type {Entry, MediaFile} from '../cms/repo.js';
+import {MediaStore, mediaUploader} from '../cms/media.js';
 import {PatAuthAdapter} from '../auth/pat.js';
 import type {AuthAdapter} from '../auth/types.js';
+/* The CLASS module, never `../element/index.js`, and never
+   `../markdown/index.js`. Both of those are build ENTRIES of the same Vite
+   invocation as this one, and Rollup turns an entry another entry imports
+   into a facade whose body it hoists into a shared chunk -- taking
+   `customElements.define` out of the file `package.json` names in
+   `sideEffects`. test/browser/shell/imports.spec.js fails on either.
+
+   Static, not `await import()`. The tag has to be registered before the
+   shell creates one, and a lazy chunk that 404s from a static host fails
+   nowhere until somebody opens an entry -- by which time the person who
+   deployed it has gone. The budget rise is the price. */
+import {ContentToolsEditor, TAG_NAME as EDITOR_TAG}
+    from '../element/content-tools-editor.js';
+import {MarkdownDocument} from '../markdown/document.js';
 
 import {mergeEntries} from './merge.js';
 import type {ListedEntry} from './merge.js';
-import {cannotPush, describeError} from './errors.js';
+import {cannotPush, describeError, NOTHING_TO_SAVE} from './errors.js';
 import type {Described} from './errors.js';
-import {HOME, parseRoute} from './routes.js';
+import {formatRoute, HOME, parseRoute} from './routes.js';
 import type {Route} from './routes.js';
 import {shellStyleSheet} from './styles.js';
 import {buildFrame, EDITOR_SLOT} from './views/frame.js';
@@ -52,14 +68,27 @@ import {buildGate} from './views/gate.js';
 import type {Gate} from './views/gate.js';
 import {buildStatus} from './views/status.js';
 import type {Status} from './views/status.js';
+import type {EntryState} from './views/entry.js';
 
-export {EDITOR_SLOT};
+export {EDITOR_SLOT, EDITOR_TAG, ContentToolsEditor};
 
 /** The registered tag name. Declared here, re-exported by ./index.ts. */
 export const TAG_NAME = 'content-tools-cms';
 
 /** Attribute naming the config file this deployment is given. */
 const CONFIG_ATTRIBUTE = 'config';
+
+/**
+ * The one region an entry has, and the key its HTML arrives under.
+ *
+ * One region because a markdown file is one body. The frontmatter is a
+ * form beside the editor from M5-4, not a second editable region: a YAML
+ * block edited as prose is a YAML block somebody will break.
+ */
+const REGION = 'body';
+
+/** The markup the editor is handed, around the body it is editing. */
+const EDITOR_REGIONS = '[data-editable]';
 
 export class ContentToolsCms extends HTMLElement {
 
@@ -79,6 +108,41 @@ export class ContentToolsCms extends HTMLElement {
 
     declare private _entries: ListedEntry[] | null;
     declare private _truncated: boolean;
+
+    /** The open entry, and the three things that belong to it. */
+    declare private _entry: Entry | null;
+    declare private _doc: MarkdownDocument | null;
+    declare private _store: MediaStore | null;
+    /**
+     * The editor element, which is this host's only LIGHT-DOM child.
+     *
+     * Written by `_setEditor` and nowhere else. Two failures live here and
+     * neither says anything: an editor left connected holds the
+     * one-per-page `EditorApp` lease, so every later entry refuses to
+     * open; and an editor removed by re-rendering the shadow root instead
+     * would be unslotted rather than disconnected, which is the same
+     * thing with the element still on the page.
+     */
+    declare private _editor: ContentToolsEditor | null;
+    /**
+     * The last body HTML the editor reported, cached.
+     *
+     * `EditorApp.save()` is ONE-SHOT: it reports the regions whose
+     * `lastModified()` moved since the last save and then resets that
+     * baseline, so an immediate second `save(true)` answers `{}`. The
+     * dirty check and the submit both want the current HTML, and without
+     * this cache whichever asked second would be told the entry was
+     * empty.
+     */
+    declare private _edited: string | null;
+    declare private _saving: boolean;
+    declare private _saved: string | null;
+    declare private _conflict: string | null;
+    /** A navigation held back until the person answers the leave panel. */
+    declare private _pendingLeave: Route | null;
+    /** Set while restoring the hash, so the resulting event is ignored. */
+    declare private _restoring: boolean;
+    declare private _onBeforeUnload: (ev: BeforeUnloadEvent) => void;
     /** Monotonic; see `_navigate`. Guards every route-scoped await. */
     declare private _nav: number;
 
@@ -103,7 +167,13 @@ export class ContentToolsCms extends HTMLElement {
            re-render replaced is invisible but still connected -- so it
            holds the one-per-page EditorApp lease forever and every entry
            opened afterwards refuses to open, silently. */
-        this._frame = buildFrame(this.ownerDocument, {signOut: () => this._signOut()});
+        this._frame = buildFrame(this.ownerDocument, {
+            signOut: () => this._signOut(),
+            submit: () => this._submit(),
+            reload: () => this._reopen(),
+            stay: () => this._stay(),
+            discard: () => this._discard()
+        });
         this._gate = null;
         this._status = null;
 
@@ -113,6 +183,16 @@ export class ContentToolsCms extends HTMLElement {
         this._repo = null;
         this._entries = null;
         this._truncated = false;
+        this._entry = null;
+        this._doc = null;
+        this._store = null;
+        this._editor = null;
+        this._edited = null;
+        this._saving = false;
+        this._saved = null;
+        this._conflict = null;
+        this._pendingLeave = null;
+        this._restoring = false;
         this._nav = 0;
         this._booted = false;
         this._offered = null;
@@ -120,6 +200,7 @@ export class ContentToolsCms extends HTMLElement {
         this._fetch = null;
 
         this._onHashChange = () => this._readRoute();
+        this._onBeforeUnload = ev => this._guardUnload(ev);
         this._shadow.appendChild(this._frame.node);
     }
 
@@ -179,7 +260,13 @@ export class ContentToolsCms extends HTMLElement {
             this._shadow.adoptedStyleSheets = [...this._shadow.adoptedStyleSheets, sheet];
         }
 
-        this.ownerDocument.defaultView?.addEventListener('hashchange', this._onHashChange);
+        const view = this.ownerDocument.defaultView;
+        view?.addEventListener('hashchange', this._onHashChange);
+        /* The browser's own version of the leave panel, for the one exit
+           the shell cannot render over: closing the tab. Same predicate,
+           so the two cannot disagree about whether there is work to
+           lose. */
+        view?.addEventListener('beforeunload', this._onBeforeUnload);
         this._route = parseRoute(this._hash());
 
         if (!this._booted) {
@@ -191,7 +278,18 @@ export class ContentToolsCms extends HTMLElement {
     }
 
     disconnectedCallback(): void {
-        this.ownerDocument.defaultView?.removeEventListener('hashchange', this._onHashChange);
+        const view = this.ownerDocument.defaultView;
+        view?.removeEventListener('hashchange', this._onHashChange);
+        view?.removeEventListener('beforeunload', this._onBeforeUnload);
+        /* The editor is deliberately NOT touched here, and removing it
+           would be a bug rather than tidiness. It is a child of this
+           host, so a real removal disconnects it with us and it releases
+           the lease on its own -- and a MOVE fires this callback too,
+           synchronously, before the reconnect. Detaching the editor here
+           would therefore destroy the open entry every time a framework
+           reparented the shell, while the editor's own teardown is
+           already written to survive exactly that (deferred a microtask,
+           re-checking `isConnected`). */
     }
 
     // --- state ------------------------------------------------------------
@@ -223,7 +321,8 @@ export class ContentToolsCms extends HTMLElement {
                 route: this._route,
                 error: shownOn('ready'),
                 entries: this._entries,
-                truncated: this._truncated
+                truncated: this._truncated,
+                entry: this._entryState()
             });
             this._gateView().update({
                 repo: config.backend.repo,
@@ -242,6 +341,10 @@ export class ContentToolsCms extends HTMLElement {
         error?: Described | null;
         entries?: ListedEntry[] | null;
         truncated?: boolean;
+        entry?: Entry | null;
+        saving?: boolean;
+        saved?: string | null;
+        conflict?: string | null;
     }): void {
         if ('config' in patch) {
             this._config = patch.config ?? null;
@@ -257,6 +360,18 @@ export class ContentToolsCms extends HTMLElement {
         }
         if ('truncated' in patch) {
             this._truncated = patch.truncated ?? false;
+        }
+        if ('entry' in patch) {
+            this._entry = patch.entry ?? null;
+        }
+        if ('saving' in patch) {
+            this._saving = patch.saving ?? false;
+        }
+        if ('saved' in patch) {
+            this._saved = patch.saved ?? null;
+        }
+        if ('conflict' in patch) {
+            this._conflict = patch.conflict ?? null;
         }
         this._render();
     }
@@ -285,7 +400,7 @@ export class ContentToolsCms extends HTMLElement {
                this, because there the token must go whether the answer
                was a 401, a 404 or a 200 whose body says read-only. */
             if (described.kind === 'unauthorized') {
-                await this.auth.logout();
+                await this._dropToken();
             }
             this._setState({error: described});
         }
@@ -298,7 +413,82 @@ export class ContentToolsCms extends HTMLElement {
     }
 
     private _readRoute(): void {
-        this._navigate(parseRoute(this._hash()));
+        /* The hashchange our OWN restoration caused. Acting on it would
+           undo the restoration and let the navigation through: the leave
+           panel would appear and the entry would close behind it anyway,
+           which is the worst of both. */
+        if (this._restoring) {
+            this._restoring = false;
+            return;
+        }
+
+        const route = parseRoute(this._hash());
+        /* `_dirty()` is the WHOLE predicate, and the two tests that are
+           not here were both written and both removed.
+
+           Not `this._route.kind === 'entry'`: nothing but an open entry
+           can be dirty in the first place (`_navigate` closes the entry
+           before it sets the route, so the three fields `_dirty` needs
+           are null everywhere else), and from M5-5 the create route is
+           an open editor on a route that is not `entry` -- so the test
+           would start throwing away a new post's first draft.
+
+           Not `formatRoute(route) !== formatRoute(this._route)` either.
+           A hashchange naming the route we are already on is reachable,
+           because `#/c/blog/e/hello/` and `#/c/blog/e/hello` are the
+           same page to `parseRoute`; and there that test does not stop a
+           pointless question, it turns it into a silent `_navigate` that
+           reloads the entry and drops the edits without asking. */
+        if (this._dirty()) {
+            /* Held, not refused. A hashchange cannot be cancelled -- by
+               the time it fires the address bar has already moved -- so
+               the hash is put back and the question asked in the page.
+               Never `window.confirm`: it is modal on the whole tab, it
+               cannot be styled or tested as part of the shell, and a
+               person who dismisses it by reflex has nothing to read
+               afterwards. */
+            this._pendingLeave = route;
+            this._restoreHash();
+            this._render();
+            return;
+        }
+        this._navigate(route);
+    }
+
+    /**
+     * Put the address bar back where the shell actually is.
+     *
+     * The equality guard is load-bearing: assigning a hash that is
+     * already set fires NO event, so `_restoring` would stay true and
+     * swallow the next real navigation instead -- a shell that stops
+     * responding to its own links, once.
+     */
+    private _restoreHash(): void {
+        const view = this.ownerDocument.defaultView;
+        const want = formatRoute(this._route);
+        if (!view || view.location.hash === want) {
+            return;
+        }
+        this._restoring = true;
+        view.location.hash = want;
+    }
+
+    /**
+     * The tab is closing. Same predicate as the leave panel, deliberately.
+     *
+     * Two guards that disagree about whether there is work to lose is
+     * worse than one: the panel would hold a navigation the browser then
+     * let through without a word.
+     */
+    private _guardUnload(ev: BeforeUnloadEvent): void {
+        if (!this._dirty()) {
+            return;
+        }
+        /* Both, because engines disagree about which one arms the
+           prompt. There is no message to write -- browsers replaced the
+           author's text with their own wording years ago. */
+        ev.preventDefault();
+        ev.returnValue = '';
     }
 
     /**
@@ -327,6 +517,17 @@ export class ContentToolsCms extends HTMLElement {
     private _navigate(route: Route): void {
         this._nav += 1;
         const at = this._nav;
+        this._pendingLeave = null;
+        /* Leaving an entry CLOSES it, here rather than when the next one
+           is ready. Two reasons, and the second is the one that matters:
+           the previous entry's text under the new entry's heading is the
+           same failure the cleared `entries` above prevents for a list;
+           and the `EditorApp` lease is genuinely free across the await
+           that follows rather than handed over in one tick. The plan
+           called for the one-tick swap; releasing first is strictly more
+           conservative, and the gate it was protecting -- "the lease is
+           free after navigating away" -- is satisfied directly. */
+        this._closeEntry();
         this._setState({route, error: null, entries: null, truncated: false});
         void this._guard(() => this._loadRoute(at));
     }
@@ -349,7 +550,10 @@ export class ContentToolsCms extends HTMLElement {
     private async _loadRoute(at: number): Promise<void> {
         const repo = this._repo;
         const route = this._route;
-        if (!repo || !this.auth.currentToken() || route.kind !== 'collection') {
+        if (!repo || !this.auth.currentToken()) {
+            return;
+        }
+        if (route.kind !== 'collection' && route.kind !== 'entry') {
             return;
         }
         /* A collection the config does not have. The view already says
@@ -358,6 +562,11 @@ export class ContentToolsCms extends HTMLElement {
            sentence, and put an alert on a page that is already
            explaining itself. */
         if (!this._config?.collections.some(c => c.name === route.collection)) {
+            return;
+        }
+
+        if (route.kind === 'entry') {
+            await this._openEntry(at, route.collection, route.slug);
             return;
         }
 
@@ -372,6 +581,319 @@ export class ContentToolsCms extends HTMLElement {
             entries: mergeEntries(route.collection, listing.entries, inFlight),
             truncated: listing.truncated
         });
+    }
+
+    // --- the open entry ---------------------------------------------------
+
+    /**
+     * Read an entry and put an editor on the page for it.
+     *
+     * The media folder is listed in the SAME round trip, because the
+     * names it already holds decide what an upload is staged as -- and a
+     * collision has to be resolved at the moment the image is inserted,
+     * not at commit time, since the URL the editor shows has to be the
+     * URL that ends up in the file.
+     */
+    private async _openEntry(at: number, collection: string, slug: string): Promise<void> {
+        const repo = this._repo as CmsRepo;
+        const config = this._config as CmsConfig;
+
+        const [entry, folder] = await Promise.all([
+            repo.readEntry(collection, slug),
+            repo.github.listDirectory(config.media.folder, repo.base)
+        ]);
+        if (at !== this._nav) {
+            return;
+        }
+
+        const doc = MarkdownDocument.parse(entry.content ?? '');
+        this._doc = doc;
+        this._store = new MediaStore({config, taken: folder.map(file => file.name)});
+
+        const editor = this._buildEditor(doc, this._store);
+        this._setEditor(editor);
+        /* Started by the shell, not by an ignition button. Opening an
+           entry in a CMS IS the decision to edit it, and an editor
+           sitting inert behind a second press is a screen that looks
+           broken. It also has to be started for `save(true)` to have any
+           regions to report: `_regions` is populated by `start()`. */
+        editor.start();
+        this._setState({entry});
+    }
+
+    /**
+     * The editor element for `doc`, fully built and not yet connected.
+     *
+     * Everything is in place before it enters the DOM, because
+     * `connectedCallback` boots immediately: an element connected first
+     * and configured afterwards boots against the defaults and then has
+     * to be rebooted, which tears down and re-claims the lease for
+     * nothing.
+     */
+    private _buildEditor(doc: MarkdownDocument, store: MediaStore): ContentToolsEditor {
+        const doc_ = this.ownerDocument;
+        const editor = doc_.createElement(EDITOR_TAG) as ContentToolsEditor;
+        /* Without this the element is an unassigned light child. The
+           frame's only slot is a NAMED one, so an editor with no `slot`
+           attribute renders nowhere at all -- while being perfectly
+           connected, perfectly functional, and holding the lease. */
+        editor.setAttribute('slot', EDITOR_SLOT);
+        editor.setAttribute('regions', EDITOR_REGIONS);
+        /* The whole reason markdown mode exists: the editor must not be
+           able to produce something the serializer cannot express. */
+        editor.setAttribute('mode', 'markdown');
+        /* Staged in memory and committed by `saveEntry`, so an entry and
+           its images land in one commit. An uploader that commits on its
+           own leaves an orphan blob behind every abandoned edit. */
+        editor.imageUploader = mediaUploader({store});
+
+        const region = doc_.createElement('div');
+        region.setAttribute('data-editable', '');
+        region.setAttribute('data-name', REGION);
+        region.innerHTML = doc.toHTML();
+        editor.appendChild(region);
+
+        editor.addEventListener('ct-saved', ev => this._remember(ev as CustomEvent));
+        return editor;
+    }
+
+    /**
+     * This host's only light-DOM child, and the only place it is written.
+     *
+     * Not `replaceChildren`: a host page's own children are none of the
+     * shell's business, and the M5-1 invariant that the shell writes
+     * nothing into its light DOM holds for everything except this one
+     * element.
+     *
+     * There is no editor-to-editor case, and there is deliberately no
+     * code for one. `_navigate` closes the open entry BEFORE it awaits
+     * the next, so the lease is genuinely free across the read rather
+     * than handed over in a single tick -- the one-tick `replaceWith`
+     * swap the plan called for was written, found to be unreachable, and
+     * removed. Adding it back means removing the `_closeEntry` above.
+     */
+    private _setEditor(next: ContentToolsEditor | null): void {
+        const current = this._editor;
+        this._editor = next;
+        if (next) {
+            this.appendChild(next);
+        } else if (current) {
+            current.remove();
+        }
+    }
+
+    /**
+     * Forget the open entry. Does NOT render; every caller sets state
+     * immediately afterwards and a second render would only flicker.
+     */
+    private _closeEntry(): void {
+        this._setEditor(null);
+        this._entry = null;
+        this._doc = null;
+        this._store = null;
+        this._edited = null;
+        this._saving = false;
+        this._saved = null;
+        this._conflict = null;
+    }
+
+    private _entryState(): EntryState {
+        return {
+            entry: this._entry,
+            saving: this._saving,
+            saved: this._saved,
+            conflict: this._conflict,
+            leaving: this._pendingLeave !== null
+        };
+    }
+
+    /**
+     * Remember what the editor last reported for the body.
+     *
+     * Only when the region is actually in the map. `save()` reports the
+     * regions whose content moved since the last save and then RESETS
+     * that baseline, so an unchanged save reports none -- and reading
+     * the absent key as "the body is empty now" would make the next
+     * submit write an empty file over somebody's post.
+     */
+    private _remember(ev: CustomEvent): void {
+        const regions = (ev.detail as {regions?: Record<string, string>} | null)?.regions;
+        const html = regions ? regions[REGION] : undefined;
+        if (typeof html === 'string') {
+            this._edited = html;
+        }
+    }
+
+    /**
+     * The body HTML as it stands right now.
+     *
+     * `save(true)` is passive: it reports without unmounting the
+     * regions, so the caret stays where the person left it. It fills
+     * `_edited` synchronously through the handler above, and the cache
+     * is why this may be called twice -- the dirty check and the submit
+     * both want the answer, and the second caller would otherwise be
+     * told nothing had changed.
+     */
+    private _currentHtml(): string {
+        /* No `state === 'editing'` test beside this one. `_editor` is
+           written by `_setEditor` alone, which is called from
+           `_openEntry` -- one line before `start()` -- and from
+           `_closeEntry`, which passes null. So an editor that is here
+           and not editing does not exist, and a test for it could only
+           ever be dead. If that stops being true, `save()` throws on a
+           disconnected editor, which is the loud failure rather than the
+           quiet one. */
+        this._editor?.save(true);
+        return this._edited ?? this._doc?.toHTML() ?? '';
+    }
+
+    /**
+     * Exactly what a save would write, or null if there is nothing open.
+     *
+     * ONE method, because the dirty check and the submit both need this
+     * answer and two spellings of it can disagree -- which they would do
+     * by holding a navigation over work that a save then reports as
+     * unchanged, or worse by letting one go that a save would have
+     * written. The media rewrite belongs here for the same reason: it
+     * happens on the way to the commit, so it has to happen on the way
+     * to the comparison.
+     */
+    private _pending(): {content: string; media: MediaFile[]} | null {
+        const doc = this._doc;
+        const store = this._store;
+        if (!doc || !store) {
+            return null;
+        }
+        /* One pass giving both answers. Rewriting the HTML and asking
+           separately what to commit can disagree, and the way they
+           disagree is an entry referencing an image nobody uploaded. */
+        const {html, media} = store.rewrite(this._currentHtml());
+        return {content: doc.update(html), media};
+    }
+
+    /**
+     * Whether there is work that a save would write.
+     *
+     * The MARKDOWN decides, not the HTML. The editor normalises what it
+     * is handed -- attribute order, whitespace, the placeholder
+     * paragraph an empty region needs to hold a caret -- so an HTML
+     * comparison reports edits nobody made, and a leave panel that
+     * appears every time is a leave panel people click through.
+     */
+    private _dirty(): boolean {
+        const entry = this._entry;
+        const pending = entry ? this._pending() : null;
+        return pending !== null && pending.content !== (entry?.content ?? '');
+    }
+
+    /**
+     * Commit what is in the editor, and open or update the pull request.
+     *
+     * The open `MarkdownDocument` is NEVER re-parsed afterwards, and that
+     * is the subtlest rule in the shell. Re-parsing the string just
+     * written would renumber the blocks while the live DOM still carries
+     * the old `data-ct-md` indices, so the next save would splice against
+     * the wrong originals -- content corruption inside a diff that looks
+     * perfectly reviewable. It stays correct because `parent` pins the
+     * commit this edit was read at: the branch is what we read plus our
+     * own change, or it is a `ConflictError`.
+     */
+    private _submit(): void {
+        void this._guard(async () => {
+            const repo = this._repo;
+            const entry = this._entry;
+            const pending = this._pending();
+            if (!repo || !entry || !pending) {
+                return;
+            }
+            const {content, media} = pending;
+            this._setState({saving: true, saved: null, conflict: null, error: null});
+
+            let result;
+            try {
+                result = await repo.saveEntry(entry.collection, entry.slug, {
+                    content,
+                    media,
+                    parent: entry.commit,
+                    message: `Update ${entry.path}`
+                });
+            } catch (error) {
+                /* Whatever happens next, the save is over. Leaving
+                   `saving` set disables the button for good, so the one
+                   person who most needs to try again cannot. Written
+                   directly because two of the three paths below render
+                   anyway and the third is `_guard`'s. */
+                this._saving = false;
+                const described = describeError(error);
+                if (described.kind === 'conflict') {
+                    /* The unwritten markdown is kept and shown. A
+                       conflict is the one failure where the person's
+                       work is still in hand and the only way forward
+                       throws it away; offering the reload without
+                       showing them what they wrote is data loss with a
+                       button on it. */
+                    this._setState({error: described, conflict: content});
+                    return;
+                }
+                /* Everything else is re-thrown rather than rendered
+                   here, `NothingToSaveError` included: `_guard` renders
+                   whatever it catches through the same `describeError`,
+                   so a branch for the notice would say the same words
+                   twice -- and `_guard` also drops the token on a 401,
+                   which a save is as able to provoke as any other
+                   request. Catching it here would leave a revoked token
+                   in place and every later save failing the same way. */
+                throw error;
+            }
+
+            /* `content` is now what the repository holds, so it becomes
+               the baseline the dirty check compares against -- otherwise
+               a saved entry still reads as unsaved and the leave panel
+               appears over work that is safely committed. */
+            this._setState({
+                entry: {
+                    ...entry,
+                    content,
+                    commit: result.commit ?? entry.commit,
+                    pull: result.pull
+                },
+                saving: false,
+                saved: result.commit ? `Saved as ${result.commit.slice(0, 7)}.` : null,
+                /* `changed: false` and a thrown `NothingToSaveError` are
+                   the same thing to the person who pressed the button:
+                   the repository already holds this. Which one the
+                   repository reports depends on whether a pull request
+                   happens to be open. */
+                error: result.changed ? null : NOTHING_TO_SAVE
+            });
+        });
+    }
+
+    /** Throw away local edits and read the entry again. */
+    private _reopen(): void {
+        this._navigate(this._route);
+    }
+
+    /** Abandon the held-back navigation. */
+    private _stay(): void {
+        this._pendingLeave = null;
+        this._render();
+    }
+
+    /**
+     * Leave anyway, losing the unsaved work.
+     *
+     * Navigated directly rather than by setting the hash and waiting for
+     * the event: the restoration's own hashchange may still be in
+     * flight, and a second assignment racing it is how a discard turns
+     * into two loads or none. The address bar is corrected afterwards,
+     * with the resulting event suppressed because the work is done.
+     */
+    private _discard(): void {
+        const route = this._pendingLeave ?? this._route;
+        this._pendingLeave = null;
+        this._navigate(route);
+        this._restoreHash();
     }
 
     private async _loadConfig(): Promise<void> {
@@ -445,7 +967,7 @@ export class ContentToolsCms extends HTMLElement {
                 refused = describeError(error);
             }
             if (refused) {
-                await this.auth.logout();
+                await this._dropToken();
                 this._setState({error: refused});
                 return;
             }
@@ -486,9 +1008,23 @@ export class ContentToolsCms extends HTMLElement {
 
     private _signOut(): void {
         void this._guard(async () => {
-            await this.auth.logout();
+            await this._dropToken();
             this._setState({error: null});
         });
+    }
+
+    /**
+     * Give up the token, and everything that needed one.
+     *
+     * The editor goes with it. It is a child of THIS host, and the frame
+     * that slots it is merely hidden when the gate comes back -- so an
+     * editor left behind is invisible, still connected, and still holding
+     * the one-per-page `EditorApp` lease. Signing back in and opening an
+     * entry would then refuse, with nothing in any stack trace.
+     */
+    private async _dropToken(): Promise<void> {
+        await this.auth.logout();
+        this._closeEntry();
     }
 
     // --- which screen -----------------------------------------------------

@@ -31,6 +31,8 @@ export type ErrorKind =
     | 'config'        // the deployment is wrong; there is nothing to sign in to
     | 'unauthorized'  // forget the token and go back to the gate
     | 'forbidden'     // the token is real but not allowed here
+    | 'conflict'      // somebody pushed first; offer a reload, keep the work
+    | 'notice'        // not a failure at all -- say so, and do not alarm
     | 'github'        // the API refused, for some other reason
     | 'offline'       // the request never arrived
     | 'unknown';
@@ -46,13 +48,30 @@ export interface Described {
 }
 
 /**
- * Describe a failure.
+ * Saving an entry nobody changed.
  *
- * Deliberately NOT mapped: `ConflictError` and `NothingToSaveError`, which
- * nothing in the shell can yet produce because nothing can yet save. A row
- * for either would be unreachable code with a test written only to reach
- * it; they arrive with the save path in M5-3, and until then fall through
- * to `github` and `unknown`, which are terse but true.
+ * Not a failure, and it must not read as one: pressing save on an entry
+ * you opened and did not change is an ordinary thing to do, and answering
+ * it in the same red panel as a refused token is how people learn to read
+ * past the red panel.
+ *
+ * A constant rather than only a row in `describeError`, because the
+ * repository reports the same condition two ways and both have to say the
+ * same sentence. `saveEntry` THROWS `NothingToSaveError` when there is no
+ * pull request to leave alone, and RETURNS `changed: false` when there is
+ * one -- a distinction about branch bookkeeping that means nothing to the
+ * person who pressed the button.
+ */
+export const NOTHING_TO_SAVE: Described = {
+    title: 'Nothing to save.',
+    detail: 'This entry already matches what the repository holds, so no commit '
+        + 'was made.',
+    kind: 'notice',
+    path: ''
+};
+
+/**
+ * Describe a failure.
  *
  * Also not mapped: a rate-limited 403. Telling one apart from a permissions
  * 403 needs `x-ratelimit-remaining`, and a `GitHubError` carries status,
@@ -79,6 +98,26 @@ export function describeError(error: unknown): Described {
             detail: withoutPrefix(message, `${path}: `),
             kind: 'config',
             path
+        };
+    }
+
+    if (name === 'NothingToSaveError') {
+        return NOTHING_TO_SAVE;
+    }
+
+    /* Before the `GitHubError` branch, because `ConflictError` extends it
+       and would otherwise be reported as an ordinary 422. It is the one
+       API failure a shell HANDLES rather than reports: the person's work
+       is still in hand, and the view offers a reload beside a copy of the
+       markdown that was not written. */
+    if (name === 'ConflictError') {
+        return {
+            title: 'Somebody else changed this entry while it was open.',
+            detail: 'Nothing was written, and nothing of theirs was lost. Reload the entry '
+                + 'to get their version; what this save would have written is below, to '
+                + 'copy from.',
+            kind: 'conflict',
+            path: ''
         };
     }
 

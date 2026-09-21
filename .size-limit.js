@@ -126,21 +126,32 @@ export default [
            1 kB -> 17 kB with the frame: the whole of `src/cms/` inlined
            (9.4 kB gzipped as its own entry) plus routing, rendering,
            the views and the stylesheet. 17 kB -> 19.5 kB with the entry
-           list, which is the merge, one more view and its rules. It does
-           NOT yet include the editor or the markdown parser -- the shell
-           imports neither, which is what keeps this number honest about
-           what the chrome alone costs, and why it will rise sharply when
-           the entry editor lands.
+           list. Then 19.5 kB -> 205 kB with the entry EDITOR, which is
+           the jump this comment warned was coming and is almost none of
+           it the shell's own code: ~24 kB for the editor element and
+           ~56 kB for the library behind it, plus ~98 kB of micromark,
+           mdast and `yaml` for the markdown round trip. Roughly the sum
+           of the `element` and `markdown` budgets, which is exactly what
+           a shell that mounts an editor and parses markdown is.
 
-           `yaml` is NOT in here even though `loadConfig` reaches it: the
-           shell's import of it is dynamic, so a JSON-configured site
-           never downloads it. `dist/markdown.js` pulls the same chunk in
-           statically and is charged for it, which is why the markdown
-           budget below is unchanged by the split. That asymmetry is the
-           property `closureOf`'s static-only walk exists to state. */
+           Both imports are STATIC, and that was the choice. A lazy
+           chunk would keep this number small and move the failure: the
+           editor's tag has to be registered before the shell creates
+           one, and a chunk that 404s from a static host then fails
+           nowhere until somebody opens an entry -- long after whoever
+           deployed it has stopped looking.
+
+           `yaml` folded into the markdown chunk with the same change,
+           because the shell's dynamic `loadConfig` import is no longer
+           its only path there: `src/markdown/parse.ts` imports it
+           statically, and a chunk two entries reach statically is one
+           chunk. A JSON-configured site still downloads it here, which
+           is honestly reported rather than argued away -- the parser
+           beside it is 98 kB, so the asymmetry stopped being worth a
+           chunk boundary. `dist/cms.js`'s lazy copy is unaffected. */
         name: 'shell entry + its chunks',
         path: closureOf('dist/shell.js'),
-        limit: '19.5 kB',
+        limit: '205 kB',
         gzip: true
     },
     {

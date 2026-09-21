@@ -21,9 +21,14 @@ const PAGE = '/app/index.html';
 const TOKEN = 'github_pat_playwright';
 
 /** Serve `api.github.com` from an in-memory GitHub, over the real fetch. */
+/* Frontmatter plus two blocks, because the entry test below asserts the
+   frontmatter survives byte for byte while exactly one body line
+   changes -- which a one-line file could not distinguish. */
+const SEED = '---\ntitle: Hello\n---\n\n# Hello\n\nBody.\n';
+
 async function serveGitHub(page) {
     const fake = createFakeGitHub({
-        files: {'content/blog/hello.md': '# Hello\n', 'content/about.md': '# About\n'}
+        files: {'content/blog/hello.md': SEED, 'content/about.md': '# About\n'}
     });
     await page.route('https://api.github.com/**', async route => {
         const request = route.request();
@@ -169,6 +174,61 @@ test('the entry list merges what is published with what is in review',
        entry bookmarkable and what M5-3 opens. */
     await expect(shell(page).locator('.ct-cms__entry-link').first())
         .toHaveAttribute('href', '#/c/blog/e/unseen');
+
+    expect(errors).toEqual([]);
+    expect(logged).toEqual([]);
+});
+
+test('opening an entry, editing it, and submitting one reviewable line',
+     async ({page}) => {
+    const errors = [];
+    page.on('pageerror', error => errors.push(`${error.name}: ${error.message}`));
+    const logged = collectConsoleErrors(page);
+
+    const fake = await serveGitHub(page);
+    await page.goto(PAGE);
+    await shell(page).locator('.ct-cms__input').fill(TOKEN);
+    await shell(page).locator('.ct-cms__gate-form button').click();
+    await expect(page.locator('content-tools-cms')).toHaveAttribute('state', 'ready');
+
+    await shell(page).locator('.ct-cms__nav-link').first().click();
+    await shell(page).locator('.ct-cms__entry-link').first().click();
+
+    /* The editor is a LIGHT-DOM child of the shell, assigned to the
+       frame's named slot. Only this file can see whether the built
+       shell.js registers `<content-tools-editor>` at all: it imports
+       the class module rather than `./element`, and the tag is defined
+       from `src/shell/index.ts`. An unregistered tag is not an error --
+       `createElement` hands back an inert unknown element -- so the
+       entry would open to an empty pane with a clean console. */
+    const editor = page.locator('content-tools-cms > content-tools-editor');
+    await expect(editor).toHaveAttribute('state', 'editing');
+    await expect(editor).toHaveAttribute('slot', 'editor');
+    await expect(editor.locator('[data-editable] h1')).toHaveText('Hello');
+
+    // Type into the body, the way a person does.
+    const paragraph = editor.locator('[data-editable] p').first();
+    await paragraph.click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' Again.');
+
+    await shell(page).locator('.ct-cms__entry-view .ct-cms__button').first().click();
+    await expect(shell(page).locator('.ct-cms__entry-pull')).toContainText('Pull request');
+
+    /* One branch, one pull request, one commit -- and the file still
+       starts with the frontmatter block it started with, byte for byte.
+       A serializer that renormalised the file would produce a diff
+       covering all of it, and a diff covering all of it cannot be
+       reviewed, which is the premise of the whole workflow. */
+    expect(fake.branches()).toEqual(['cms/blog/hello', 'main']);
+    expect(fake.pulls().length).toBe(1);
+    expect(fake.history('cms/blog/hello').length).toBe(2);
+
+    const saved = fake.read('content/blog/hello.md', 'cms/blog/hello');
+    expect(saved.startsWith('---\ntitle: Hello\n---\n')).toBe(true);
+    const added = saved.split('\n').filter(
+        line => line && !SEED.split('\n').includes(line));
+    expect(added).toEqual(['Body. Again.']);
 
     expect(errors).toEqual([]);
     expect(logged).toEqual([]);

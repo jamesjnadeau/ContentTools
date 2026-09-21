@@ -44,5 +44,11 @@ export function showAlert(doc: Document, region: HTMLElement, error: Described |
         parts.push(h(doc, 'p', {class: 'ct-cms__alert-detail'}, [error.detail]));
     }
 
-    region.appendChild(h(doc, 'div', {class: 'ct-cms__alert'}, parts));
+    /* A `notice` is not a failure -- "nothing to save" is an ordinary
+       answer to an ordinary press -- and rendering it in the same red
+       panel as a refused token is how people learn to read past the red
+       panel. It stays in the live region, because it is still the reply
+       to something they just did and a sighted user sees it appear. */
+    const kind = error.kind === 'notice' ? ' ct-cms__alert--notice' : '';
+    region.appendChild(h(doc, 'div', {class: `ct-cms__alert${kind}`}, parts));
 }

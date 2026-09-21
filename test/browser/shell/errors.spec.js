@@ -2,6 +2,7 @@ import {describeError} from '../../../src/shell/errors.js';
 import {ConfigError} from '../../../src/cms/config.js';
 import {GitHubError, ConflictError} from '../../../src/cms/github.js';
 import {NotAuthenticatedError} from '../../../src/auth/pat.js';
+import {NothingToSaveError} from '../../../src/cms/repo.js';
 
 /* The mapping from a thrown thing to what a person reads.
  *
@@ -64,11 +65,37 @@ describe('describeError', function() {
         expect(described.detail).toContain('boom');
     });
 
-    it('recognises a ConflictError as a GitHub failure rather than an unknown one', function() {
-        // It is not given a row of its own until something can save (M5-3),
-        // but it must not fall all the way through to "something went wrong".
-        expect(describeError(new ConflictError('PATCH', '/repos/o/r/git/refs/heads/x', 409, null)).kind)
-            .toBe('github');
+    it('gives a ConflictError its own kind, ahead of the GitHubError branch', function() {
+        /* `ConflictError extends GitHubError`, so the suffix match below
+           would claim it and report a bare "GitHub returned 422" -- which
+           tells the person nothing about the only thing that matters:
+           their work is still in hand and somebody else's is in the
+           repository. The row has to be tested for ordering, not just for
+           existence, because moving it below the GitHubError branch breaks
+           it while leaving every other row passing. */
+        const described = describeError(
+            new ConflictError('PATCH', '/repos/o/r/git/refs/heads/x', 422, null));
+        expect(described.kind).toBe('conflict');
+        expect(described.title).toContain('Somebody else');
+    });
+
+    it('describes a ConflictError from ANOTHER COPY of src/cms', function() {
+        /* Same reasoning as the GitHubError case below, and sharper: a
+           foreign ConflictError under an instanceof check would be an
+           unknown error, so the shell would report "something went wrong"
+           and throw away the unwritten markdown instead of offering it. */
+        const foreign = {name: 'ConflictError', message: 'ref was updated',
+                         method: 'PATCH', path: '/repos/o/r/git/refs/heads/x', status: 422};
+        expect(describeError(foreign).kind).toBe('conflict');
+    });
+
+    it('reports NothingToSaveError as a notice, not a failure', function() {
+        /* Pressing save on an entry you have opened and not changed is an
+           ordinary thing to do. Answering it in the same red panel as a
+           refused token is how people learn to read past the red panel. */
+        const described = describeError(new NothingToSaveError('blog', 'hello'));
+        expect(described.kind).toBe('notice');
+        expect(described.title).toBe('Nothing to save.');
     });
 
     it('describes an error from ANOTHER COPY of src/cms', function() {

@@ -116,6 +116,42 @@ export async function signIn(el, token = 'github_pat_test') {
                 'the shell to leave the gate');
 }
 
+/**
+ * Mount at a route, sign in, and wait for whatever that route loads.
+ *
+ * The hash is set BEFORE the element is connected, because that is the
+ * case a bookmark exercises: the route has to survive a boot that had no
+ * config to resolve it against yet.
+ */
+export async function openAt(hash, options = {}) {
+    location.hash = hash;
+    const mounted = await mountShell(options);
+    await signIn(mounted.el);
+    return mounted;
+}
+
+/** The editor element the shell put in its own light DOM, or null. */
+export function editorOf(el) {
+    return el.querySelector('content-tools-editor');
+}
+
+/**
+ * Rewrite one block of the open entry, as typing into it would.
+ *
+ * Through the ContentEdit element rather than by assigning textContent:
+ * the editor keeps its own tree, and a DOM poke behind its back leaves
+ * `lastModified()` untouched -- so `save()` would report nothing changed
+ * and every assertion afterwards would be about an edit that never
+ * happened. The idiom is test/browser/content-tools/editor.spec.js's.
+ */
+export function retype(el, text, index = 1) {
+    const block = editorOf(el).editorApp.regions().body.children[index];
+    block.content = new HTMLString.String(text);
+    block.updateInnerHTML();
+    block.taint();
+    return block;
+}
+
 /** The text of whatever the alert region is currently saying. */
 export function alertText(el) {
     return [...el.shadowRoot.querySelectorAll('.ct-cms__alert-region')]

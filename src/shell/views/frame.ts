@@ -15,6 +15,8 @@ import {h, list} from '../render.js';
 import {alertRegion, showAlert} from './alert.js';
 import {buildEntries} from './entries.js';
 import type {Entries} from './entries.js';
+import {buildEntry} from './entry.js';
+import type {EntryHandlers, EntryState, EntryView} from './entry.js';
 import {formatRoute} from '../routes.js';
 import type {Route} from '../routes.js';
 import type {Described} from '../errors.js';
@@ -24,7 +26,7 @@ import type {CmsConfig} from '../../cms/config.js';
 /** Where the editor element is slotted. Its light-DOM home is the host. */
 export const EDITOR_SLOT = 'editor';
 
-export interface FrameHandlers {
+export interface FrameHandlers extends EntryHandlers {
     signOut(): void;
 }
 
@@ -36,6 +38,8 @@ export interface FrameState {
     entries: readonly ListedEntry[] | null;
     /** The listing was cut short by the API's one-page cap. */
     truncated: boolean;
+    /** The open entry, and everything the editor's chrome shows about it. */
+    entry: EntryState;
 }
 
 export interface Frame {
@@ -97,7 +101,12 @@ function collectionView(
     return [entries.node];
 }
 
-function mainView(doc: Document, state: FrameState, entries: Entries): HTMLElement[] {
+function mainView(
+        doc: Document,
+        state: FrameState,
+        entries: Entries,
+        entry: EntryView
+        ): HTMLElement[] {
     switch (state.route.kind) {
     case 'home':
         return [
@@ -107,6 +116,13 @@ function mainView(doc: Document, state: FrameState, entries: Entries): HTMLEleme
         ];
     case 'collection':
         return collectionView(doc, state, entries, state.route.collection);
+    case 'entry':
+        /* Built once and merely re-shown, for the same reason the list
+           is -- and with a second reason of its own from M5-4, when the
+           frontmatter fields land inside it and a rebuild per render
+           starts eating keystrokes. */
+        entry.update(state.entry);
+        return [entry.node];
     default:
         return placeholder(doc, state);
     }
@@ -117,6 +133,7 @@ export function buildFrame(doc: Document, handlers: FrameHandlers): Frame {
     const navList = h(doc, 'ul', {class: 'ct-cms__nav-list'});
     const view = h(doc, 'div', {class: 'ct-cms__view'});
     const entries = buildEntries(doc);
+    const entry = buildEntry(doc, handlers);
     const alert = alertRegion(doc);
 
     const slot = doc.createElement('slot');
@@ -188,7 +205,7 @@ export function buildFrame(doc: Document, handlers: FrameHandlers): Frame {
                 }
             );
 
-            view.replaceChildren(...mainView(doc, state, entries));
+            view.replaceChildren(...mainView(doc, state, entries, entry));
         }
     };
 }
