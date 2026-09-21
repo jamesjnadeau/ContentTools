@@ -8,6 +8,12 @@
 # hand-edits, and it is the branch of `loadConfig` that pulls in the
 # parser, so the shipped page exercises the lazy import too.
 backend:
+  # A placeholder, and one that fails LOUDLY rather than quietly: a real
+  # fine-grained token offered against `owner/site` is refused at the
+  # sign-in gate, because the gate checks the token against this
+  # repository before letting anything through. Change it to your own
+  # before deploying; the test suite serves this one from an in-memory
+  # GitHub, which is why it can stay here.
   repo: owner/site
   branch: main
 

@@ -1,0 +1,288 @@
+// The SHELL's stylesheet, imported with `?inline` and adopted into
+// `<content-tools-cms>`'s shadow root.
+//
+// Three constraints, each of which fails silently rather than loudly:
+//
+//   NO url(). This compiles to a string embedded in dist/shell.js, so a
+//   relative URL has no stylesheet base to resolve against -- it would
+//   resolve against the PAGE, and land somewhere the asset is not.
+//
+//   NO @font-face. One declared inside a shadow root is ignored outright by
+//   Chromium and WebKit. It follows that the editor's `icon` family is
+//   unavailable here too, so nothing below uses `type-icons`: it would set
+//   `font-family: 'icon'` and render tofu that no DOM assertion can see.
+//   The shell's affordances are words.
+//
+//   NO transform, filter, perspective, contain or will-change on anything
+//   that can be an ancestor of the editor slot. Any of those makes a
+//   descendant's `position: fixed` resolve against THIS element instead of
+//   the viewport, and the editor's toolbox is fixed -- so it would follow
+//   the shell around the page with nothing thrown anywhere.
+//   test/browser/shell/layout.spec.js is the standing check.
+//
+// Only the variable- and mixin-only partials are used, so this emits no
+// rule the three sheets in test/golden/styles.spec.mjs partition.
+
+@use "sass:color";
+@use "../../styles/settings" as *;
+// For $monospace, which _settings.scss uses but does not forward.
+@use "../../styles/mixins" as *;
+
+// The one colour the shell adds: the editor's highlight orange, dimmed for
+// a surface a person reads rather than a region that flashes.
+$nav-width: 180px;
+$border-color: #d0d0d0;
+$panel-background: #f7f7f7;
+
+:host {
+    display: block;
+}
+
+.ct-cms {
+    background: white;
+    box-sizing: border-box;
+    color: $text-color;
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    @include type-text();
+
+    * {
+        &,
+        &:before,
+        &:after {
+            box-sizing: border-box;
+        }
+    }
+}
+
+// --- header ---------------------------------------------------------------
+
+.ct-cms__header {
+    align-items: baseline;
+    background: $in-page-background;
+    border-bottom: 1px solid $border-color;
+    display: flex;
+    gap: 12px;
+    padding: 8px 12px;
+}
+
+.ct-cms__title {
+    @include type-text($font-size: 14px, $line-height: 20px);
+    font-weight: bold;
+    margin: 0;
+}
+
+// The repository this deployment edits. Always on screen: one build serves
+// many sites, so "which repo am I about to open a pull request against" is
+// not something a person should have to infer from the collections.
+.ct-cms__repo {
+    @include type-text($font-size: 12px, $line-height: 20px);
+    color: $muted-action-color;
+}
+
+.ct-cms__spacer {
+    flex: 1 1 auto;
+}
+
+// --- the two-pane body ----------------------------------------------------
+
+.ct-cms__body {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.ct-cms__nav {
+    background: $panel-background;
+    border-right: 1px solid $border-color;
+    flex: 0 0 $nav-width;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+.ct-cms__nav-heading {
+    @include type-text($font-size: 11px, $line-height: 16px);
+    color: $muted-action-color;
+    margin: 0;
+    padding: 4px 12px;
+    text-transform: uppercase;
+}
+
+// A real list of real links, not click handlers on divs: the shell is the
+// first surface in this project a person navigates rather than types into,
+// so it is the first place keyboard and screen-reader access is owed.
+.ct-cms__nav-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.ct-cms__nav-link {
+    color: $text-color;
+    display: block;
+    padding: 5px 12px;
+    text-decoration: none;
+
+    &:hover {
+        background: color.adjust($panel-background, $lightness: -5%);
+    }
+
+    &:focus-visible {
+        outline: 2px solid $edit-action-color;
+        outline-offset: -2px;
+    }
+
+    &--current {
+        background: white;
+        box-shadow: inset 3px 0 0 $highlight-color;
+        font-weight: bold;
+    }
+}
+
+.ct-cms__main {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 16px;
+}
+
+.ct-cms__heading {
+    @include type-text($font-size: 18px, $line-height: 24px);
+    margin: 0 0 12px;
+}
+
+.ct-cms__note {
+    color: $muted-action-color;
+}
+
+// --- the alert region -----------------------------------------------------
+
+// Every failure the shell catches lands here. The rule the cms dist suite
+// enforces is that errors reach the PAGE and not the console, so this has
+// to be visible without scrolling and has to look like a failure.
+.ct-cms__alert {
+    background: color.adjust($cancel-action-color, $lightness: 35%);
+    border: 1px solid $cancel-action-color;
+    margin: 0 0 12px;
+    padding: 8px 12px;
+}
+
+.ct-cms__alert-title {
+    @include type-text($font-size: 14px, $line-height: 20px);
+    font-weight: bold;
+    margin: 0;
+}
+
+.ct-cms__alert-detail {
+    margin: 4px 0 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+// The offending path from a ConfigError. Monospaced because it is a
+// coordinate into the operator's own file, and they are about to go and
+// look for it.
+.ct-cms__alert-path {
+    font-family: $monospace;
+    font-size: 12px;
+}
+
+// --- the sign-in gate -----------------------------------------------------
+
+// Full screen, and it pre-empts routing: with no token there is nothing to
+// list and no URL worth linking to, so no view behind it needs a
+// signed-out branch.
+.ct-cms__gate {
+    align-items: center;
+    display: flex;
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 24px;
+}
+
+.ct-cms__gate-panel {
+    background: $panel-background;
+    border: 1px solid $border-color;
+    max-width: 480px;
+    padding: 20px;
+    width: 100%;
+}
+
+.ct-cms__gate-title {
+    @include type-text($font-size: 18px, $line-height: 24px);
+    margin: 0 0 8px;
+}
+
+.ct-cms__gate-text {
+    margin: 0 0 12px;
+}
+
+// The permissions a fine-grained token needs. Named on the gate rather
+// than left to GitHub's own screen, because a token scoped wrongly comes
+// back as a 404 -- indistinguishable, to the person who made it, from a
+// repository that does not exist.
+.ct-cms__gate-permissions {
+    margin: 0 0 12px;
+    padding-left: 20px;
+}
+
+.ct-cms__field {
+    display: block;
+    margin: 0 0 12px;
+}
+
+.ct-cms__label {
+    display: block;
+    font-weight: bold;
+    margin: 0 0 4px;
+}
+
+.ct-cms__input {
+    border: 1px solid $border-color;
+    display: block;
+    padding: 6px 8px;
+    width: 100%;
+    @include type-text();
+
+    &:focus-visible {
+        outline: 2px solid $edit-action-color;
+        outline-offset: -1px;
+    }
+}
+
+.ct-cms__button {
+    background: $confirm-action-color;
+    border: 0;
+    color: white;
+    cursor: pointer;
+    padding: 7px 14px;
+    @include type-text();
+
+    &:hover {
+        background: color.adjust($confirm-action-color, $lightness: -8%);
+    }
+
+    &:focus-visible {
+        outline: 2px solid $edit-action-color;
+        outline-offset: 2px;
+    }
+
+    &--muted {
+        background: transparent;
+        color: $edit-action-color;
+        padding: 7px 0;
+        text-decoration: underline;
+
+        &:hover {
+            background: transparent;
+            color: color.adjust($edit-action-color, $lightness: -10%);
+        }
+    }
+}
+
+.ct-cms__hint {
+    color: $muted-action-color;
+    margin: 12px 0 0;
+    @include type-text($font-size: 12px, $line-height: 16px);
+}

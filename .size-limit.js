@@ -121,10 +121,25 @@ export default [
            chunks, and this number becomes roughly their sum. That is the
            point -- a shell is an application, and a page that loads it
            loads all of it. `src/cms/` is inlined rather than shared with
-           dist/cms.js: a second copy in the package, never on a page. */
+           dist/cms.js: a second copy in the package, never on a page.
+
+           1 kB -> 17 kB with the frame: the whole of `src/cms/` inlined
+           (9.41 kB gzipped as its own entry) plus routing, rendering,
+           the views and the stylesheet. It does NOT yet include the
+           editor or the markdown parser -- the frame imports neither,
+           which is what keeps this number honest about what the frame
+           alone costs, and why it will rise sharply when the entry
+           editor lands.
+
+           `yaml` is NOT in here even though `loadConfig` reaches it: the
+           shell's import of it is dynamic, so a JSON-configured site
+           never downloads it. `dist/markdown.js` pulls the same chunk in
+           statically and is charged for it, which is why the markdown
+           budget below is unchanged by the split. That asymmetry is the
+           property `closureOf`'s static-only walk exists to state. */
         name: 'shell entry + its chunks',
         path: closureOf('dist/shell.js'),
-        limit: '1 kB',
+        limit: '17 kB',
         gzip: true
     },
     {

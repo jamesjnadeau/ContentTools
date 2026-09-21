@@ -23,7 +23,7 @@ export default defineConfig({
             // istanbul, not v8: the suites exercise the BUILT bundle for its
             // browser globals, and v8 coverage cannot map that back to source.
             provider: 'istanbul',
-            include: ['src/scripts/**', 'src/core/**', 'src/element/**'],
+            include: ['src/scripts/**', 'src/core/**', 'src/element/**', 'src/shell/**'],
             reporter: ['text-summary', 'json-summary'],
             // editor.ts owns the save/region contract the CMS milestones are
             // built on, and had ZERO coverage until Phase 6. It is now at
