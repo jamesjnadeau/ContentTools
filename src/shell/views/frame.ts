@@ -13,9 +13,12 @@
  */
 import {h, list} from '../render.js';
 import {alertRegion, showAlert} from './alert.js';
+import {buildEntries} from './entries.js';
+import type {Entries} from './entries.js';
 import {formatRoute} from '../routes.js';
 import type {Route} from '../routes.js';
 import type {Described} from '../errors.js';
+import type {ListedEntry} from '../merge.js';
 import type {CmsConfig} from '../../cms/config.js';
 
 /** Where the editor element is slotted. Its light-DOM home is the host. */
@@ -29,6 +32,10 @@ export interface FrameState {
     config: CmsConfig;
     route: Route;
     error: Described | null;
+    /** The current collection's entries, or null while they are loading. */
+    entries: readonly ListedEntry[] | null;
+    /** The listing was cut short by the API's one-page cap. */
+    truncated: boolean;
 }
 
 export interface Frame {
@@ -59,7 +66,12 @@ function placeholder(doc: Document, state: FrameState): HTMLElement[] {
     ];
 }
 
-function collectionView(doc: Document, state: FrameState, name: string): HTMLElement[] {
+function collectionView(
+        doc: Document,
+        state: FrameState,
+        entries: Entries,
+        name: string
+        ): HTMLElement[] {
     const collection = state.config.collections.find(c => c.name === name);
     if (!collection) {
         /* A link that no longer matches the config -- an old bookmark, or
@@ -73,13 +85,19 @@ function collectionView(doc: Document, state: FrameState, name: string): HTMLEle
                h(doc, 'code', {}, [name]), '.'])
         ];
     }
-    return [
-        h(doc, 'h2', {class: 'ct-cms__heading'}, [collection.label]),
-        h(doc, 'p', {class: 'ct-cms__note'}, ['The entry list arrives next.'])
-    ];
+    /* The one view that is built once and merely re-shown. Everything else
+       in the main pane is rebuilt per render, which is fine for a heading
+       and a sentence; a LIST needs its nodes kept, or focus and scroll
+       position are thrown away every time a badge changes. */
+    entries.update({
+        collection,
+        entries: state.entries,
+        truncated: state.truncated
+    });
+    return [entries.node];
 }
 
-function mainView(doc: Document, state: FrameState): HTMLElement[] {
+function mainView(doc: Document, state: FrameState, entries: Entries): HTMLElement[] {
     switch (state.route.kind) {
     case 'home':
         return [
@@ -88,7 +106,7 @@ function mainView(doc: Document, state: FrameState): HTMLElement[] {
               ['Choose what to edit from the list on the left.'])
         ];
     case 'collection':
-        return collectionView(doc, state, state.route.collection);
+        return collectionView(doc, state, entries, state.route.collection);
     default:
         return placeholder(doc, state);
     }
@@ -98,6 +116,7 @@ export function buildFrame(doc: Document, handlers: FrameHandlers): Frame {
     const repo = h(doc, 'span', {class: 'ct-cms__repo'});
     const navList = h(doc, 'ul', {class: 'ct-cms__nav-list'});
     const view = h(doc, 'div', {class: 'ct-cms__view'});
+    const entries = buildEntries(doc);
     const alert = alertRegion(doc);
 
     const slot = doc.createElement('slot');
@@ -169,7 +188,7 @@ export function buildFrame(doc: Document, handlers: FrameHandlers): Frame {
                 }
             );
 
-            view.replaceChildren(...mainView(doc, state));
+            view.replaceChildren(...mainView(doc, state, entries));
         }
     };
 }

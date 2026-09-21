@@ -142,7 +142,7 @@
             }
 
             async function listEntries() {
-                const entries = await repo.listEntries($('collection').value);
+                const {entries} = await repo.listEntries($('collection').value);
                 $('entry').replaceChildren(
                     ...entries.map(item => new Option(item.slug, item.slug)));
                 log(`${entries.length} entries in ${$('collection').value}`);

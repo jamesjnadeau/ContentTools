@@ -66,6 +66,7 @@ export {
 export type {
     CmsRepoOptions,
     Entry,
+    EntryListing,
     EntrySummary,
     InFlightEntry,
     MediaFile,

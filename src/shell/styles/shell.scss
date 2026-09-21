@@ -154,6 +154,69 @@ $panel-background: #f7f7f7;
 
 .ct-cms__note {
     color: $muted-action-color;
+
+    // The entry list's note comes and goes -- "Loading", "No entries yet",
+    // the cut-short warning, nothing at all -- and an empty <p> left
+    // standing still carries the UA's 1em above and below it, so the list
+    // would jump by two lines each time. Here rather than as a `hidden` in
+    // the view, so there is one rule rather than two that can disagree.
+    &:empty {
+        display: none;
+    }
+}
+
+// --- the entry list -------------------------------------------------------
+
+.ct-cms__entry-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.ct-cms__entry {
+    align-items: baseline;
+    border-bottom: 1px solid $border-color;
+    display: flex;
+    gap: 8px;
+    padding: 6px 0;
+}
+
+.ct-cms__entry-link {
+    color: $edit-action-color;
+    flex: 1 1 auto;
+    min-width: 0;
+    // A slug is a filename, so it can be long and it does not wrap at a
+    // space. Without this one row pushes the badges off the pane and the
+    // status nobody can see is the one thing the list is for.
+    overflow-wrap: anywhere;
+}
+
+.ct-cms__entry-marks {
+    align-items: baseline;
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+}
+
+.ct-cms__badge {
+    background: $panel-background;
+    border: 1px solid $border-color;
+    padding: 1px 6px;
+    @include type-text($font-size: 11px, $line-height: 16px);
+    text-transform: uppercase;
+}
+
+// Read as a state of the SITE rather than of the review, so it is the one
+// that is coloured: "there is no live page behind this yet" is the thing an
+// author about to hand somebody a URL has to notice.
+.ct-cms__badge--unpublished {
+    background: color.adjust($highlight-color, $lightness: 38%);
+    border-color: color.adjust($highlight-color, $lightness: 20%);
+}
+
+.ct-cms__entry-pull {
+    color: $muted-action-color;
+    @include type-text($font-size: 11px, $line-height: 16px);
 }
 
 // --- the alert region -----------------------------------------------------
@@ -285,4 +348,20 @@ $panel-background: #f7f7f7;
     color: $muted-action-color;
     margin: 12px 0 0;
     @include type-text($font-size: 12px, $line-height: 16px);
+}
+
+// --- last, and doubled on purpose -----------------------------------------
+
+// The shell shows one screen at a time by setting `hidden` on the others,
+// and `hidden` is not self-enforcing here: the UA stylesheet's
+// `[hidden] { display: none }` loses to ANY author rule, so `.ct-cms` and
+// `.ct-cms__gate` -- both `display: flex` -- rendered on top of each other
+// with `el.hidden === true` reading back perfectly true the whole time.
+//
+// Doubling the attribute raises this to 0,2,0 so it beats a single class
+// wherever it sits in the file, rather than relying on being written last
+// and staying there. `test/browser/shell/shell.spec.js` asks the computed
+// style, which is the only assertion that can see this.
+[hidden][hidden] {
+    display: none;
 }

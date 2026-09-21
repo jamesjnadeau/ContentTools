@@ -138,6 +138,42 @@ test('a token gets past the gate and the collections render', async ({page}) => 
     expect(logged).toEqual([]);
 });
 
+test('the entry list merges what is published with what is in review',
+     async ({page}) => {
+    const errors = [];
+    page.on('pageerror', error => errors.push(`${error.name}: ${error.message}`));
+    const logged = collectConsoleErrors(page);
+
+    const fake = await serveGitHub(page);
+    // An entry that exists only inside an open pull request: no file on
+    // the base branch, so the directory listing does not know about it.
+    fake.openPull('blog', 'unseen', ['cms/in-review']);
+
+    await page.goto(PAGE);
+    await shell(page).locator('.ct-cms__input').fill(TOKEN);
+    await shell(page).locator('.ct-cms__gate-form button').click();
+    await expect(page.locator('content-tools-cms')).toHaveAttribute('state', 'ready');
+
+    await shell(page).locator('.ct-cms__nav-link').first().click();
+
+    /* Work in progress first, and each entry ONCE. Twice is the failure
+       worth a dist test of its own: it reads as two pages with the same
+       name, and somebody opens the stale one. */
+    await expect(shell(page).locator('.ct-cms__entry-link'))
+        .toHaveText(['unseen', 'hello']);
+    await expect(shell(page).locator('.ct-cms__entry').first()
+                     .locator('.ct-cms__badge').first())
+        .toHaveText('In review');
+
+    /* The row links to the entry's own route, which is what makes an
+       entry bookmarkable and what M5-3 opens. */
+    await expect(shell(page).locator('.ct-cms__entry-link').first())
+        .toHaveAttribute('href', '#/c/blog/e/unseen');
+
+    expect(errors).toEqual([]);
+    expect(logged).toEqual([]);
+});
+
 test('a refused token is reported on the page, not the console', async ({page}) => {
     const logged = collectConsoleErrors(page);
 

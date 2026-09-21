@@ -13,6 +13,16 @@
  */
 
 /** Anything the API refused. */
+/**
+ * How many entries `GET /contents/{dir}` will return for a directory.
+ *
+ * GitHub's own limit, and it is not an error: a longer directory comes
+ * back as exactly this many items with nothing to say more exist. Reading
+ * past it means the git trees API, which is a different shape and a
+ * different cost, so this layer reports the cap rather than hiding it.
+ */
+export const DIRECTORY_LIMIT = 1000;
+
 export class GitHubError extends Error {
     readonly status: number;
     readonly method: string;
@@ -267,7 +277,13 @@ export class GitHub {
         return response.text();
     }
 
-    /** The entries of a directory, or [] if it is not there. */
+    /**
+     * The entries of a directory, or [] if it is not there.
+     *
+     * Silently capped at `DIRECTORY_LIMIT`, which is why that constant is
+     * exported: the response carries no `Link` header and no flag saying
+     * it was cut short, so the only way to notice is to count.
+     */
     async listDirectory(path: string, ref: string): Promise<{name: string; path: string; type: string; sha: string}[]> {
         const at = `${this.repoPath(`/contents/${encodePath(path)}`)}?ref=${encodeURIComponent(ref)}`;
         const response = await this.send('GET', at);

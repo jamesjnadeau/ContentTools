@@ -77,6 +77,25 @@ describe('content-tools-cms', function() {
         expect(link.getAttribute('rel')).toContain('noopener');
     });
 
+    it('shows exactly ONE screen, as the page renders it', async function() {
+        /* `hidden` is a property, and every assertion in this file that
+           reads it would pass while both screens were on the page: the
+           shell's own `display: flex` on `.ct-cms` and `.ct-cms__gate`
+           beats the UA stylesheet's `[hidden] { display: none }`, because
+           an author rule beats a UA rule at any specificity. So this asks
+           the one question those cannot -- what a person sees. */
+        const {el, shadow} = await mount();
+        const display = selector =>
+            getComputedStyle(shadow.querySelector(selector)).display;
+
+        expect(display('.ct-cms')).toBe('none');
+        expect(display('.ct-cms__gate')).not.toBe('none');
+
+        await signIn(el);
+        expect(display('.ct-cms')).not.toBe('none');
+        return expect(display('.ct-cms__gate')).toBe('none');
+    });
+
     it('reaches the chrome once a token is given', async function() {
         const {el, shadow} = await mount();
         await signIn(el);

@@ -12,7 +12,7 @@
      sees a post referencing a file that is not there yet. */
 
 import {parseConfig} from '../../../src/cms/config.js';
-import {ConflictError} from '../../../src/cms/github.js';
+import {ConflictError, DIRECTORY_LIMIT} from '../../../src/cms/github.js';
 import {
     CmsRepo, NothingToSaveError, branchFor, entryForBranch
 } from '../../../src/cms/repo.js';
@@ -75,8 +75,9 @@ describe('listEntries', function() {
 
     it('lists a folder collection', async function() {
         const {repo} = open();
-        const entries = await repo.listEntries('blog');
-        return expect(entries.map(e => e.slug).sort()).toEqual(['hello', 'second']);
+        const listing = await repo.listEntries('blog');
+        expect(listing.truncated).toBe(false);
+        return expect(listing.entries.map(e => e.slug).sort()).toEqual(['hello', 'second']);
     });
 
     it('leaves out files a subfolder or the wrong extension disqualifies', async function() {
@@ -84,7 +85,7 @@ describe('listEntries', function() {
            write to a path `entryPath` can never produce, so the edit
            would land where nobody looks. */
         const {repo} = open();
-        const paths = (await repo.listEntries('blog')).map(e => e.path);
+        const paths = (await repo.listEntries('blog')).entries.map(e => e.path);
         expect(paths).not.toContain('content/blog/2026/nested.md');
         expect(paths).not.toContain('content/blog/draft.txt');
         return expect(paths).not.toContain('README.md');
@@ -97,25 +98,62 @@ describe('listEntries', function() {
            open and, on save, asks the API to put a blob where a tree
            is. */
         const {repo} = open();
-        return expect((await repo.listEntries('blog')).map(e => e.slug).sort())
+        return expect((await repo.listEntries('blog')).entries.map(e => e.slug).sort())
             .toEqual(['hello', 'second']);
     });
 
     it('honours a collection extension', async function() {
         const {repo} = open();
-        return expect(await repo.listEntries('docs'))
+        return expect((await repo.listEntries('docs')).entries)
             .toEqual([{collection: 'docs', slug: 'guide', path: 'content/docs/guide.mdx'}]);
     });
 
     it('lists a file collection from the config', async function() {
         const {repo} = open();
-        return expect(await repo.listEntries('settings'))
+        return expect((await repo.listEntries('settings')).entries)
             .toEqual([{collection: 'settings', slug: 'about', path: 'content/about.md'}]);
     });
 
     it('reads an empty collection as empty rather than failing', async function() {
         const {repo} = open({'README.md': 'x'});
-        return expect(await repo.listEntries('blog')).toEqual([]);
+        return expect((await repo.listEntries('blog')).entries).toEqual([]);
+    });
+
+    it('reports a listing the API cut short at its cap', async function() {
+        /* GitHub returns the first 1000 entries of a directory and says
+           nothing about the rest -- no Link header, no flag. A shell that
+           cannot tell that from a complete listing shows an author a list
+           their own post is missing from, which reads as a deletion.
+
+           Counted on the RAW listing, before the extension and type
+           filters: a capped folder holding one subdirectory filters down
+           to 999 entries, and counting survivors would call that
+           complete. */
+        const files = {};
+        for (let i = 0; i < DIRECTORY_LIMIT - 1; i += 1) {
+            files[`content/blog/post-${i}.md`] = '# Post\n';
+        }
+        files['content/blog/archive/old.md'] = '# Archived\n';
+        const listing = await open(files).repo.listEntries('blog');
+        expect(listing.entries.length).toBe(DIRECTORY_LIMIT - 1);
+        return expect(listing.truncated).toBe(true);
+    });
+
+    it('reports a listing one short of the cap as complete', async function() {
+        const files = {};
+        for (let i = 0; i < DIRECTORY_LIMIT - 1; i += 1) {
+            files[`content/blog/post-${i}.md`] = '# Post\n';
+        }
+        return expect((await open(files).repo.listEntries('blog')).truncated).toBe(false);
+    });
+
+    it('never reports a file collection as cut short', function() {
+        // It is configuration, not discovery: there is no request to cap.
+        return expect(open().repo.listEntries('settings'))
+            .resolves.toEqual({
+                entries: [{collection: 'settings', slug: 'about', path: 'content/about.md'}],
+                truncated: false
+            });
     });
 
     it('refuses a collection the config does not have', async function() {

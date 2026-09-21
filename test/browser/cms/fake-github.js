@@ -438,6 +438,34 @@ export function createFakeGitHub(options = {}) {
             return commit;
         },
 
+        /**
+         * Open a pull request for one entry, as a save would have.
+         *
+         * The branch is created pointing at the base, so `listInFlight`
+         * sees a real ref rather than a name. Labels are given as plain
+         * strings because that is how a test talks about them; the API's
+         * `{name}` shape is this layer's problem, not the caller's.
+         */
+        openPull(collection, slug, labels = []) {
+            const ref = `cms/${collection}/${slug}`;
+            refs.set(ref, refs.get(defaultBranch));
+            const number = pulls.length + 1;
+            const pull = {
+                number,
+                title: `${collection}/${slug}`,
+                body: '',
+                draft: false,
+                state: 'open',
+                head: {ref},
+                base: {ref: defaultBranch},
+                labels: labels.map(name => ({name})),
+                html_url: `https://github.com/${repo}/pull/${number}`,
+                updated_at: new Date(0).toISOString()
+            };
+            pulls.push(pull);
+            return pull;
+        },
+
         /** Add `count` open pull requests, to exercise pagination. */
         addPulls(count) {
             for (let i = 0; i < count; i += 1) {

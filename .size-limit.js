@@ -124,12 +124,13 @@ export default [
            dist/cms.js: a second copy in the package, never on a page.
 
            1 kB -> 17 kB with the frame: the whole of `src/cms/` inlined
-           (9.41 kB gzipped as its own entry) plus routing, rendering,
-           the views and the stylesheet. It does NOT yet include the
-           editor or the markdown parser -- the frame imports neither,
-           which is what keeps this number honest about what the frame
-           alone costs, and why it will rise sharply when the entry
-           editor lands.
+           (9.4 kB gzipped as its own entry) plus routing, rendering,
+           the views and the stylesheet. 17 kB -> 19.5 kB with the entry
+           list, which is the merge, one more view and its rules. It does
+           NOT yet include the editor or the markdown parser -- the shell
+           imports neither, which is what keeps this number honest about
+           what the chrome alone costs, and why it will rise sharply when
+           the entry editor lands.
 
            `yaml` is NOT in here even though `loadConfig` reaches it: the
            shell's import of it is dynamic, so a JSON-configured site
@@ -139,7 +140,7 @@ export default [
            property `closureOf`'s static-only walk exists to state. */
         name: 'shell entry + its chunks',
         path: closureOf('dist/shell.js'),
-        limit: '17 kB',
+        limit: '19.5 kB',
         gzip: true
     },
     {

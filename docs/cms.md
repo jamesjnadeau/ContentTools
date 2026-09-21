@@ -116,10 +116,15 @@ every request, so signing out takes effect instead of the client holding the
 string it was built with.
 
 ```js
-await repo.listEntries('blog');            // EntrySummary[], on the base branch
+await repo.listEntries('blog');            // {entries, truncated}, on the base branch
 const entry = await repo.readEntry('blog', 'hello');
 await repo.listInFlight();                 // the open cms/* pull requests
 ```
+
+`listEntries` reports `truncated` because GitHub's contents endpoint stops at
+1000 entries per directory and says so nowhere in the response. Show it rather
+than hiding it: a list an author's own post is missing from reads as "somebody
+deleted it".
 
 `readEntry` returns the version **under review** when a pull request is open
 for that entry, not the one on the base branch. Reading the base would show a

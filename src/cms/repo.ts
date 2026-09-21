@@ -12,7 +12,7 @@
 import type {CmsConfig, Collection} from './config.js';
 import {entryPath, findCollection, slugFromPath} from './config.js';
 import {ConfigError} from './config.js';
-import {GitHub, encodeBase64} from './github.js';
+import {DIRECTORY_LIMIT, GitHub, encodeBase64} from './github.js';
 import type {PullRequest, TokenSource, TreeEntry} from './github.js';
 import {labelFor, statusForLabel} from './status.js';
 import type {EditorialStatus} from './status.js';
@@ -44,6 +44,21 @@ export interface EntrySummary {
     collection: string;
     slug: string;
     path: string;
+}
+
+/**
+ * What one collection holds, and whether that is all of it.
+ *
+ * A bare array would have been enough until `truncated` had somewhere to
+ * live: GitHub's contents endpoint stops at 1000 entries per directory and
+ * says so nowhere in the response. A shell that cannot tell a capped
+ * listing from a complete one shows an author a list their own post is
+ * missing from, which reads as "somebody deleted it".
+ */
+export interface EntryListing {
+    entries: EntrySummary[];
+    /** The directory was longer than the API will list in one request. */
+    truncated: boolean;
 }
 
 /** An entry open for editing. */
@@ -181,21 +196,36 @@ export class CmsRepo {
      * other half, and a shell showing "all entries" merges the two rather
      * than this method guessing which it wanted.
      */
-    async listEntries(name: string): Promise<EntrySummary[]> {
+    async listEntries(name: string): Promise<EntryListing> {
         const collection = this.collection(name);
 
         if (collection.kind === 'file') {
-            return collection.files.map(file => ({
-                collection: name, slug: file.name, path: file.file
-            }));
+            /* Configuration, not discovery: the files are named in the
+               config, so this branch reaches the network not at all and
+               can never be cut short. */
+            return {
+                entries: collection.files.map(file => ({
+                    collection: name, slug: file.name, path: file.file
+                })),
+                truncated: false
+            };
         }
 
         const listing = await this.github.listDirectory(collection.folder, this.base);
-        return listing
-            .filter(item => item.type === 'file')
-            .map(item => ({slug: slugFromPath(collection, item.path), path: item.path}))
-            .filter((item): item is {slug: string; path: string} => item.slug !== null)
-            .map(item => ({collection: name, ...item}));
+        return {
+            entries: listing
+                .filter(item => item.type === 'file')
+                .map(item => ({slug: slugFromPath(collection, item.path), path: item.path}))
+                .filter((item): item is {slug: string; path: string} => item.slug !== null)
+                .map(item => ({collection: name, ...item})),
+            /* Measured against the RAW listing, before the filters above.
+               A folder of 1000 files holding a handful of directories and
+               a stray `.gitkeep` comes back short of the cap once filtered,
+               so counting what survived would report a capped listing as a
+               complete one -- which is the silently-short list this flag
+               exists to prevent. */
+            truncated: listing.length >= DIRECTORY_LIMIT
+        };
     }
 
     /**

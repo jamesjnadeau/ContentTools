@@ -39,6 +39,8 @@ import {CmsRepo} from '../cms/repo.js';
 import {PatAuthAdapter} from '../auth/pat.js';
 import type {AuthAdapter} from '../auth/types.js';
 
+import {mergeEntries} from './merge.js';
+import type {ListedEntry} from './merge.js';
 import {cannotPush, describeError} from './errors.js';
 import type {Described} from './errors.js';
 import {HOME, parseRoute} from './routes.js';
@@ -75,6 +77,11 @@ export class ContentToolsCms extends HTMLElement {
     declare private _error: Described | null;
     declare private _repo: CmsRepo | null;
 
+    declare private _entries: ListedEntry[] | null;
+    declare private _truncated: boolean;
+    /** Monotonic; see `_navigate`. Guards every route-scoped await. */
+    declare private _nav: number;
+
     declare private _booted: boolean;
     declare private _onHashChange: () => void;
 
@@ -104,6 +111,9 @@ export class ContentToolsCms extends HTMLElement {
         this._route = HOME;
         this._error = null;
         this._repo = null;
+        this._entries = null;
+        this._truncated = false;
+        this._nav = 0;
         this._booted = false;
         this._offered = null;
         this._auth = null;
@@ -208,7 +218,13 @@ export class ContentToolsCms extends HTMLElement {
         const shownOn = (which: string) => (screen === which ? this._error : null);
 
         if (config) {
-            this._frame.update({config, route: this._route, error: shownOn('ready')});
+            this._frame.update({
+                config,
+                route: this._route,
+                error: shownOn('ready'),
+                entries: this._entries,
+                truncated: this._truncated
+            });
             this._gateView().update({
                 repo: config.backend.repo,
                 error: shownOn('signed-out')
@@ -224,6 +240,8 @@ export class ContentToolsCms extends HTMLElement {
         config?: CmsConfig | null;
         route?: Route;
         error?: Described | null;
+        entries?: ListedEntry[] | null;
+        truncated?: boolean;
     }): void {
         if ('config' in patch) {
             this._config = patch.config ?? null;
@@ -233,6 +251,12 @@ export class ContentToolsCms extends HTMLElement {
         }
         if ('error' in patch) {
             this._error = patch.error ?? null;
+        }
+        if ('entries' in patch) {
+            this._entries = patch.entries ?? null;
+        }
+        if ('truncated' in patch) {
+            this._truncated = patch.truncated ?? false;
         }
         this._render();
     }
@@ -249,18 +273,23 @@ export class ContentToolsCms extends HTMLElement {
         try {
             await work();
         } catch (error) {
-            this._setState({error: describeError(error)});
+            const described = describeError(error);
+            /* A 401 means the token this shell is holding is no longer a
+               token -- revoked on GitHub, or expired while the tab sat
+               open. Dropping it is what brings the gate back, and the
+               gate is where the only fix is offered. Keep it and the
+               person is inside a shell where every request fails and
+               nothing on screen suggests signing in again.
+
+               `_signIn` handles its own refusal rather than relying on
+               this, because there the token must go whether the answer
+               was a 401, a 404 or a 200 whose body says read-only. */
+            if (described.kind === 'unauthorized') {
+                await this.auth.logout();
+            }
+            this._setState({error: described});
         }
     }
-
-    /* Deliberately NOT here: dropping the token when a request comes back
-       401. A revoked token has to send the shell back to the gate --
-       keeping it means the gate never returns and the one fix, a new
-       token, is never offered -- but in M5-1 the only request the shell
-       makes is the one `_signIn` makes on its own behalf, and that
-       handles its own failure below. A second copy of the rule here
-       would be a branch nothing can reach and no test can kill. It
-       belongs in this method the moment a view starts fetching. */
 
     // --- the work ---------------------------------------------------------
 
@@ -269,21 +298,80 @@ export class ContentToolsCms extends HTMLElement {
     }
 
     private _readRoute(): void {
-        /* Clearing the error on a navigation is deliberate: an alert
-           about the page you just left, still on screen over the page you
-           just opened, reads as a fresh failure of the new one.
+        this._navigate(parseRoute(this._hash()));
+    }
 
-           There is no in-flight-request token here, and that is not an
-           omission. A monotonic `_nav` re-checked after every await is
-           what stops a slow response for a route the user has left from
-           rendering over a newer one -- but M5-1 has no route-scoped
-           request to be slow. Written now it would have had one live
-           effect and it was the wrong one: a hashchange arriving while
-           the config was loading made the boot's own post-await check
-           fail, so the shell sat on "Loading" for ever with nothing to
-           notice. The token belongs with the first per-route fetch, in
-           the entry list, where something can actually be stale. */
-        this._setState({route: parseRoute(this._hash()), error: null});
+    /**
+     * Go somewhere, and fetch whatever that somewhere needs.
+     *
+     * `_nav` is a monotonic token, taken here and re-checked after every
+     * await in `_loadRoute`. Without it a slow listing for a collection
+     * the user has already left renders over the one they are looking at
+     * now: entry B's chrome with collection A's rows under it, and a
+     * click that opens the wrong entry. Nothing throws, and the list
+     * looks entirely plausible.
+     *
+     * It deliberately guards ROUTE-SCOPED work only. It was written into
+     * the boot in M5-1 and taken out again: a hashchange during the
+     * config load made the load's own post-await check fail, so the shell
+     * sat on "Loading" for ever. The config belongs to the deployment,
+     * not to a route, and nothing a person clicks makes it stale.
+     *
+     * Clearing the error is part of the same idea -- an alert about the
+     * page you just left, still on screen over the page you just opened,
+     * reads as a fresh failure of the new one -- and so is clearing the
+     * entries: they belong to the route being left, and leaving them up
+     * shows one collection's rows under another's heading until the new
+     * listing lands.
+     */
+    private _navigate(route: Route): void {
+        this._nav += 1;
+        const at = this._nav;
+        this._setState({route, error: null, entries: null, truncated: false});
+        void this._guard(() => this._loadRoute(at));
+    }
+
+    /**
+     * Fetch what the current route displays.
+     *
+     * Both halves in ONE `Promise.all`, not one after the other: the
+     * merged list needs both, and a sequential pair doubles the time an
+     * author waits for a screen that cannot be drawn until the second
+     * arrives.
+     *
+     * A file collection reaches `listEntries` too, and that is not a
+     * wasted call: it answers from the config without touching the
+     * network. `listInFlight` does fetch, for every collection alike --
+     * a pull request against a file collection's entry is as real as any
+     * other, and a file collection that silently never showed one would
+     * hide a review in progress.
+     */
+    private async _loadRoute(at: number): Promise<void> {
+        const repo = this._repo;
+        const route = this._route;
+        if (!repo || !this.auth.currentToken() || route.kind !== 'collection') {
+            return;
+        }
+        /* A collection the config does not have. The view already says
+           so by name; asking the repository would throw a ConfigError
+           over the top of that with a worse version of the same
+           sentence, and put an alert on a page that is already
+           explaining itself. */
+        if (!this._config?.collections.some(c => c.name === route.collection)) {
+            return;
+        }
+
+        const [listing, inFlight] = await Promise.all([
+            repo.listEntries(route.collection),
+            repo.listInFlight()
+        ]);
+        if (at !== this._nav) {
+            return;
+        }
+        this._setState({
+            entries: mergeEntries(route.collection, listing.entries, inFlight),
+            truncated: listing.truncated
+        });
     }
 
     private async _loadConfig(): Promise<void> {
@@ -319,6 +407,11 @@ export class ContentToolsCms extends HTMLElement {
             }
         });
         this._setState({config, error: null});
+        /* The route was parsed at connect, before there was a config to
+           resolve it against. This is the first navigation to it, and
+           `_loadRoute` declines while there is no token -- so a signed-out
+           boot stops at the gate and `_signIn` navigates again. */
+        this._navigate(this._route);
     }
 
     private _signIn(offered: string): void {
@@ -356,7 +449,10 @@ export class ContentToolsCms extends HTMLElement {
                 this._setState({error: refused});
                 return;
             }
-            this._setState({error: null});
+            /* Not `_setState({error: null})`: getting past the gate is
+               the first moment the shell may fetch, so the current route
+               has never been loaded. */
+            this._navigate(this._route);
         });
     }
 
