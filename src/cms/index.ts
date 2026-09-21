@@ -28,6 +28,15 @@ export {
     mediaURL
 } from './config.js';
 
+/* The client is public because a shell will want to reach past the entry
+ * workflow eventually -- to read an arbitrary file, or to open a pull
+ * request this layer has no opinion about. The base64 helpers are NOT: they
+ * are an implementation detail of committing, and nothing outside has asked
+ * for them.
+ */
+export {GitHub, GitHubError, ConflictError} from './github.js';
+export type {GitHubOptions, PullRequest, TokenSource, TreeEntry} from './github.js';
+
 export type {
     CmsConfig,
     CmsConfigInput,
