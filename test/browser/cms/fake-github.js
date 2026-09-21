@@ -270,7 +270,7 @@ export function createFakeGitHub(options = {}) {
             if (head) {
                 open = open.filter(pull => `${repo.split('/')[0]}:${pull.head.ref}` === head);
             }
-            return paged(open, query);
+            return paged(open.map(view), query);
         }
 
         if (rest === '/pulls' && method === 'POST') {
@@ -283,14 +283,14 @@ export function createFakeGitHub(options = {}) {
                 body: body.body ?? '',
                 draft: Boolean(body.draft),
                 state: 'open',
-                head: {ref: body.head, sha: refs.get(body.head)},
+                head: {ref: body.head},
                 base: {ref: body.base},
                 labels: [],
                 html_url: `https://github.com/${repo}/pull/${pulls.length + 1}`,
                 updated_at: new Date(0).toISOString()
             };
             pulls.push(pull);
-            return json(pull, 201);
+            return json(view(pull), 201);
         }
 
         // /issues/{n}/labels
@@ -319,6 +319,20 @@ export function createFakeGitHub(options = {}) {
         }
 
         return fail(404, `no fake route for ${method} ${rest}`);
+    }
+
+    /**
+     * A pull request as the API reports it NOW.
+     *
+     * `head.sha` is not stored on the pull request, it is read from the
+     * ref every time -- because that is what GitHub does, and a fake that
+     * froze it at creation would report a stale head for exactly the case
+     * the client uses it for: telling a shell which commit its copy of an
+     * entry came from, so a save can refuse to build on a version somebody
+     * has pushed past.
+     */
+    function view(pull) {
+        return {...pull, head: {ref: pull.head.ref, sha: refs.get(pull.head.ref)}};
     }
 
     /** Serve one page, with a Link header when more remain. */
@@ -412,7 +426,7 @@ export function createFakeGitHub(options = {}) {
                 refs.set(ref, refs.get(defaultBranch));
                 pulls.push({
                     number: pulls.length + 1, title: ref, body: '', draft: false,
-                    state: 'open', head: {ref, sha: refs.get(defaultBranch)},
+                    state: 'open', head: {ref},
                     base: {ref: defaultBranch}, labels: [],
                     html_url: '', updated_at: new Date(0).toISOString()
                 });

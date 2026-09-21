@@ -84,7 +84,7 @@ export default [
            pays none of it. */
         name: 'cms entry',
         path: 'dist/cms.js',
-        limit: '4 kB',
+        limit: '7.5 kB',
         gzip: true
     },
     {

@@ -313,6 +313,20 @@ export class GitHub {
         });
     }
 
+    /**
+     * Move a branch anywhere, discarding whatever it pointed at.
+     *
+     * Separate from `updateBranch` rather than a flag on it, so that
+     * every forced write is visible at the call site. There is exactly
+     * one: `CmsRepo.saveEntry` resetting a `cms/...` branch whose pull
+     * request is no longer open.
+     */
+    resetBranch(branch: string, sha: string): Promise<unknown> {
+        return this.request('PATCH', this.repoPath(`/git/refs/heads/${encodePath(branch)}`), {
+            body: {sha, force: true}
+        });
+    }
+
     async createBlob(content: string, encoding: 'utf-8' | 'base64'): Promise<string> {
         const blob = await this.request<{sha: string}>('POST', this.repoPath('/git/blobs'), {
             body: {content, encoding}

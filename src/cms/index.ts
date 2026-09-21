@@ -48,3 +48,27 @@ export type {
     FileEntry,
     Field
 } from './config.js';
+
+/* The entry workflow itself. `branchFor`/`entryForBranch` are public
+ * because the branch namespace is a contract with the repository, not a
+ * private detail: a shell filtering a branch list, or a CI job deciding
+ * whether a pull request came from here, needs the same answer this file
+ * gives.
+ */
+export {
+    CmsRepo,
+    NothingToSaveError,
+    BRANCH_PREFIX,
+    branchFor,
+    entryForBranch
+} from './repo.js';
+
+export type {
+    CmsRepoOptions,
+    Entry,
+    EntrySummary,
+    InFlightEntry,
+    MediaFile,
+    SaveOptions,
+    SaveResult
+} from './repo.js';
