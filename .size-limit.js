@@ -128,6 +128,21 @@ export default [
         gzip: true
     },
     {
+        /* The OAuth code exchange, which runs on a server rather than in
+           a browser -- the only artifact here that does.
+
+           Budgeted anyway, and small on purpose: it is the module that
+           holds an App's client secret, so anything that arrives in it
+           arrives next to one. With no imports at all there is nothing
+           here but the handler, and a jump in this number means the file
+           grew a dependency that scripts/build.mjs's import check somehow
+           did not see. */
+        name: 'proxy entry',
+        path: 'dist/proxy.js',
+        limit: '1.5 kB',
+        gzip: true
+    },
+    {
         /* The shell: the collection browser, entry editor, media library
            and editorial workflow, as `<content-tools-cms>`.
 

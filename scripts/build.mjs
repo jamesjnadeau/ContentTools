@@ -41,6 +41,7 @@ rmSync(join(ROOT, 'dist/chunks'), {recursive: true, force: true});
 rmSync(join(ROOT, 'dist/cms-chunks'), {recursive: true, force: true});
 run('npx', ['vite', 'build', '--mode', 'esm']);   // ESM
 run('npx', ['vite', 'build', '--mode', 'cms']);   // the git-backed half
+run('npx', ['vite', 'build', '--mode', 'proxy']); // the OAuth code exchange
 run(process.execPath, [join(ROOT, 'scripts/build-playground.mjs')]);
 
 for (const stub of ['content-tools', 'content-tools-content',
@@ -94,6 +95,33 @@ for (const marker of ['ContentTools', 'ContentEdit', 'rootContext']) {
     }
 }
 
+/* `dist/proxy.js` runs on somebody's server, holding a client secret.
+ *
+ * It must stay what it says it is: one function over `Request` and
+ * `Response`, with no imports at all. A library copy here would mean the
+ * source had grown an import, and the separate build -- the thing keeping
+ * a secret-handling module out of every browser bundle -- would no longer
+ * be justified. `import` catches the whole class; the named markers catch
+ * the specific one that matters.
+ */
+const proxy = readFileSync(join(ROOT, 'dist/proxy.js'), 'utf8');
+for (const marker of ['ContentTools', 'ContentEdit', 'rootContext']) {
+    if (proxy.includes(marker)) {
+        throw new Error(
+            `dist/proxy.js contains "${marker}" -- src/auth/exchange.ts has ` +
+            'picked up an import from the library, so it is no longer the ' +
+            'standalone handler its own build mode exists to produce.');
+    }
+}
+/* Matched as a statement rather than as the word, because the file's own
+   comments talk about imports. */
+if (/(^|\n)\s*import[\s{'"]/.test(proxy)) {
+    throw new Error(
+        'dist/proxy.js has an import statement -- it is meant to be one ' +
+        'self-contained handler, and a dependency here ships to whatever ' +
+        "server holds the App's client secret.");
+}
+
 /* Every chunk is in somebody's budget.
  *
  * `.size-limit.js` measures each entry against the closure of its own
@@ -108,7 +136,7 @@ for (const marker of ['ContentTools', 'ContentEdit', 'rootContext']) {
  * the rmSync above somehow missed.
  */
 const ENTRIES = ['dist/index.js', 'dist/element.js', 'dist/markdown.js',
-                 'dist/shell.js', 'dist/cms.js'];
+                 'dist/shell.js', 'dist/cms.js', 'dist/proxy.js'];
 const orphans = orphanChunks(ENTRIES, ['dist/chunks', 'dist/cms-chunks']);
 if (orphans.length) {
     throw new Error(

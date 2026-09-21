@@ -96,6 +96,11 @@ jobs:
         env:
           CHROMIUM_PATH: ''
 
+      - name: The OAuth proxy against the BUILT dist/proxy.js
+        run: npm run test:proxy:dist
+        env:
+          CHROMIUM_PATH: ''
+
       - name: Visual regression (rebuilt CSS vs legacy stylesheet)
         run: npx playwright test --config test/golden/playwright.config.mjs visual.spec.mjs
         env:

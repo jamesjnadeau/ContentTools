@@ -36,7 +36,7 @@
     "build:playground": "node scripts/build-playground.mjs",
     "dev": "node scripts/build.mjs && node test/golden/server.mjs",
     "test:visual": "playwright test --config test/golden/playwright.config.mjs visual.spec.mjs",
-    "test": "npm run lint && npm run typecheck && npm run test:unit && npm run test:golden && npm run test:golden:dist && npm run test:styles && npm run test:element:dist && npm run test:element:golden && npm run test:markdown:dist && npm run test:cms:dist && npm run test:shell:dist && npm run test:chunks && npm run test:visual && npm run test:size",
+    "test": "npm run lint && npm run typecheck && npm run test:unit && npm run test:golden && npm run test:golden:dist && npm run test:styles && npm run test:element:dist && npm run test:element:golden && npm run test:markdown:dist && npm run test:cms:dist && npm run test:shell:dist && npm run test:proxy:dist && npm run test:chunks && npm run test:visual && npm run test:size",
     "test:unit": "vitest run --config vitest.config.mjs",
     "build:esm": "vite build --mode esm",
     "build:min": "vite build --mode min",
@@ -51,7 +51,8 @@
     "test:cms:dist": "playwright test --config test/golden/playwright.config.mjs cms-dist.spec.mjs",
     "test:shell:dist": "playwright test --config test/golden/playwright.config.mjs shell-dist.spec.mjs",
     "test:chunks": "playwright test --config test/golden/playwright.config.mjs chunk-closure.spec.mjs",
-    "test:size": "npm run build && size-limit"
+    "test:size": "npm run build && size-limit",
+    "test:proxy:dist": "playwright test --config test/golden/playwright.config.mjs proxy-dist.spec.mjs"
   },
   "repository": {
     "type": "git",
@@ -84,6 +85,10 @@
     "./cms": {
       "types": "./dist/src/cms/index.d.ts",
       "default": "./dist/cms.js"
+    },
+    "./proxy": {
+      "types": "./dist/src/auth/exchange.d.ts",
+      "default": "./dist/proxy.js"
     },
     "./shell": {
       "types": "./dist/src/shell/index.d.ts",

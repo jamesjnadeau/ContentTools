@@ -9,6 +9,7 @@ import dts from 'vite-plugin-dts';
  *   esm        dist/index.js, element.js, markdown.js, shell.js
  *                                          ESM, sharing one library chunk
  *   cms        dist/cms.js                 the git-backed half, standalone
+ *   proxy      dist/proxy.js               the OAuth code exchange, for a server
  *   style      dist/content-tools.css      stylesheet + dist/images/
  *   style-min  dist/content-tools.min.css  the same, minified
  *
@@ -95,6 +96,35 @@ export default defineConfig(({mode}) => {
                         chunkFileNames: 'cms-chunks/[name]-[hash].js'
                     }
                 }
+            }
+        };
+    }
+
+    if (mode === 'proxy') {
+        /* The OAuth code exchange, for a server.
+         *
+         * Its own build for the same reason `cms` has one: it imports
+         * nothing -- not the library, not `src/cms/`, not a package -- so
+         * there is no module-level singleton to end up with two copies of,
+         * and nothing to share with an entry a browser loads. It is also
+         * the only artifact here that is not for a browser at all, and
+         * mixing it into the `esm` build would put a `client_secret`-
+         * shaped module one import away from a page.
+         *
+         * Single file, no chunk directory: with no imports there is
+         * nothing to split out, which is also why `orphanChunks` has no
+         * new directory to scan.
+         */
+        return {
+            // No `dts`: the esm build already emits declarations for all
+            // of `src`, this file's included.
+            build: {
+                ...shared,
+                lib: {
+                    entry: {proxy: resolve(__dirname, 'src/auth/exchange.js')},
+                    formats: ['es']
+                },
+                rollupOptions: {output: {entryFileNames: '[name].js'}}
             }
         };
     }
