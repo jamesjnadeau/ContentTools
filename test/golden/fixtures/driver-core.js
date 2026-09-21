@@ -39,6 +39,15 @@
         all.forEach(function (n) {
             if (!n.getAttribute) return;
             ['data-ce-size', 'data-ce-moving'].forEach(function (a) { n.removeAttribute(a); });
+            /* `ct-widget--active` is the class every widget gains 100 ms
+               after it mounts, to transition itself in. It says nothing
+               about behaviour and everything about when you looked: on a
+               slow runner the timer fires before the snapshot is taken
+               and on a fast one it does not, so recording it makes a
+               frozen snapshot a coin toss. Stripped rather than waited
+               out -- a settle would put the class in every snapshot and
+               still leave the next scenario racing a different timer. */
+            if (n.classList) n.classList.remove('ct-widget--active');
             var s = n.getAttribute && n.getAttribute('style');
             if (s && /(?:top|left|width|height):/.test(s)) n.removeAttribute('style');
         });
