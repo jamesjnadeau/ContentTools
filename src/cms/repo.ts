@@ -297,13 +297,19 @@ export class CmsRepo {
             await this.github.resetBranch(branch, commit);
         }
 
-        const open = pull ?? await this.github.createPull({
+        const found = pull ?? await this.github.createPull({
             title: message,
             body: options.body ?? '',
             head: branch,
             base: this.base,
             draft: Boolean(options.draft)
         });
+
+        /* The head this save just gave it. An open pull request was read
+           BEFORE the commit, so its `head.sha` describes the branch as it
+           was -- and a shell that pins that for its next save gets a
+           `ConflictError` against its own work. */
+        const open = {...found, head: {...found.head, sha: commit}};
 
         /* Only a new pull request gets a status it did not ask for. */
         const status = options.status ?? (pull ? null : 'draft');

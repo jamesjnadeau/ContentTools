@@ -1,0 +1,25 @@
+# The runtime config one deployment is given for the one site it edits.
+#
+# YAML rather than JSON on purpose: it is the form an operator actually
+# hand-edits, and it is the branch of `loadConfig` that pulls in the
+# parser, so the playground exercises the lazy import as well as the page.
+backend:
+  repo: owner/site
+  branch: main
+
+media:
+  folder: static/images
+  publicPath: /images
+
+collections:
+  - name: blog
+    label: Blog
+    folder: content/blog
+    create: true
+    fields:
+      - {name: title, widget: string}
+      - {name: date, widget: datetime}
+  - name: pages
+    label: Pages
+    files:
+      - {name: about, label: About, file: content/about.md}

@@ -154,7 +154,13 @@ export class GitHub {
         this.name = name;
         this.apiBase = options.apiBase ?? 'https://api.github.com';
         this.token = options.token;
-        this.http = options.fetch ?? globalThis.fetch;
+        /* Bound. `this.http(...)` is a method call, so an unbound
+           `globalThis.fetch` arrives with the client as its receiver and
+           the browser refuses it -- "Illegal invocation", from a line
+           that looks like a plain function call. Invisible to every test
+           that injects a transport, which is all of them until one drives
+           a real page. */
+        this.http = options.fetch ?? globalThis.fetch.bind(globalThis);
     }
 
     /** `/repos/{owner}/{name}` plus whatever follows. */

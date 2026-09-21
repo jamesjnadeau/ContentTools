@@ -99,6 +99,7 @@ Full attribute, property, method and event reference:
 - [Migrating from 1.6.x](docs/migrating-from-1.6.md)
 - [`<content-tools-editor>`](docs/element.md)
 - [Markdown mode](docs/markdown-mode.md)
+- [The git-backed half](docs/cms.md)
 - [Content scope: Mode A and Mode B](docs/content-scope.md)
 - [`RootContext` — the host seam](docs/root-context.md)
 
@@ -116,14 +117,15 @@ npm run test:coverage
 ```
 
 `npm run dev` builds and serves the playground at
-`http://127.0.0.1:8931/playground/`, and the custom-element version at
-`http://127.0.0.1:8931/playground/element.html`.
+`http://127.0.0.1:8931/playground/`, the custom-element version at
+`http://127.0.0.1:8931/playground/element.html`, markdown mode at
+`markdown.html`, and the git-backed CMS at `cms.html`.
 
 ### How this is tested
 
-Five suites, deliberately covering different things:
+Six suites, deliberately covering different things:
 
-- **`test/browser/`** — 667 tests in real Chromium, run against the SOURCE so
+- **`test/browser/`** — 1,021 tests in real Chromium, run against the SOURCE so
   coverage can attribute. Includes upstream ContentEdit's own 329 specs,
   inherited with the code.
 - **`test/golden/golden.spec.mjs`** — a characterisation harness that drives
@@ -155,6 +157,15 @@ Five suites, deliberately covering different things:
   unexecuted. CI installs all three; locally Chromium is the default and
   `CT_ENGINES=firefox,webkit npm run test:element:golden` adds the others
   (`npx playwright install --with-deps firefox webkit` first).
+
+- **`test/golden/cms-dist.spec.mjs`** — drives the BUILT `dist/cms.js` through
+  `playground/cms.html`, with Playwright routing `api.github.com` to an
+  in-memory GitHub. Everywhere else the client is constructed with that fake
+  as its `fetch`, which is what makes the layers above it testable and also
+  means the request never touches the browser's stack; here the page is
+  unmodified and the real `fetch` runs, so the URLs, methods and headers are
+  themselves under test. It found the default `fetch` being called unbound on
+  its first run.
 
 `build/` holds the frozen v1.6.16 artifacts as the reference those suites
 compare against. Do not rebuild them.

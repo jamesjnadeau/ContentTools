@@ -58,6 +58,19 @@ describe('base64', function() {
 
 describe('requests', function() {
 
+    it('works with the browser\'s own fetch', async function() {
+        /* Every other test here injects a transport, so none of them
+           executes the default one -- and an unbound `globalThis.fetch`
+           called as `this.http(...)` arrives with the client as its
+           receiver, which the browser refuses with "Illegal invocation"
+           from a line that reads like a plain function call. Pointed at
+           the test server rather than GitHub: what matters is that the
+           call reaches the network at all and comes back as one of our
+           errors. */
+        const client = new GitHub({repo: 'owner/site', apiBase: `${location.origin}/no-such-api`});
+        return expect(client.repo()).rejects.toBeInstanceOf(GitHubError);
+    });
+
     it('authenticates', async function() {
         const {fake, client} = connect();
         await client.repo();

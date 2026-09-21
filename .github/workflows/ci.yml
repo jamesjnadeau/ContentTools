@@ -77,6 +77,11 @@ jobs:
         env:
           CHROMIUM_PATH: ''
 
+      - name: The CMS half against the BUILT dist/cms.js
+        run: npm run test:cms:dist
+        env:
+          CHROMIUM_PATH: ''
+
       - name: Visual regression (rebuilt CSS vs legacy stylesheet)
         run: npx playwright test --config test/golden/playwright.config.mjs visual.spec.mjs
         env:

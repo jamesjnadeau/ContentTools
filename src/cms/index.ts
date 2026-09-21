@@ -84,3 +84,14 @@ export type {
 
 export {STATUSES, labelFor, statusForLabel, statusOf} from './status.js';
 export type {EditorialStatus} from './status.js';
+
+/* Auth. The interface is here so a shell can hold "whatever produces a
+ * token" without knowing which one it got; the PAT adapter is the
+ * implementation that needs no infrastructure, and M4's GitHub App proxy
+ * will be the second. Pass the token to the client as a FUNCTION --
+ * `token: () => auth.currentToken()` -- so a logout takes effect instead
+ * of the client holding the string it was built with.
+ */
+export {PatAuthAdapter, NotAuthenticatedError, TOKEN_KEY} from '../auth/pat.js';
+export type {PatAuthOptions, TokenStorage} from '../auth/pat.js';
+export type {AuthAdapter} from '../auth/types.js';

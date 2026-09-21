@@ -20,6 +20,25 @@
 
 const API = 'https://api.github.com';
 
+/**
+ * One header, however it was spelled.
+ *
+ * HTTP header names are case-insensitive and the two callers spell them
+ * differently: the client sends a plain object with `Accept`, and the
+ * Playwright route in `test/golden/cms-dist.spec.mjs` hands over what the
+ * browser actually sent, which is lower-cased. Matching only one spelling
+ * made a `raw` read come back as JSON, and the client stored the JSON
+ * envelope as the entry's text.
+ */
+function header(headers, name) {
+    for (const [key, value] of Object.entries(headers ?? {})) {
+        if (key.toLowerCase() === name) {
+            return value;
+        }
+    }
+    return '';
+}
+
 /** Deterministic 40-hex object ids, so failures read the same twice. */
 function makeSha(kind, n) {
     return `${kind}${String(n).padStart(38 - kind.length, '0')}0`.slice(0, 40).padEnd(40, '0');
@@ -128,7 +147,7 @@ export function createFakeGitHub(options = {}) {
         const method = (init.method ?? 'GET').toUpperCase();
         const path = request.pathname;
         const query = request.searchParams;
-        const accept = (init.headers ?? {}).Accept ?? '';
+        const accept = header(init.headers, 'accept');
         const body = init.body ? JSON.parse(init.body) : undefined;
 
         requests.push([method, path + (request.search || ''), init.headers ?? {}]);

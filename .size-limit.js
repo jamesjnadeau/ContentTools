@@ -77,14 +77,15 @@ export default [
     },
     {
         /* The git-backed half: config, the GitHub client, the entry
-           workflow. Its own build, not part of the chunk `index` and
+           workflow, media staging, editorial status and the token
+           adapter. Its own build, not part of the chunk `index` and
            `element` share, because it imports nothing from the library --
            scripts/build.mjs asserts that against the artifact. A shell
            loads it alongside one of those entries; a site that only edits
            pays none of it. */
         name: 'cms entry',
         path: 'dist/cms.js',
-        limit: '9.5 kB',
+        limit: '10 kB',
         gzip: true
     },
     {

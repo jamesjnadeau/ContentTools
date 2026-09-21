@@ -241,6 +241,21 @@ describe('saveEntry', function() {
         return expect(fake.history('cms/blog/hello').length).toBe(3);
     });
 
+    it('hands back a pull request that names the commit it just made', async function() {
+        /* An open pull request is read before the commit, so its
+           `head.sha` describes the branch as it was. A shell pinning
+           that for its next save would conflict against its own work,
+           which is indistinguishable from a reviewer having pushed. */
+        const {repo} = open();
+        await repo.saveEntry('blog', 'hello', {content: '# One\n'});
+        const second = await repo.saveEntry('blog', 'hello', {content: '# Two\n'});
+
+        expect(second.pull.head.sha).toBe(second.commit);
+        return expect((await repo.saveEntry('blog', 'hello', {
+            content: '# Three\n', parent: second.pull.head.sha
+        })).changed).toBe(true);
+    });
+
     it('keeps the rest of the repository', async function() {
         const {fake, repo} = open();
         await repo.saveEntry('blog', 'hello', {content: '# Edited\n'});

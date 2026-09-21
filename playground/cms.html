@@ -1,0 +1,248 @@
+<!DOCTYPE HTML>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Git-backed CMS playground</title>
+        <!--
+          Mode A: the chrome comes from the element's shadow root, so only
+          the CONTENT half of the stylesheet is linked here.
+        -->
+        <link rel="stylesheet" href="../dist/content-tools-content.css">
+        <style>
+            :root { color-scheme: light dark; }
+            body {
+                margin: 0;
+                font: 14px/1.6 system-ui, sans-serif;
+                display: grid;
+                grid-template-rows: auto auto 1fr;
+                height: 100vh;
+            }
+            .bar {
+                padding: 8px 12px; background: #222; color: #eee;
+                display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+            }
+            .bar + .bar { background: #2d2d2d; }
+            .bar output { opacity: .8; }
+            .bar .spacer { margin-left: auto; }
+            input, select, button { font: inherit; }
+            input[type=password] { width: 22ch; }
+            .panes { display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
+            .pane { overflow: auto; padding: 16px 20px; min-width: 0; }
+            .pane + .pane { border-left: 1px solid #ccc; background: #fafafa; }
+            .pane h2 {
+                font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+                opacity: .6; margin: 0 0 12px;
+            }
+            pre { margin: 0 0 16px; white-space: pre-wrap; word-break: break-word;
+                  font: 12px/1.5 ui-monospace, monospace; }
+            #log { opacity: .75; }
+            .note { font-size: 12px; opacity: .7; margin: 0 0 12px; }
+            @media (prefers-color-scheme: dark) {
+                body { background: #14161a; color: #e6e6e6; }
+                .pane + .pane { background: #1b1e24; border-left-color: #333; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="bar">
+            <label>token
+                <input id="token" type="password" placeholder="github_pat_…"
+                       autocomplete="off">
+            </label>
+            <button id="signin">sign in</button>
+            <button id="signout">sign out</button>
+            <output id="who" class="spacer">signed out</output>
+        </div>
+
+        <div class="bar">
+            <select id="collection"></select>
+            <select id="entry"></select>
+            <button id="open">open</button>
+            <button id="start">start</button>
+            <button id="submit">stop + submit</button>
+            <select id="status">
+                <option value="draft">draft</option>
+                <option value="in-review">in review</option>
+                <option value="ready">ready</option>
+            </select>
+            <button id="move">set status</button>
+            <output id="state" class="spacer">-</output>
+        </div>
+
+        <div class="panes">
+            <div class="pane" id="host"></div>
+            <div class="pane">
+                <h2>What would be committed</h2>
+                <p class="note">
+                    Submitting commits the entry and every image still
+                    referenced in it to <code>cms/&lt;collection&gt;/&lt;slug&gt;</code>
+                    and opens one pull request &mdash; the same branch and the
+                    same pull request every time that entry is saved.
+                </p>
+                <pre id="out"></pre>
+                <h2>Log</h2>
+                <pre id="log"></pre>
+            </div>
+        </div>
+
+        <script type="module">
+            import '../dist/element.js';
+            import {MarkdownDocument} from '../dist/markdown.js';
+            import {
+                CmsRepo, MediaStore, PatAuthAdapter, loadConfig, mediaUploader, statusOf
+            } from '../dist/cms.js';
+
+            const $ = id => document.getElementById(id);
+            const out = $('out');
+            const log = message => {
+                $('log').textContent = `${message}\n${$('log').textContent}`.slice(0, 4000);
+            };
+
+            /* The token comes from a field on the page rather than
+               `window.prompt`, because a prompt is a modal the shell cannot
+               style and a test cannot type into. */
+            const auth = new PatAuthAdapter({prompt: () => $('token').value});
+
+            let config = null;
+            let repo = null;
+            let store = null;
+            let doc = null;
+            let entry = null;
+            let editor = null;
+            let edited = null;
+
+            async function boot() {
+                config = await loadConfig('cms-config.yml');
+                /* A FUNCTION, not the token itself: the client asks each
+                   time, so signing out takes effect instead of it holding
+                   the string it was built with. */
+                repo = new CmsRepo({config, token: () => auth.currentToken()});
+
+                for (const collection of config.collections) {
+                    $('collection').add(new Option(collection.label, collection.name));
+                }
+                $('collection').onchange = listEntries;
+                report();
+                if (auth.currentToken()) {
+                    await listEntries();
+                }
+            }
+
+            async function signIn() {
+                await auth.authenticate();
+                $('token').value = '';
+                report();
+                await listEntries();
+            }
+
+            async function signOut() {
+                await auth.logout();
+                $('entry').replaceChildren();
+                report();
+            }
+
+            async function listEntries() {
+                const entries = await repo.listEntries($('collection').value);
+                $('entry').replaceChildren(
+                    ...entries.map(item => new Option(item.slug, item.slug)));
+                log(`${entries.length} entries in ${$('collection').value}`);
+            }
+
+            async function openEntry() {
+                entry = await repo.readEntry($('collection').value, $('entry').value);
+                doc = MarkdownDocument.parse(entry.content ?? '');
+                edited = null;
+
+                /* Names already in the media folder, so an upload of
+                   `cat.png` becomes `cat-1.png` at the moment it is
+                   staged -- the URL the editor shows has to be the URL
+                   that ends up in the file. */
+                const folder = await repo.github.listDirectory(config.media.folder, repo.base);
+                store = new MediaStore({config, taken: folder.map(file => file.name)});
+
+                const next = document.createElement('content-tools-editor');
+                next.setAttribute('regions', '[data-editable]');
+                next.setAttribute('naming-prop', 'data-name');
+                next.setAttribute('mode', 'markdown');
+                next.innerHTML = `<div data-editable data-name="body">${doc.toHTML()}</div>`;
+                /* Staged in memory, committed by `saveEntry`. An uploader
+                   that commits on its own leaves orphans behind every
+                   abandoned edit. */
+                next.imageUploader = mediaUploader({store});
+
+                $('host').replaceChildren(next);
+                editor = next;
+                editor.addEventListener('ct-saved', ev => {
+                    edited = ev.detail.regions.body;
+                });
+                editor.addEventListener('ct-started', report);
+                editor.addEventListener('ct-stopped', report);
+
+                out.textContent = entry.content ?? '(new entry)';
+                log(`opened ${entry.path} from ${entry.ref}` +
+                    (entry.pull ? ` (pull request #${entry.pull.number})` : ''));
+                report();
+            }
+
+            async function submit() {
+                if (editor.state === 'editing') {
+                    editor.stop(true);
+                }
+                const {html, media} = store.rewrite(edited ?? doc.toHTML());
+                const content = doc.update(html);
+                out.textContent = content;
+
+                const result = await repo.saveEntry($('collection').value, $('entry').value, {
+                    content,
+                    media,
+                    /* The commit this edit was read at. Somebody pushing
+                       to the entry's branch since then is a
+                       `ConflictError` rather than a silent revert of
+                       their work. */
+                    parent: entry.commit,
+                    message: `Update ${entry.path}`
+                });
+
+                entry = {...entry, commit: result.commit ?? entry.commit, pull: result.pull};
+                log(result.changed
+                    ? `committed ${result.commit.slice(0, 7)} → ${result.pull.html_url}`
+                    : 'nothing changed, so nothing was committed');
+                report();
+            }
+
+            async function move() {
+                entry = {...entry, pull: await repo.setStatus(entry.pull, $('status').value)};
+                log(`status is now ${statusOf(entry.pull)}`);
+                report();
+            }
+
+            function report() {
+                const pull = entry?.pull;
+                $('who').textContent = auth.currentToken() ? 'signed in' : 'signed out';
+                $('state').textContent = [
+                    `editor: ${editor ? editor.state : '-'}`,
+                    entry ? `entry: ${entry.slug}` : 'no entry',
+                    pull ? `PR #${pull.number} · ${statusOf(pull) ?? 'no status'}` : 'not in review'
+                ].join(' · ');
+            }
+
+            /** Anything thrown here belongs on the page, not in a console. */
+            const guard = fn => async () => {
+                try {
+                    await fn();
+                } catch (error) {
+                    log(`! ${error.name}: ${error.message}`);
+                }
+            };
+
+            $('signin').onclick = guard(signIn);
+            $('signout').onclick = guard(signOut);
+            $('open').onclick = guard(openEntry);
+            $('start').onclick = guard(() => editor.start());
+            $('submit').onclick = guard(submit);
+            $('move').onclick = guard(move);
+
+            guard(boot)();
+        </script>
+    </body>
+</html>

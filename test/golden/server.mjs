@@ -17,7 +17,11 @@ const TYPES = {
     '.svg': 'image/svg+xml',
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
-    '.woff': 'font/woff'
+    '.woff': 'font/woff',
+    // The CMS playground's runtime config; `loadConfig` reads the body as
+    // text and does not consult this, but a browser asked to download an
+    // octet-stream is a confusing thing to hand a developer.
+    '.yml': 'text/yaml; charset=utf-8'
 };
 
 createServer(async (req, res) => {
