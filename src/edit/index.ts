@@ -33,6 +33,11 @@
 
 import {APP_TOKEN_KEY, TOKEN_KEY} from '../auth/storage.js';
 import {EDIT_FLAG, readHandoff} from '../auth/handoff.js';
+/* The TYPE only. The module itself is behind the dynamic import with the
+   rest of the editor, which is what keeps it off a reader's page. */
+import type {EditExtension} from './extension.js';
+
+export type {EditExtension, EditorLibrary} from './extension.js';
 
 /* Re-exported, because this is where it was and where every
    consumer of it looks. It moved down beside `readHandoff` when
@@ -137,7 +142,8 @@ export function claim(where: Window): boolean {
  * -- imports this module and calls `boot(window)` on its own terms, and
  * the automatic call has already answered no.
  */
-export async function boot(where: Window): Promise<void> {
+export async function boot(
+        where: Window, extension?: EditExtension | null): Promise<void> {
     /* Before `wanted`, and OR'd with it rather than folded into it.
        Before, because the token it puts away is what `wanted` then
        finds -- and because a token in a URL should stop being in one
@@ -151,7 +157,16 @@ export async function boot(where: Window): Promise<void> {
         return;
     }
     const {open} = await import('./surface.js');
-    await open(where, {contentStyles: CONTENT_STYLES});
+    /* `window.contentToolsEdit`, the site's own tools, unless the caller
+       handed some over. Read here because this is where the ambient
+       globals enter; its shape is checked behind the import, where a
+       mistake can be said on the bar. Inline rather than a named export,
+       because every byte of this file is paid by every reader. */
+    await open(where, {
+        contentStyles: CONTENT_STYLES,
+        extension: extension ?? (where as {contentToolsEdit?: EditExtension})
+            .contentToolsEdit
+    });
 }
 
 /**

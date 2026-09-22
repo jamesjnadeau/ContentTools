@@ -19,11 +19,11 @@ One tag, on every page. Which is what decides the shape of this file.
 
 A blog's readers outnumber its authors by a very long way, and none of them
 should pay for an editor. So `dist/edit.js` is **the decision and nothing
-else** — 1.36 kB gzipped, with a budget that fails the build at 1.5 kB —
+else** — 1.39 kB gzipped, with a budget that fails the build at 1.5 kB —
 and everything behind that decision is behind a dynamic `import()`. The editor, the markdown parser, the GitHub client and
 the config loader arrive only for somebody who is actually editing.
 
-That 1.36 kB is **two files and two requests**, and it is worth stating
+That 1.39 kB is **two files and two requests**, and it is worth stating
 that way rather than as one number: `edit.js` itself and one small shared
 chunk under `dist/chunks/`, which holds the storage keys and the handoff
 parser. The budget measures the pair, so the figure is honest — but a
@@ -37,7 +37,7 @@ downloads nothing more.
 One thing in it is not a decision, and it is worth naming rather than
 hiding: taking a handed-over token off the URL has to happen *before*
 anything is downloaded, so that code is in this file rather than behind the
-import. It is what took the number from 749 B to 1.36 kB.
+import. It is what took the number from 749 B to 1.36 kB; reading `window.contentToolsEdit` (see [custom-tools.md](custom-tools.md)) added the last 30 bytes.
 
 The price of that is worth stating rather than hiding: a lazy chunk that
 404s from a badly-deployed static host fails nowhere until somebody opens a
@@ -200,6 +200,13 @@ every untouched block byte-identical, exactly as it does everywhere else —
 see [markdown mode](markdown-mode.md). The frontmatter fields on the bar are
 the same widgets the entry screen under `/admin` uses; either surface can
 edit them.
+
+## A site's own tools
+
+The in-page editor is always in markdown mode and builds its own toolbox, so a site adds a
+tool by declaring `window.contentToolsEdit` before `edit.js` runs. That object has a `setup`
+that is handed the library, an `allowTools` list, and CSS for the icon. None of it costs a
+reader anything. See [custom-tools.md](custom-tools.md#the-in-page-surface-disteditjs).
 
 ## Drafts, and why a preview URL matters
 

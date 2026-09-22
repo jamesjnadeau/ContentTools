@@ -681,6 +681,120 @@ describe('open, mounting', function() {
         expect(links[0].href).toBe(href);
     });
 
+    describe('a site\'s own tools', function() {
+
+        /* `window.contentToolsEdit`, handed to `open` by `./index.ts`.
+           Each test makes its own object, because `setup` runs once per
+           object and that is one of the things asserted. */
+        function extension(extra = {}) {
+            const calls = [];
+            return {
+                calls,
+                value: {
+                    setup(library) {
+                        calls.push(library);
+                        class Pin extends library.ContentTools.Tool {
+                            static initClass() {
+                                library.ContentTools.ToolShelf.stow(this, 'test-pin');
+                                this.label = 'Pin';
+                                this.icon = 'pin';
+                            }
+                        }
+                        Pin.initClass();
+                    },
+                    allowTools: ['test-pin'],
+                    ...extra
+                }
+            };
+        }
+
+        it('stows the tool with the library the editor uses, and shows it',
+           async function() {
+            const ext = extension();
+            const {session} = await mount(sitePage(), {extension: ext.value});
+
+            expect(session).not.toBe(null);
+            expect(ext.calls).toHaveLength(1);
+            expect(ext.calls[0].ContentTools).toBe(ContentTools);
+            expect(ext.calls[0].ContentEdit).toBe(ContentEdit);
+            /* The in-page editor is ALWAYS markdown, so without the
+               widened profile the name would be filtered out here. */
+            expect(session.editor.profile.tools.has('test-pin')).toBe(true);
+            const groups = session.editor.editorApp.toolbox().tools();
+            expect(groups[groups.length - 1]).toEqual(['test-pin']);
+            /* And the rest of the constraint still stands. */
+            expect(groups.flat()).not.toContain('video');
+        });
+
+        it('takes the site\'s own layout when it gives one', async function() {
+            const ext = extension({tools: [['bold', 'test-pin', 'align-left']]});
+            const {session} = await mount(sitePage(), {extension: ext.value});
+
+            expect(session.editor.editorApp.toolbox().tools())
+                .toEqual([['bold', 'test-pin']]);
+        });
+
+        it('waits for a setup that returns a promise', async function() {
+            const ext = extension();
+            const sync = ext.value.setup;
+            ext.value.setup = async library => {
+                await new Promise(resolve => setTimeout(resolve, 0));
+                sync(library);
+            };
+            const {session} = await mount(sitePage(), {extension: ext.value});
+
+            expect(session.editor.editorApp.toolbox().tools().flat())
+                .toContain('test-pin');
+        });
+
+        it('runs setup once, however many entries are opened', async function() {
+            const ext = extension();
+            const first = await mount(sitePage(), {extension: ext.value});
+            first.session.close();
+            opened.length = 0;
+            await Promise.resolve();
+            await Promise.resolve();
+
+            await mount(sitePage(), {extension: ext.value});
+            expect(ext.calls).toHaveLength(1);
+        });
+
+        it('adopts its styles into the editor\'s shadow root', async function() {
+            const ext = extension({styles: '.ct-tool--pin:before{content:"P"}'});
+            const {session} = await mount(sitePage(), {extension: ext.value});
+
+            const adopted = session.editor.shadowRoot
+                .querySelectorAll('[data-content-tools="adopted"]');
+            expect(adopted).toHaveLength(1);
+            expect(adopted[0].textContent).toContain('.ct-tool--pin');
+        });
+
+        it('says so on the bar when a tool was never stowed', async function() {
+            /* Rather than letting `ToolShelf.fetch` throw from inside the
+               click that builds the toolbox, which is an editor that
+               silently fails to open. */
+            const it = sitePage();
+            const {bar, session} = await mount(it, {
+                extension: {allowTools: ['test-nowhere']}
+            });
+
+            expect(session).toBe(null);
+            expect(said(bar).className).toContain('ct-edit--failed');
+            expect(said(bar).hint).toContain('`test-nowhere`');
+            expect(document.querySelector('content-tools-editor')).toBe(null);
+            expect(it.body().textContent).toBe('What the site built.');
+        });
+
+        it('says so on the bar when a key has the wrong shape', async function() {
+            const {bar} = await mount(sitePage(), {
+                extension: {tools: ['bold']}
+            });
+
+            expect(said(bar).hint)
+                .toBe('contentToolsEdit.tools[0] must be an array of tool names.');
+        });
+    });
+
     describe('the switch', function() {
 
         /* v1.6.16's ignition, back on the surface that needed it most.

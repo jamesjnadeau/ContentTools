@@ -296,7 +296,13 @@ export default [
            entries reach one module and Rollup shares it. That is the
            price of the two surfaces spelling the handoff in one place,
            and it is the right way round: a flag spelled twice is a link
-           that opens a page where nothing happens. */
+           that opens a page where nothing happens.
+
+           1.36 -> 1.39 kB for `window.contentToolsEdit`, a site's own
+           tools. It has to be read on this side of the import, since a
+           global is how a script tag gets configured, but only read:
+           one property access, inline rather than exported, and every
+           check on it sits behind the import. */
         name: 'edit entry (every page)',
         path: closureOf('dist/edit.js'),
         limit: '1.5 kB',
@@ -360,10 +366,15 @@ export default [
            same unminified chunk as the switch, so again it is mostly the
            reasoning -- why the host is sized to its content, why the
            body scrolls and the grip does not -- rather than the forty
-           lines of pointer handling. */
+           lines of pointer handling.
+
+           211 kB -> 212 kB for a site's own tools: 211.19 kB measured,
+           187 bytes over. The reader's side pays 30 bytes to read
+           `window.contentToolsEdit`; this side carries the checks that
+           turn a misspelt tool name into a sentence on the bar. */
         name: 'edit lazy surface',
         path: lazyClosureOf('dist/edit.js'),
-        limit: '211 kB',
+        limit: '212 kB',
         gzip: true
     },
     {

@@ -44,6 +44,8 @@ import {ContentToolsEditor, TAG_NAME as EDITOR_TAG}
 import {buildBar} from './chrome.js';
 import type {Bar, BarState, Located} from './chrome.js';
 import {PageEdit} from './editing.js';
+import {extend} from './extension.js';
+import type {EditExtension} from './extension.js';
 import {formState} from '../entry/fields.js';
 
 /**
@@ -81,6 +83,12 @@ export interface OpenOptions {
      * a hashed chunk and has no idea where `dist/` is.
      */
     readonly contentStyles?: string;
+    /**
+     * The site's own tools, from `window.contentToolsEdit`. Read by
+     * `./index.ts`, which is where the ambient globals enter; see
+     * `./extension.ts`.
+     */
+    readonly extension?: EditExtension | null;
 }
 
 /** An open surface: the bar, and the open entry if one went up. */
@@ -248,6 +256,9 @@ async function start(
        the switch, however they arrived: pressing Edit under /admin says
        which page to open, not that the reader's view of it should be
        replaced before they have looked at it. */
+    /* Before the editor is connected, because connecting it boots it,
+       and `init()` is where the profile and the tool list are read. */
+    await extend(session.editor, options.extension);
     where.document.body.appendChild(session.editor);
 
     /* Built and NOT rendered -- see the call site. */
