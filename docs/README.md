@@ -6,6 +6,8 @@
   methods and the DOM event contract.
 - **[Markdown mode](markdown-mode.md)** — constraining the editor to what markdown can express,
   and the byte-preserving save that turns an edit into a one-line diff.
+- **[Custom tools](custom-tools.md)** — writing a tool of your own and getting it into the
+  toolbox on each surface: the element, markdown mode, and the in-page editor.
 - **[The git-backed half](cms.md)** — the runtime config, the GitHub client, and the
   branch-per-entry pull request workflow a save becomes.
 - **[The shell](shell.md)** — `<content-tools-cms>`: the management application
