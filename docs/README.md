@@ -11,7 +11,8 @@
 - **[The shell](shell.md)** — `<content-tools-cms>`: the management application
   authors open at `/admin`, and how a deployment is configured and installed.
 - **[The in-page surface](in-page.md)** — `dist/edit.js`: the script a site puts on
-  its own pages, where an entry's words are actually written.
+  its own pages, where an entry's words are actually written, what it costs a reader,
+  and how to deploy it.
 - **[The round trip, by hand](round-trip.md)** — the one check no test can make:
   edit an entry from a real repository, submit it, and read the pull request
   GitHub actually received.

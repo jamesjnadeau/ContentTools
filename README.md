@@ -8,14 +8,15 @@ which has been unmaintained since 2022.
 
 ## Status
 
-**All five milestones are complete: the library is modernized, the editor
+**All six milestones are complete: the library is modernized, the editor
 runs as a custom element, it can be constrained to what markdown expresses,
-and there is a CMS shell on top of it that edits a git repository by pull
+there is a CMS shell on top of it that edits a git repository by pull
 request — with authors signing in either with their own token or through a
-GitHub App.**
+GitHub App — and an entry's words are written on the site's own published
+page rather than in an admin screen.**
 
-**`2.0.0-rc.1`** is the current release, and it carries all five: the API
-is frozen and every gate is green.
+**`2.0.0-rc.1`** is the current release, and it carries the first five.
+Milestone 6 — the in-page editing surface — is on `master` and unreleased.
 
 `rc.1` exists because `rc.0` could not write. The GitHub client sent the
 versioned `application/vnd.github+json` as its request **Content-Type**,
@@ -43,20 +44,22 @@ Not yet on npm. `npm pack` produces the artifact; the tag is
 | 3 | runtime config, a GitHub client of our own, one branch and one pull request per entry |
 | 4 | two auth adapters: a fine-grained PAT, and a GitHub App whose code exchange is one pure `Request` → `Response` function, deployed as a tiny proxy |
 | 5 | the shell: collections, entries, frontmatter widgets, a media library and the editorial workflow |
+| 6 | `dist/edit.js`: an entry's body edited on the site's own published page, with the site's real template around it, and the token handed across from `/admin` |
 
 What changed from v1.6.16:
 
 | | v1.6.16 | now |
 |---|---|---|
 | Language | CoffeeScript 1.x | TypeScript |
-| Modules | one shared closure, concatenated | 122 ES modules |
+| Modules | one shared closure, concatenated | 130 ES modules |
 | Build | Grunt + PhantomJS (unrunnable on Node 22) | Vite |
 | Dependencies | ContentEdit/ContentSelect/HTMLString vendored as one prebuilt file | absorbed as source |
-| Tests | 127 assertions, PhantomJS | 1,577 in real Chromium, plus ten Playwright suites against the built artifacts |
+| Tests | 127 assertions, PhantomJS | 1,773 in real Chromium, plus eleven Playwright suites against the built artifacts |
 | Host access | bare `document`/`window` throughout | one `RootContext` seam |
 | Embedding | mounts chrome into `document.body` | `<content-tools-editor>`, chrome in a shadow root |
 | Output | HTML in, HTML out | that, or markdown with a one-line diff |
 | Backend | none: `saved` hands you a string | that, or a git repository edited by pull request |
+| Where you edit | wherever you mounted it | that, or in place on the published page, from one `<script>` tag |
 
 ContentEdit, ContentSelect and HTMLString are no longer external: their
 upstream sources were verified byte-identical to what was vendored, then
@@ -139,21 +142,37 @@ Full attribute, property, method and event reference:
 <script type="module" src="./dist/shell.js"></script>
 ```
 
-That tag is the whole application. It loads the config for the one
+That tag is the management application. It loads the config for the one
 repository that deployment edits, signs an author in — with their own
 fine-grained token, or through a GitHub App — lists what they can edit, and
 turns each save into a branch, a commit and a pull request for a human to
 review. `app/` is a working deployment of it — copy `app/` and `dist/` to
 any static host.
 
+The **words** are written somewhere else, and that is the other half:
+
+```html
+<script type="module" src="/cms/edit.js"></script>
+```
+
+One tag, on every page of the site. Pressing Edit in the admin screens opens
+the entry's published page — the site's real template, the site's real
+stylesheet — with the editor coming up over the post body and a bar carrying
+the frontmatter fields and Submit. It is a preview that costs nothing,
+because it is not a preview: it is the page. A reader pays 1.36 kB across
+two requests and nothing else; everything behind that decision is a dynamic
+import.
+
 Editing one paragraph produces a one-line diff, because the markdown save
 splices the blocks nobody touched back in verbatim. That is the property the
 whole thing rests on: a pull request nobody can read is a review that does
 not happen.
 
-**[docs/shell.md](docs/shell.md)**, **[docs/auth.md](docs/auth.md)** for
-the two ways authors sign in, and **[docs/cms.md](docs/cms.md)** for the same
-machinery without the UI.
+**[docs/shell.md](docs/shell.md)** for the admin screens,
+**[docs/in-page.md](docs/in-page.md)** for the surface on the site's own
+pages and how to deploy it, **[docs/auth.md](docs/auth.md)** for the two ways
+authors sign in, and **[docs/cms.md](docs/cms.md)** for the same machinery
+without the UI.
 
 ## Documentation
 
@@ -162,6 +181,9 @@ machinery without the UI.
 - [Markdown mode](docs/markdown-mode.md)
 - [The git-backed half](docs/cms.md)
 - [The shell](docs/shell.md)
+- [The in-page surface](docs/in-page.md)
+- [The round trip, by hand](docs/round-trip.md)
+- [Signing in](docs/auth.md)
 - [Content scope: Mode A and Mode B](docs/content-scope.md)
 - [`RootContext` — the host seam](docs/root-context.md)
 
@@ -181,14 +203,15 @@ npm run test:coverage
 `npm run dev` builds and serves the CMS at `http://127.0.0.1:8931/app/` —
 the same page the dist suite drives — and the playground at
 `/playground/`: the editor, the custom-element version at `element.html`,
-markdown mode at `markdown.html`, and the headless git layer at
-`cms.html`.
+markdown mode at `markdown.html`, the headless git layer at `cms.html`, and
+a stand-in for a site's own published page at `first-post.html`, which is
+where the in-page surface can be driven without deploying anything.
 
 ### How this is tested
 
 Deliberately covering different things:
 
-- **`test/browser/`** — 1,577 tests in real Chromium, run against the SOURCE so
+- **`test/browser/`** — 1,773 tests in real Chromium, run against the SOURCE so
   coverage can attribute. Includes upstream ContentEdit's own 329 specs,
   inherited with the code.
 - **`test/golden/golden.spec.mjs`** — a characterisation harness that drives
@@ -243,10 +266,22 @@ Deliberately covering different things:
 
 - **`test/golden/shell-dist.spec.mjs`** — the same technique one layer up,
   against `app/index.html` and the built `dist/shell.js`: sign in, list a
-  collection, open an entry, edit one paragraph, submit, and assert the pull
-  request it produced carries a one-line diff and a byte-identical
-  frontmatter block. The deliverable and the fixture are the same page on
-  purpose, so neither can quietly stop working while the other passes.
+  collection, open an entry, change a frontmatter field, submit, and assert
+  the pull request it produced carries a one-line diff and a byte-identical
+  body. The deliverable and the fixture are the same page on purpose, so
+  neither can quietly stop working while the other passes. It also asserts
+  what is *not* there: no editor, because an editor on this page would take
+  the one-per-page lease with it and the surface on the site's own pages
+  would then refuse to boot, silently.
+
+- **`test/golden/edit-dist.spec.mjs`** — the built `dist/edit.js`, on a page
+  that is a site's published post rather than an application. What only this
+  suite can see: that a reader downloads two small files and stops; that
+  `?cms-edit` brings the bar up without a token; that a token handed over on
+  the URL fragment lands in `sessionStorage` and is gone from the address bar
+  before anything else loads; that the site's own element becomes the region
+  with the template around it untouched; and that typing one sentence into it
+  reaches GitHub as one hunk.
 
 - **`test/golden/markdown-dist.spec.mjs`**, **`styles.spec.mjs`** and
   **`chunk-closure.spec.mjs`** — the remaining properties of the artifacts
@@ -279,17 +314,22 @@ changes behaviour and needs verifying on its own:
 
 ## Roadmap
 
-The original plan is closed: there is a deployable CMS, a change made in
-it arrives as a pull request somebody can read, and a site's authors can
-sign in with a button rather than a pasted token.
+The original plan is closed: there is a deployable CMS, a change made in it
+arrives as a pull request somebody can read, a site's authors can sign in
+with a button rather than a pasted token, and the words are written on the
+published page instead of in a text box.
 
-What is left is a release — everything past Milestone 1 is unpublished —
-and then a preview pane, which needs the site's own templates and so is a
-config key and a piece of work of its own. Three things are owed by hand
-rather than by test, and are listed in
-[docs/auth.md](docs/auth.md) and the plan: the round trip against a real
-repository, a real GitHub App signing a real person in, and whether the App
-web flow enforces PKCE rather than merely accepting it.
+The preview pane the plan reserved for later is **not** coming, and that is
+a decision rather than a gap. A preview needs the site's own templates and
+stylesheet to be worth anything, and Milestone 6 got them the only way that
+is actually true: by editing the real page.
+
+What is left is a release — everything past Milestone 1 is unpublished.
+Three things are owed by hand rather than by test, and are listed in
+[docs/auth.md](docs/auth.md) and the plan: the write half of the round trip
+against a real repository, a real GitHub App signing a real person in, and
+whether the App web flow enforces PKCE rather than merely accepting it.
+[docs/round-trip.md](docs/round-trip.md) is how to run the first.
 
 ## Licence
 

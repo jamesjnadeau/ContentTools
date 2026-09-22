@@ -62,17 +62,24 @@ One build, many deployments, one config file each. `app/` ships in the npm
 package as well as in this repository, so
 `node_modules/@jamesjnadeau/content-tools/app/` is a copy to start from.
 
-**The `<link>` to `content-tools-content.css` is load-bearing**, not
-decoration. The editable content stays in the document (see
-[content scope](content-scope.md)), so the rules that draw the hover
-outlines, the drop indicators and the drag cursors have to reach the
-document too. Without it the shell still looks entirely correct and none of
-the editing affordances appear — which is why a computed-style assertion in
-`test/golden/shell-dist.spec.mjs` guards it rather than a reviewer's eye.
+**There is no content stylesheet here**, and there was one until this
+screen stopped holding an editor. The rules it carries — hover outlines,
+drop indicators, drag cursors — exist for editable content sitting in the
+document, and there is none on this page: the words of an entry are
+written on the site's own page, and the script that puts an editor there
+links the sheet itself. Which is the only arrangement that could work
+anyway, since a page this deployment does not own cannot be asked to carry
+a `<link>`.
 
-`app/index.html` is also the page that dist spec drives, deliberately: the
-deliverable and the fixture are one page, so neither can quietly stop
-working while the other passes.
+That other half is **[the in-page surface](in-page.md)**, and it is the
+same install plus one `<script>` tag on the site's own template. Deploying
+this screen alone is a coherent thing to do — the entry list, the review
+queue, create and delete all work — but the Edit button will have nowhere
+to send anybody, so do both.
+
+`app/index.html` is also the page `test/golden/shell-dist.spec.mjs` drives,
+deliberately: the deliverable and the fixture are one page, so neither can
+quietly stop working while the other passes.
 
 ## The element
 
@@ -383,6 +390,11 @@ npm run dev
 
 then <http://127.0.0.1:8931/app/>. Point `app/cms-config.yml` at a
 repository you can push to, paste a fine-grained token, and the shell will
-list a collection, open an entry, and submit a pull request. The assertion
-no test can make is the one worth making by hand: open the resulting diff
-and check it is small.
+list a collection and open an entry. Changing a frontmatter field and
+pressing Submit opens a pull request from here; changing the *words* means
+pressing Edit, which opens the entry's published page — so a full round
+trip needs a deployed site as well, which is what
+[the round trip, by hand](round-trip.md) walks through.
+
+The assertion no test can make is the one worth making either way: open the
+resulting diff and check it is small.

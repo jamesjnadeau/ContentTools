@@ -2,7 +2,7 @@
 
 This is the one check the test suite cannot make for you: open an entry from
 a **real** repository, edit it, submit it, and read the pull request GitHub
-actually received. Everything below runs on your own machine against your own
+actually received. Everything below runs in your own browser against your own
 repository, with your own token.
 
 It is worth doing, and not as a formality. The first time it was run it found
@@ -24,27 +24,49 @@ What you are checking, in order of how much it matters:
    point of the workflow.
 3. The frontmatter block is byte-identical when you did not touch it.
 
-Budget twenty minutes.
+**The CMS is two surfaces and this guide uses both.** `/admin` lists
+collections, entries and pull requests and edits the frontmatter; the words
+of an entry are written on the site's **own published page**, with the
+site's real template and real stylesheet around it. So the fullest version
+of this exercise wants a deployed site as well as a repository — section 3
+gives you both a way to get one and a way to do without.
+
+Budget twenty minutes, or forty if you are deploying a site from scratch.
 
 ## 1. A repository to edit
 
-Any repository with a markdown file in it will do. If you want one that also
-builds and deploys, so you can watch the merge appear on a real site,
+Any repository with a markdown file in it will do, but a repository that is
+also a **deployed site** will do much more, because that is where the body of
+an entry is edited.
+
 [`jamesjnadeau/ContentTools-test`](https://github.com/jamesjnadeau/ContentTools-test)
-is an Astro site with one post, a `public/cms-config.yml` already written, and
-both GitHub Pages and Netlify wired up. Fork it, or copy its
-`public/cms-config.yml` into your own. It lives under `public/` because Astro
-copies only that directory into the build; at the repository root it is a 404
-on the deployed site.
+is one: an Astro site with one post, deployed to GitHub Pages and Netlify from
+a single build, with the whole CMS vendored into it. Fork it and connect the
+fork to Netlify (or let its GitHub Pages workflow run) and you have the
+complete arrangement in a few minutes:
 
-That repository also **deploys the shell with the site**, at
-[`/admin/`](https://genuine-cocada-82e6e2.netlify.app/admin/), vendored from
-this one by its `scripts/sync-cms.sh`. If you fork it you can skip sections 3
-and 4 entirely and sign in there instead — the rest of this guide reads the
-same.
+| in the fork | what it is |
+|---|---|
+| `public/cms-config.yml` | the config both halves read — already written |
+| `public/cms/` | the vendored `shell.js`, `edit.js`, chunks and assets |
+| `public/admin/index.html` | the management screens, at `/admin/` |
+| `src/layouts/BaseLayout.astro` | the one `<script>` tag, on every page |
 
-You need push access, and the repository must have at least one commit on its
-default branch.
+It lives under `public/` because Astro copies only that directory into the
+build; at the repository root it is a 404 on the deployed site.
+
+If you fork it, **skip sections 3 and 4** and sign in at your deployment's
+`/admin/` instead. Everything else reads the same. Two values in
+`public/cms-config.yml` are about *that* repository rather than yours and
+need changing: `backend.repo`, and `site.preview`, which names the Netlify
+site that builds your pull requests.
+
+Using your own repository instead is fine, and section 3 covers running the
+CMS locally against it. You then get the admin half in full and the in-page
+half against a stand-in page rather than your real site.
+
+Either way you need push access, and at least one commit on the default
+branch.
 
 ## 2. A fine-grained token
 
@@ -69,7 +91,7 @@ in the editor.
 Copy the token. You will paste it once, into the shell's sign-in field; it is
 held in `sessionStorage` and forgotten when you close the tab.
 
-## 3. Run the shell
+## 3. Run it locally (skip if you forked the test site)
 
 ```
 git clone https://github.com/jamesjnadeau/ContentTools.git
@@ -82,6 +104,25 @@ npm run dev
 **http://127.0.0.1:8931/**, which redirects to `/app/` — the shipped
 application, unmodified. It is the same page `test/golden/shell-dist.spec.mjs`
 drives, so there is no separate demo to drift out of step with the product.
+
+**What a local run cannot give you is your own site's pages.** `/app/` is the
+management half; pressing Edit on an entry opens the URL that entry's
+`page:` template describes, and on your machine there is nothing there. Two
+ways round it, and they are honest about different things:
+
+- **`playground/first-post.html`** is a hand-written stand-in for a site page,
+  with the real `<script type="module" src="../dist/edit.js">` on it and
+  `playground/site-config.yml` describing it. Open it with `?cms-edit` and you
+  get the genuine in-page surface, against a page whose body is three
+  paragraphs somebody typed. It proves the script works; it proves nothing
+  about your templates.
+- **Run your own site's dev server too**, and set `site.base` and `page:` to
+  match what it serves — `http://localhost:4321` for Astro, and so on. Then the
+  Edit button genuinely opens your page. You will need the CMS's `dist/` copied
+  into your site's static directory for the `<script>` tag to resolve; see
+  [deploying it](in-page.md#deploying-it).
+
+For the first time through, forking the test site is less work than either.
 
 ## 4. Point it at your repository
 
@@ -98,6 +139,11 @@ backend:
   repo: you/your-site
   branch: main
 
+site:
+  # Omit for a site at the root. A GitHub Pages project site says
+  # `base: /your-site`.
+  preview: https://deploy-preview-{{pr}}--your-site.netlify.app
+
 media:
   folder: public/images
   publicPath: /images
@@ -109,14 +155,27 @@ collections:
     create: true
     delete: true
     extension: md
+    page: /blog/{{slug}}/
+    body: article.post-body
     fields:
       - {name: title, widget: string, required: true}
       - {name: date, widget: date, required: true}
 ```
 
-Two things worth getting right the first time, because both fail later rather
-than here:
+Four things worth getting right the first time, because all of them fail
+later rather than here:
 
+- **`page:` and `body:` are what make the Edit button work.** `page` maps a
+  slug to the URL its entry is published at, and back; `body` is the selector
+  for the element on that page holding the rendered markdown — and **nothing
+  else**, because the editor replaces that element's children. Point it at a
+  page wrapper and pressing Edit replaces your site's layout with a post. Leave
+  both out and the entry screen simply says there is no page to edit on, which
+  is a fine place to start from.
+- **`site.preview`** is how a *draft* is editable at all. A new post and a post
+  under review are both absent from the live site, so the live URL cannot show
+  them. Without it the Edit link falls back to the live page and the entry
+  screen says plainly that it is doing so.
 - **`media.publicPath` must carry your site's base path.** On a GitHub Pages
   *project* site the whole site is served under `/<RepoName>/`, so an image
   committed to `public/images/x.png` is reachable at
@@ -130,8 +189,9 @@ Reload the page after editing the config; it is fetched at boot.
 
 ## 5. Sign in
 
-Open **http://127.0.0.1:8931/**. The gate names your repository and the two
-permissions above. Paste the token and press Sign in.
+Open `/admin/` on your deployment, or **http://127.0.0.1:8931/** if you are
+running locally. The gate names your repository and the two permissions
+above. Paste the token and press Sign in.
 
 The gate does not just store it: it calls `GET /repos/{owner}/{name}` and
 checks the answer, so a token scoped to the wrong repository, or one that can
@@ -147,30 +207,52 @@ cannot see, even when it exists), or read-only.
 
 Click your collection in the left nav, then a post. You should see:
 
-- the **frontmatter form** at the top, populated from the real file — the
-  title in a text field, the date in a date control, and so on, one widget per
-  declared field;
-- the **body** below it, rendered as editable content;
-- the editor's floating **toolbox**, bottom right.
+- the **frontmatter form**, populated from the real file — the title in a text
+  field, the date in a date control, and so on, one widget per declared field;
+- **Submit for review**, which commits whatever the form changed;
+- **Edit**, which opens the entry's published page.
 
-The toolbox is `position: fixed` chrome, so it floats over the page rather
-than sitting in the layout. It defaults to the bottom-right corner, which
-clears the shell's controls and both frontmatter fields — but a long entry's
-text runs underneath it. Drag it by the grip at its top if it is in your way;
-the position is remembered in `localStorage` under `ct-toolbox-position`, so
-that costs you one drag, once, in that browser.
+There is no body here and no toolbox. `/admin` is a management application:
+the entry list, what is in review, create and delete, and the frontmatter.
+The words are written on the page, which is the next step.
 
-## 7. Edit one paragraph, and only one
+If **Edit** is missing or greyed, the config is why — no `page:` on the
+collection, or no `site` block at all. The screen says which.
 
-This is the step the whole exercise is about. Change a few words in a single
+## 7. Edit one paragraph, and only one, on the page
+
+Press **Edit**. It opens the entry's published page in a new tab — the live
+site for a published entry, the pull request's deploy preview for one already
+under review — with your token handed over on the URL fragment, taken off
+again before anything else loads, so the new tab is signed in on arrival.
+
+What you should see is **your site**: your template, your stylesheet, your
+header and footer, with the post's body editable in place and a bar across
+the bottom carrying the frontmatter fields and **Submit for review**.
+
+- If the bar says *this page is not an entry*, `page:` does not describe this
+  URL.
+- If it says it **found** some other element, `body:` is pointing at the wrong
+  one — it names what it found, in the shape of a selector, which is also the
+  answer to the question you are about to ask.
+- If it says nobody is signed in, the token did not cross. That happens if you
+  opened the link with a middle click or by copying it: the `href` carries no
+  secret on purpose, so only an ordinary click hands one over.
+
+The editor's floating **toolbox** is `position: fixed`, so it floats over the
+page rather than sitting in the layout, bottom right. Drag it by the grip at
+its top if it is in your way; the position is remembered in `localStorage`
+under `ct-toolbox-position`, so that costs you one drag, once, in that browser.
+
+Now the step the whole exercise is about. Change a few words in a **single**
 paragraph in the middle of the post — not the first one, and leave the
 headings, the lists, any code blocks and the frontmatter alone.
 
-Then press **Submit**.
+Then press **Submit for review**, on the bar.
 
 ## 8. Read the diff
 
-The shell links to the pull request it opened. Open it on GitHub and look at
+The bar links to the pull request it opened. Open it on GitHub and look at
 **Files changed**.
 
 What you should see:
@@ -197,16 +279,21 @@ you actually edited, and it is why the diff above is "one hunk" rather than
 
 With the pull request open, the parts worth exercising:
 
-- **Save again.** Edit the same entry a second time and Submit. It should add
-  a commit to the *same* branch and *not* open a second pull request — and the
-  second diff should still be one hunk. (This is the case where a shell that
-  re-parsed the file after saving would silently corrupt it.)
-- **Reopen it.** Navigate away and back. The shell reads the entry from its
-  in-flight branch, not from the base, so you see your own unmerged work
-  rather than the published version.
-- **Insert an image.** Use the image tool in the toolbox. The bytes are staged
-  in memory and committed *with* the entry, in one commit, so an abandoned
-  edit leaves nothing behind.
+- **Save again.** Edit the same paragraph a second time and Submit. It should
+  add a commit to the *same* branch and *not* open a second pull request — and
+  the second diff should still be one hunk. (This is the case where a surface
+  that re-parsed the file after saving would silently corrupt it.)
+- **Reopen it from `/admin`.** Go back to the entry screen and press Edit
+  again. Now that a pull request is open, the link goes to its **deploy
+  preview** rather than to the live site — the live site is built from the base
+  branch and does not have your change — and the page you land on reads the
+  entry from the in-flight branch, so you see your own unmerged work.
+- **Edit a frontmatter field from the bar**, and check the diff again: the
+  block should change in exactly the one line you touched, with comments, key
+  order and quoting everywhere else preserved.
+- **Insert an image.** Use the image tool in the toolbox, on the page. The
+  bytes are staged in memory and committed *with* the entry, in one commit, so
+  an abandoned edit leaves nothing behind.
 - **Move it through review.** The **Review** screen lists every open `cms/*`
   pull request across collections and moves each between draft, in review and
   ready.
@@ -221,9 +308,15 @@ browser, review on GitHub, publish by merging.
 
 ## If something goes wrong
 
-Errors land on the page, not the console. The shell has one guard that routes
-everything it catches through a description function into a `role="alert"`
-region, so if a screen looks idle after you pressed something, the message is
+Errors land on the page, not the console — on both surfaces, and for slightly
+different reasons. The shell has one guard routing everything it catches
+through a description function into a `role="alert"` region. The in-page
+script never throws at all: it runs on a published page every reader
+downloads, so an uncaught error there is a site that looks broken to somebody
+who is not even editing — every failure, including the three that are
+somebody's mistake, lands in the bar instead.
+
+So if a screen or a bar looks idle after you pressed something, the message is
 on it.
 
 The three worth recognising:

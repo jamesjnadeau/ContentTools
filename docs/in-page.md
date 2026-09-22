@@ -23,7 +23,15 @@ else** — 1.36 kB gzipped, with a budget that fails the build at 1.5 kB —
 and everything behind that decision is behind a dynamic `import()`. The editor, the markdown parser, the GitHub client and
 the config loader arrive only for somebody who is actually editing.
 
-A reader downloads this file, asks `sessionStorage` two questions, and
+That 1.36 kB is **two files and two requests**, and it is worth stating
+that way rather than as one number: `edit.js` itself and one small shared
+chunk under `dist/chunks/`, which holds the storage keys and the handoff
+parser. The budget measures the pair, so the figure is honest — but a
+deployment that copies `edit.js` without its chunk ships a page that 404s
+on an import, which is the reason to say it out loud here rather than only
+in the budget file.
+
+A reader downloads those two, asks `sessionStorage` two questions, and
 downloads nothing more.
 
 One thing in it is not a decision, and it is worth naming rather than
@@ -182,7 +190,126 @@ says so:
 which is also what a copied link or a middle-clicked one gets, because
 the `href` deliberately carries no secret.
 
-## Still to come
+## Deploying it
 
-- **The deployment walkthrough** — where to put `dist/`, what a real site's
-  config looks like end to end, and the test site it is proved against.
+Copy `dist/` to the static host that serves the site, put one tag on every
+page, and add three keys to the config. There is no build step and no
+server: the site is still whatever it was, with a script on it.
+
+### What travels
+
+```
+your-host/
+  cms-config.yml                  <- yours: the repository, the collections
+  admin/index.html                <- app/index.html: the management screens
+  cms/
+    edit.js                       <- the script on the site's own pages
+    shell.js                      <- what /admin/ loads
+    chunks/*.js                   <- BOTH of the above import from here
+    content-tools-content.min.css <- edit.js links this itself
+    images/                       <- icons.woff and four SVGs
+```
+
+One folder for both entry points, which is not just tidiness: `shell.js`
+and `edit.js` share most of their graph — the library, the editor element,
+the markdown parser — so splitting them across two folders ships two copies
+of it and warms two caches for one page.
+
+Three things in that tree fail quietly if they are missed.
+
+- **The chunks.** Their filenames are **content-hashed**. Copy a new build
+  over the top of an old folder and the previous chunks stay behind while
+  the entries import the new names — a 404 on an import of a file nobody
+  touched, at runtime, in the browser, long after whoever deployed it
+  stopped looking. Delete the folder and copy, rather than copying over.
+- **`content-tools-content.min.css`.** `dist/edit.js` links this itself, at
+  a URL worked out from its own location — it is the only file on this side
+  of the dynamic import that knows where `dist/` is, which is also why it
+  has to sit **beside** `edit.js` rather than anywhere else. Without it the
+  editor comes up and none of the editing affordances do.
+- **`images/`.** That stylesheet references five of them. Four are drop
+  indicators and the video placeholder, and their absence is visible. The
+  fifth is `icons.woff`, and its absence is not: the face registers in
+  `error` state, the editor sees a face named `icon` already there and
+  skips its own data-URI fallback, and every tool in the toolbox renders as
+  a tofu box.
+
+### The tag
+
+```html
+<script type="module" src="/cms/edit.js"></script>
+```
+
+On **every** page, in the template that wraps the site — not only on the
+pages that are entries. Restricting it saves a reader nothing (the whole
+cost is the two requests above) and it breaks the behaviour that makes the
+thing feel like part of the site: a signed-in author keeps the editor as
+they move from page to page.
+
+The script finds its config at `/cms-config.yml`. A site served under a
+path prefix — a GitHub Pages project site, anything behind a subdirectory —
+has to say where it really is:
+
+```html
+<meta name="cms:config" content="/my-project/cms-config.yml">
+```
+
+### The config, end to end
+
+Three keys beyond what [the shell](shell.md) needs, and each is a different
+kind of mistake if it is wrong:
+
+```yaml
+site:
+  # The prefix the built site is served under. Omit it for a site at the
+  # root. Held apart from `page` because one build can be served at two
+  # prefixes: it is STRIPPED when a page asks which entry it is showing,
+  # and ADDED when /admin builds a link.
+  base: /my-project
+  # A pull request's deploy preview. Without it, an unpublished entry has
+  # no page that shows it -- the live site is built from the base branch.
+  preview: https://deploy-preview-{{pr}}--example.netlify.app
+
+collections:
+  - name: blog
+    folder: src/content/blog
+    # Which URL this collection's entries are published at, both ways.
+    page: /blog/{{slug}}/
+    # The element on that page holding the rendered body, and NOTHING
+    # else. The editor replaces its children.
+    body: article.post-body
+```
+
+Leave `site` out entirely and nothing breaks: `/admin` still manages
+drafts and pull requests, it simply offers no link to a page and says so.
+
+### Checking it worked
+
+Open a published entry with `?cms-edit` on the end, signed out. You should
+get the bar, saying **Found `article.post-body`** and that nobody is signed
+in. That one request checks the three things most likely to be wrong — the
+script loaded, the config parsed, and the `page`/`body` pair describes this
+site — without needing a token at all, which is the point of the bar
+answering before authentication rather than after.
+
+Then press the button once from `/admin`, with a token, and watch the
+toolbox appear. A lazy chunk that 404s from a badly-deployed `dist/` fails
+nowhere until somebody asks for the editor.
+
+### The site it is proved against
+
+[`jamesjnadeau/ContentTools-test`](https://github.com/jamesjnadeau/ContentTools-test)
+is an Astro site with one post, deployed to GitHub Pages **and** Netlify
+from one build, with the CMS vendored into it by a script. It is the
+arrangement described above, running: `public/cms-config.yml` carries the
+three keys, `src/layouts/BaseLayout.astro` carries the tag, and
+`src/pages/blog/[...slug].astro` wraps the rendered body in the element
+`body:` names.
+
+It is also where the two-prefix problem is real rather than hypothetical —
+the same build answers at `/ContentTools-test/` on Pages and at `/` on
+Netlify — which is why `site.base` is a key of its own instead of being
+folded into `page`.
+
+[The round trip, by hand](round-trip.md) walks through editing an entry on
+it, or on a repository of your own.
