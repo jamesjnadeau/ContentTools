@@ -58,6 +58,18 @@ el.editorApp.toolbox().tools();   // [['bold']]
 That is deliberate. A constraint a consumer can step around by setting a property is a default,
 not a constraint.
 
+A tool of your own is filtered the same way, because the profile allows names rather than
+excluding them. To let one through, set a widened profile on the element. That is a decision
+you make on purpose, not a side effect of `tools`:
+
+```js
+import {MARKDOWN_PROFILE, allowTools} from '@jamesjnadeau/content-tools';
+
+el.profile = allowTools(MARKDOWN_PROFILE, ['strike']);
+```
+
+See [custom-tools.md](custom-tools.md) for what such a tool may write.
+
 **The styles and code tabs** of the properties dialog. CSS classes and raw HTML are both ways of
 producing output markdown cannot express, so neither is offered; the dialog opens on its
 attributes tab instead.

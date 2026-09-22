@@ -101,7 +101,8 @@ The five attributes above are mirrored as properties (`regions`, `namingProp`, `
 
 | Property | Type | Notes |
 |---|---|---|
-| `tools` | `string[][]` | Toolbox layout; reaches a mounted toolbox immediately |
+| `tools` | `string[][]` | Toolbox layout; reaches a mounted toolbox immediately. Filtered by the profile |
+| `profile` | `ConstraintProfile \| null` | Replaces the profile `mode` names; `null` (default) lets `mode` decide. Rebuilds a booted editor. See [custom-tools.md](custom-tools.md) |
 | `fixtureTest` | `(el: Element) => boolean` | Which elements are fixtures |
 | `stylePalette` | `ContentTools.Style[]` | Reset-then-add, because `StylePalette.add()` is global and append-only |
 | `imageUploader` | `(dialog) => void` | Sets `ContentTools.IMAGE_UPLOADER` while connected |
@@ -109,7 +110,7 @@ The five attributes above are mirrored as properties (`regions`, `namingProp`, `
 | `editorApp` | readonly | The `EditorApp` this element is driving, or `null`. A new one per boot. **Unstable** |
 | `state`, `busy` | readonly | As above |
 
-All four settable properties use the upgrade-property pattern, so assigning before the element
+All the settable properties use the upgrade-property pattern, so assigning before the element
 upgrades works:
 
 ```js

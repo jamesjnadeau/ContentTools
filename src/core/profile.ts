@@ -207,6 +207,45 @@ export function filterToolGroups(
 }
 
 /**
+ * A copy of `profile` that also allows the tools named in `names`.
+ *
+ * For a consumer's own tool -- something stowed on `ContentTools.ToolShelf`
+ * under a name no built-in profile knows -- which `filterToolGroups` would
+ * otherwise drop without a word. A profile with no tool allow-list already
+ * allows everything, so it comes back as it is.
+ *
+ * Only the TOOL list widens. Paste, the properties dialog and the tag
+ * allow-list are untouched, and in markdown mode that is the point: the
+ * tool is trusted to produce only what the serializer can write, and
+ * everything else stays constrained. The name gets a suffix so a widened
+ * profile never passes for the built-in one it came from.
+ */
+export function allowTools(
+    profile: ConstraintProfile,
+    names: Iterable<string>
+): ConstraintProfile {
+    if (!profile.tools) {
+        return profile;
+    }
+    const tools = new Set(profile.tools);
+    const added = [];
+    for (const name of names) {
+        if (!tools.has(name)) {
+            tools.add(name);
+            added.push(name);
+        }
+    }
+    if (!added.length) {
+        return profile;
+    }
+    return Object.freeze({
+        ...profile,
+        name: `${profile.name}+${added.join('+')}`,
+        tools: Object.freeze(tools) as ReadonlySet<string>
+    });
+}
+
+/**
  * The attribute names that must be hidden from the properties dialog for
  * `tagName`, given the deny-list the dialog already applies.
  *

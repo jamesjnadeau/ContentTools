@@ -1,4 +1,5 @@
 import {create, mount, unmount, assertNoResidue} from './helpers.js';
+import {HTML_PROFILE, MARKDOWN_PROFILE, allowTools} from '../../../src/core/profile.js';
 
 /* The four settable properties, and the styles a consumer supplies.
  *
@@ -296,6 +297,112 @@ describe('mode', () => {
         el.setAttribute('mode', 'markdown');
         expect(el.editorApp.profile().name).toBe('html');
         el.stop();
+    });
+});
+
+/* `profile`, for a consumer's own tool.
+ *
+ * Markdown mode allows the 17 built-in tools by name, so a tool stowed
+ * under any other name is dropped from `tools` without a word. `profile`
+ * is how a consumer widens that, and `allowTools` is the helper that
+ * builds one.
+ */
+describe('profile', () => {
+
+    let el;
+    afterEach(async () => { if (el) await unmount(el); el = null; assertNoResidue(); });
+
+    class Stamp extends ContentTools.Tool {
+        static initClass() {
+            ContentTools.ToolShelf.stow(this, 'test-stamp');
+            this.label = 'Stamp';
+            this.icon = 'stamp';
+        }
+    }
+    Stamp.initClass();
+
+    const WIDENED = allowTools(MARKDOWN_PROFILE, ['test-stamp']);
+
+    it('is null, and mode decides, until one is set', () => {
+        el = mount({mode: 'markdown'});
+        expect(el.profile).toBe(null);
+        expect(el.editorApp.profile()).toBe(MARKDOWN_PROFILE);
+    });
+
+    it('lets a custom tool through markdown mode', () => {
+        el = create({mode: 'markdown'});
+        el.profile = WIDENED;
+        el.tools = [['bold', 'test-stamp', 'video']];
+        document.body.appendChild(el);
+        expect(el.editorApp.profile()).toBe(WIDENED);
+        expect(el.editorApp.toolbox().tools()).toEqual([['bold', 'test-stamp']]);
+    });
+
+    it('filters tools set after boot against it too', () => {
+        el = create({mode: 'markdown'});
+        el.profile = WIDENED;
+        document.body.appendChild(el);
+        el.tools = [['test-stamp', 'align-left']];
+        expect(el.editorApp.toolbox().tools()).toEqual([['test-stamp']]);
+    });
+
+    it('drops the custom tool without one', () => {
+        el = mount({mode: 'markdown'});
+        el.tools = [['bold', 'test-stamp']];
+        expect(el.editorApp.toolbox().tools()).toEqual([['bold']]);
+    });
+
+    it('rebuilds a booted editor when it changes', () => {
+        el = mount({mode: 'markdown'});
+        el.tools = [['bold', 'test-stamp']];
+        el.profile = WIDENED;
+        expect(el.editorApp.profile()).toBe(WIDENED);
+        expect(el.editorApp.toolbox().tools()).toEqual([['bold', 'test-stamp']]);
+
+        el.profile = null;
+        expect(el.editorApp.profile()).toBe(MARKDOWN_PROFILE);
+        expect(el.editorApp.toolbox().tools()).toEqual([['bold']]);
+    });
+
+    it('refuses to change while editing', () => {
+        el = mount({mode: 'markdown'});
+        el.start();
+        el.profile = WIDENED;
+        expect(el.editorApp.profile()).toBe(MARKDOWN_PROFILE);
+        el.stop();
+    });
+
+    it('is taken back when assigned before the element upgraded', () => {
+        el = create({mode: 'markdown'});
+        Object.defineProperty(el, 'profile', {
+            value: WIDENED, writable: true, configurable: true, enumerable: true
+        });
+        document.body.appendChild(el);
+        expect(Object.prototype.hasOwnProperty.call(el, 'profile')).toBe(false);
+        expect(el.editorApp.profile()).toBe(WIDENED);
+    });
+});
+
+describe('allowTools', () => {
+
+    it('widens the tool list and nothing else', () => {
+        const widened = allowTools(MARKDOWN_PROFILE, ['test-stamp']);
+        expect(widened.tools.has('test-stamp')).toBe(true);
+        expect(widened.tools.size).toBe(MARKDOWN_PROFILE.tools.size + 1);
+        expect(widened.tags).toBe(MARKDOWN_PROFILE.tags);
+        expect(widened.attributes).toBe(MARKDOWN_PROFILE.attributes);
+        expect(widened.name).toBe('markdown+test-stamp');
+        expect(Object.isFrozen(widened)).toBe(true);
+        // The built-in profile is not touched.
+        expect(MARKDOWN_PROFILE.tools.has('test-stamp')).toBe(false);
+    });
+
+    it('hands back a profile that already allows everything', () => {
+        expect(allowTools(HTML_PROFILE, ['test-stamp'])).toBe(HTML_PROFILE);
+    });
+
+    it('hands back the same profile when there is nothing new', () => {
+        expect(allowTools(MARKDOWN_PROFILE, ['bold'])).toBe(MARKDOWN_PROFILE);
     });
 });
 

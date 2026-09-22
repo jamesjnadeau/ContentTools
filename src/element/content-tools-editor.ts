@@ -26,11 +26,15 @@
  * "Right-hand side of 'instanceof' is not an object" the moment anyone
  * calls start() -- which is exactly what the built-artifact smoke test
  * caught, because every source-level test loads the full library anyway. */
-import {ContentTools, ContentEdit} from '../index.js';
+import {ContentTools, ContentEdit, HTMLString} from '../index.js';
+
+/** The library this element drives, for the in-page surface to stow tools on. */
+export const LIBRARY = Object.freeze({ContentTools, ContentEdit, HTMLString});
 
 import ShadowRootContext from '../core/shadow-root-context.js';
 import {rootContext, setRootContext} from '../core/root-context.js';
 import {PROFILES, filterToolGroups} from '../core/profile.js';
+import type {ConstraintProfile} from '../core/profile.js';
 import {chromeStyles, hostStyles, chromeStyleSheet, hostStyleSheet} from './styles.js';
 import {ensureIconFont} from './icon-font.js';
 import {createEventBridge} from './event-bridge.js';
@@ -70,7 +74,7 @@ const DEFAULT_FIXTURE_TEST = (domElement: Element) =>
     domElement.hasAttribute('data-fixture');
 
 const SETTABLE_PROPERTIES = ['tools', 'fixtureTest', 'stylePalette',
-                             'imageUploader', 'regionElements'];
+                             'imageUploader', 'regionElements', 'profile'];
 
 export class ContentToolsEditor extends HTMLElement {
 
@@ -89,6 +93,7 @@ export class ContentToolsEditor extends HTMLElement {
     declare _imageUploader: ((dialog: any) => void) | null | undefined;
     declare _inert: boolean;
     declare _previousContext: any;
+    declare _profile: ConstraintProfile | null;
     declare _reflect: () => void;
     declare _shadow: ShadowRoot;
     declare _slot: HTMLSlotElement;
@@ -132,6 +137,7 @@ export class ContentToolsEditor extends HTMLElement {
         this._adopted = [];
         this._fallbackStyles = [];
         this._tools = null;
+        this._profile = null;
         this._regionElements = null;
         this._fixtureTest = null;
         // `undefined` means "never set", which is different from an explicit
@@ -275,8 +281,27 @@ export class ContentToolsEditor extends HTMLElement {
             // Filtered, for the same reason _boot() filters it: a profile
             // a consumer can step around is a default, not a constraint.
             this._app.toolbox().tools(
-                filterToolGroups(PROFILES[this.mode], value)
+                filterToolGroups(this._activeProfile(), value)
                 );
+        }
+    }
+
+    /**
+     * A profile in place of the one `mode` names; null lets `mode` decide.
+     * How a custom tool gets past markdown mode -- see allowTools(). Read
+     * by init(), so a change reboots the element, as `mode` does.
+     */
+    get profile(): ConstraintProfile | null {
+        return this._profile;
+    }
+
+    set profile(value: ConstraintProfile | null) {
+        if (value === this._profile) {
+            return;
+        }
+        this._profile = value;
+        if (this._booted) {
+            this._reboot('profile');
         }
     }
 
@@ -606,7 +631,7 @@ export class ContentToolsEditor extends HTMLElement {
         /* Before init(), which is where the toolbox is built from the
            profile-filtered tool list and where the regions are parsed and
            constrained. */
-        this._app.profile(PROFILES[this.mode]);
+        this._app.profile(this._activeProfile());
 
         this._app.init(
             this._regionSource(),
@@ -619,7 +644,7 @@ export class ContentToolsEditor extends HTMLElement {
             /* Filtered too. A profile a consumer can step around by setting
                `tools` is not a constraint, it is a default. */
             this._app.toolbox().tools(
-                filterToolGroups(PROFILES[this.mode], this._tools)
+                filterToolGroups(this._activeProfile(), this._tools)
                 );
         }
 
@@ -695,6 +720,11 @@ export class ContentToolsEditor extends HTMLElement {
 
         this.removeAttribute('busy');
         this.setAttribute('state', 'dormant');
+    }
+
+    /** The profile in force: the one assigned, or the one `mode` names. */
+    _activeProfile(): ConstraintProfile {
+        return this._profile ?? PROFILES[this.mode];
     }
 
     _reboot(attribute: string): void {

@@ -40,6 +40,7 @@ export {
     HTML_PROFILE,
     MARKDOWN_PROFILE,
     PROFILES,
+    allowTools,
     filterToolGroups,
     restrictedAttributes
 } from './core/profile.js';
