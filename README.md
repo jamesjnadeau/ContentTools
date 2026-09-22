@@ -15,10 +15,11 @@ request — with authors signing in either with their own token or through a
 GitHub App — and an entry's words are written on the site's own published
 page rather than in an admin screen.**
 
-**`2.0.0-rc.1`** is the current release, and it carries the first five.
-Milestone 6 — the in-page editing surface — is on `master` and unreleased.
+**`2.0.0-rc.2`** is the current release, and it carries all six.
 
-`rc.1` exists because `rc.0` could not write. The GitHub client sent the
+It is a release candidate rather than `2.0.0` for one reason, and it is not
+a code one: the three checks below are still owed by hand. `rc.0` should not
+be pointed at anyone — it could not write. The GitHub client sent the
 versioned `application/vnd.github+json` as its request **Content-Type**,
 which GitHub accepts on `Accept` and refuses on a body, so every write —
 blob, tree, commit, ref, pull request, label — came back `415`. Reads were
@@ -35,7 +36,7 @@ somebody's git history should have written to one before it calls itself
 final.
 
 Not yet on npm. `npm pack` produces the artifact; the tag is
-`v2.0.0-rc.1`.
+`v2.0.0-rc.2`.
 
 | | |
 |---|---|
@@ -324,12 +325,14 @@ a decision rather than a gap. A preview needs the site's own templates and
 stylesheet to be worth anything, and Milestone 6 got them the only way that
 is actually true: by editing the real page.
 
-What is left is a release — everything past Milestone 1 is unpublished.
-Three things are owed by hand rather than by test, and are listed in
-[docs/auth.md](docs/auth.md) and the plan: the write half of the round trip
-against a real repository, a real GitHub App signing a real person in, and
-whether the App web flow enforces PKCE rather than merely accepting it.
-[docs/round-trip.md](docs/round-trip.md) is how to run the first.
+What is left is not code. `2.0.0-rc.2` carries every milestone, but the
+package has never been published to npm, and three things are owed by hand
+rather than by test — they are listed in [docs/auth.md](docs/auth.md) and
+the plan: the write half of the round trip against a real repository, a real
+GitHub App signing a real person in, and whether the App web flow enforces
+PKCE rather than merely accepting it.
+[docs/round-trip.md](docs/round-trip.md) is how to run the first, and the
+`415` above is what it found the last time somebody did.
 
 ## Licence
 
