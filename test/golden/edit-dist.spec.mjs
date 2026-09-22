@@ -111,18 +111,18 @@ test('the flag brings up the surface, lazy chunk and all', async ({page}) => {
     await expect(panel(page)).toHaveClass(/ct-edit--signed-out/);
 });
 
-test('it names the entry and the element it will edit', async ({page}) => {
+test('it names the entry, and says where to sign in', async ({page}) => {
     await page.goto(`${PAGE}?cms-edit`);
 
-    /* The entry comes from the URL through the collection's `page`
-       template, and the element from its `body` selector. Naming both is
-       the point: `article.post` is the post, and `div.layout` would be
-       the whole site's layout about to be replaced by one. */
+    /* The entry, which comes from the URL through the collection's
+       `page` template -- and nothing about which element the `body`
+       selector matched, which is a deployment question the bar used to
+       answer on every page for every author. */
     await expect(panel(page).locator('.ct-edit__title'))
         .toHaveText('blog/first-post');
     await expect(panel(page).locator('.ct-edit__hint'))
-        .toHaveText('Found article.post, matched by article.post. Sign in '
-            + 'through the admin screens in this tab, then come back to edit it.');
+        .toHaveText('Sign in through the admin screens in this tab, then '
+            + 'come back to edit it.');
 });
 
 test('it reads the config the PAGE names, not the one at the root',
@@ -250,7 +250,7 @@ test('the switch brings the editor up over the site\'s own element',
     await expect(post.locator('p.ce-element').first()).toBeVisible();
     await expect(post.locator('h2.ce-element')).toHaveCount(1);
     await expect(panel(page).locator('.ct-edit__hint'))
-        .toContainText('Editing article.post');
+        .toHaveText('Editing this page.');
 });
 
 test('the cross hands the reader\'s own page back', async ({page}) => {

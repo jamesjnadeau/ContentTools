@@ -235,9 +235,8 @@ said which page to edit; it did not say to start.
 
 - If the bar says *this page is not an entry*, `page:` does not describe this
   URL.
-- If it says it **found** some other element, `body:` is pointing at the wrong
-  one — it names what it found, in the shape of a selector, which is also the
-  answer to the question you are about to ask.
+- If it says nothing on the page matches your selector, `body:` is why — the
+  message quotes what it looked for.
 - If it says nobody is signed in, the token did not cross. That happens if you
   opened the link with a middle click or by copying it: the `href` carries no
   secret on purpose, so only an ordinary click hands one over.
@@ -248,6 +247,13 @@ ends the session keeping what you typed; the cross ends it putting the
 reader's own page back. Neither of them writes anything to the repository —
 that is still **Submit for review**, on the bar, and it stays available
 after a tick so you can turn the tools off and still commit.
+
+**This press is also the check on `body:`.** Look at what became editable.
+It should be the post and nothing around it — if your header, your nav or
+your footer picks up hover outlines, `body:` is pointing at a wrapper, and
+the editor replaces that element's children. Press the red cross, fix the
+selector, and reload; the cross puts the page back exactly as it was, so
+finding this out costs nothing.
 
 The editor's floating **toolbox** is `position: fixed`, so it floats over the
 page rather than sitting in the layout, bottom right. Drag it by the grip at

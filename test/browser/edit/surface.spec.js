@@ -492,20 +492,19 @@ describe('open, mounting', function() {
         expect(session.editor.children).toHaveLength(0);
     });
 
-    it('names the element, and says how to start', async function() {
-        /* Naming the element is the deployment check this bar exists
-           for, and it is owed BEFORE anybody presses anything -- the
-           editor replaces that element's children, so `main.layout`
-           where `article.post` was meant is the difference between a
-           post and the site's whole layout, read at a glance. */
+    it('names the entry, and says how to start', async function() {
+        /* The entry, not the element. Which element the `body` selector
+           matched is a deployment question, and answering it here
+           charged every author on every page for it; `no-body` is where
+           the selector is still reported, because that is the
+           arrangement where somebody needs to act on it. */
         const it = sitePage();
         const {bar} = await mount(it);
 
         expect(said(bar).className).toContain('ct-edit--editing');
         expect(said(bar).title).toBe('blog/hello');
         expect(said(bar).hint).toBe(
-            'Found article#post-1.post, matched by article.post. '
-            + 'Press the pencil, top left of the page, to edit it.');
+            'Press the pencil, top left of the page, to edit it.');
     });
 
     it('round-trips the file byte for byte when nothing is edited',
@@ -749,8 +748,7 @@ describe('open, mounting', function() {
 
             pressEdit(session);
 
-            expect(said(bar).hint)
-                .toBe('Editing article#post-1.post, matched by article.post.');
+            expect(said(bar).hint).toBe('Editing this page.');
         });
 
         it('keeps what was typed when the tick is pressed', async function() {

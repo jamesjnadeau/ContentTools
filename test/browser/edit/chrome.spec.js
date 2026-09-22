@@ -2,7 +2,7 @@
    somebody else, and eight answers it must not confuse. */
 
 import {
-    BAR_TAG, buildBar, describe as describeState, describeElement
+    BAR_TAG, buildBar, describe as describeState
 } from '../../../src/edit/chrome.js';
 
 /** What the two controls were asked to do. */
@@ -89,27 +89,54 @@ describe('describeState', function() {
             .toBe('no body');
     });
 
-    it('names the ELEMENT it found, not only the selector', function() {
-        /* The point of the ready state. The editor replaces that
-           element's children, so `main.layout` where the operator meant
-           `article.post` is the difference between editing a post and
-           replacing the site's layout with one -- and it is readable
-           here, before anybody presses anything. */
+    it('never names the element it matched', function() {
+        /* `Found main.layout, matched by main.` is what these four
+           states used to say, and it is a deployment check charged to
+           every author on every page. Asserted across all four at once,
+           because removing it from three of them and leaving the fourth
+           is how it comes back. The selector is still reported where it
+           is actually diagnostic -- `no-body`, when nothing matched. */
         const body = document.createElement('main');
         body.className = 'layout';
+        const located = {entry, selector: 'main.layout', body};
+        const states = [
+            {kind: 'ready', ...located},
+            {kind: 'editing', ...located, started: false},
+            {kind: 'editing', ...located, started: true},
+            {kind: 'signed-out', ...located}
+        ];
 
-        const said = describeState({kind: 'ready', entry, selector: 'main', body});
+        for (const state of states) {
+            const {hint} = describeState(state);
+            expect(hint).not.toContain('main');
+            expect(hint).not.toContain('layout');
+            expect(hint).not.toContain('matched by');
+        }
+    });
 
-        expect(said.hint).toBe('Found main.layout, matched by main.');
+    it('says the entry is ready, and nothing else', function() {
+        /* `ready` is what `resolve` returns rather than a state the bar
+           is ever pushed -- `surface.ts` goes straight on to
+           `signed-out` or `loading`. Pinned anyway, because the case has
+           to exist for the switch to be exhaustive and an unasserted
+           string is one nobody would notice going wrong. */
+        const body = document.createElement('article');
+        body.className = 'post';
+
+        const said = describeState({
+            kind: 'ready', entry, selector: 'article.post', body
+        });
+
+        expect(said.title).toBe('blog/hello');
+        expect(said.hint).toBe('Ready to edit.');
     });
 
     it('says how to start while the switch is off', function() {
         /* `editing` means the entry is OPEN, not that anybody is
            editing it -- the ignition switch decides that, and until it
            is pressed the page is still showing exactly what the site
-           published. A bar claiming "Editing article.post" over the
-           reader's own markup would be describing something that has
-           not happened. */
+           published. A bar claiming to be editing over the reader's own
+           markup would be describing something that has not happened. */
         const body = document.createElement('article');
         body.className = 'post';
 
@@ -120,17 +147,10 @@ describe('describeState', function() {
 
         expect(said.title).toBe('blog/hello');
         expect(said.hint).toBe(
-            'Found article.post, matched by article.post. '
-            + 'Press the pencil, top left of the page, to edit it.');
+            'Press the pencil, top left of the page, to edit it.');
     });
 
-    it('names the element while it is editing, in the same words',
-       function() {
-        /* The same clause as every other state that has found the
-           element, deliberately: the bar never stops at a decision, it
-           reports where the decision LED, and somebody reading it a
-           minute later should not have to work out which of two
-           spellings means the editor is up. */
+    it('says it is editing only once it is', function() {
         const body = document.createElement('article');
         body.className = 'post';
 
@@ -140,15 +160,11 @@ describe('describeState', function() {
         });
 
         expect(said.title).toBe('blog/hello');
-        expect(said.hint).toBe('Editing article.post, matched by article.post.');
+        expect(said.hint).toBe('Editing this page.');
     });
 
-    it('names the element for somebody who is not signed in', function() {
-        /* Said in TWO states rather than one, and this is the reason:
-           checking a `body` selector is a deployment job, and making
-           somebody obtain a token before they can see whether they
-           pointed it at the right element makes the check cost an
-           afternoon instead of a page load. */
+    it('sends somebody who is not signed in to the admin screens',
+       function() {
         const body = document.createElement('article');
         body.className = 'post';
 
@@ -157,12 +173,11 @@ describe('describeState', function() {
         });
 
         expect(said.title).toBe('blog/hello');
-        expect(said.hint).toContain('Found article.post, matched by .post.');
-        /* And where to go. A credential field on a published page is
-           the thing every phishing guide warns about, so the answer is
-           a sentence pointing at the admin screens rather than an
-           input. */
-        expect(said.hint).toContain('admin');
+        /* A credential field on a published page is the thing every
+           phishing guide warns about, so the answer is a sentence
+           pointing at the admin screens rather than an input. */
+        expect(said.hint).toBe('Sign in through the admin screens in this '
+            + 'tab, then come back to edit it.');
     });
 
     it('says which version it is reading, while it reads', function() {
@@ -188,29 +203,6 @@ describe('describeState', function() {
 
         expect(said.title).toBe('blog/hello');
         expect(said.hint).toBe('the network said no');
-    });
-});
-
-describe('describeElement', function() {
-
-    it('is selector-shaped, so it is also the answer to the next question',
-       function() {
-        const el = document.createElement('article');
-        el.id = 'post-3';
-        el.className = 'prose wide';
-
-        expect(describeElement(el)).toBe('article#post-3.prose.wide');
-    });
-
-    it('leaves out what is not there', function() {
-        expect(describeElement(document.createElement('main'))).toBe('main');
-    });
-
-    it('says the id when there are no classes', function() {
-        const el = document.createElement('div');
-        el.id = 'content';
-
-        expect(describeElement(el)).toBe('div#content');
     });
 });
 

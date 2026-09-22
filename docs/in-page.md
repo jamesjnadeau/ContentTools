@@ -123,23 +123,25 @@ load.
 |---|---|
 | The config did not parse | Says so, naming the offending path verbatim |
 | This page is not an entry | Says so. Most pages of most sites are not |
-| The `body` selector found nothing | Says so, and names the element it did find |
-| Nobody is signed in | Names the element too, and says where to sign in |
+| The `body` selector found nothing | Says so, quoting the selector it looked for |
+| Nobody is signed in | Says where to sign in |
 | Reading | Says it is reading the version **on the branch** |
-| Open, switch off | Names the element, and says to press the pencil |
+| Open, switch off | Says to press the pencil |
 | Editing | The frontmatter fields, and **Submit for review** |
 | A read that failed | Says why |
 
-Two of those name the element, and saying it twice is deliberate. Checking
-a `body` selector is a deployment job, and asking somebody to obtain a token
-before they can see whether they pointed it at the right element makes the
-check cost an afternoon instead of a page load.
+It says the entry — `blog/hello` — and what state it is in, and **nothing
+about which element the `body` selector matched**. It used to: `Found
+article#post-1.post, matched by article.post.` was on the bar in four of
+those states. That is a deployment question charged to every author on
+every page, for ever, and it reads as debug output because it is.
 
-It matters because the editor **replaces that element's children**, so a
-`body:` pointing at the page wrapper replaces the site's whole layout with a
-post. The bar names what it found in the shape of a selector —
-`article#post-3.prose` — because that is also the answer to the question the
-person reading it is about to ask.
+Where the selector is still reported is the arrangement that actually
+breaks: nothing matched, and the bar quotes what it looked for. For the
+other mistake — a selector that matches the **wrong** element — see
+[Checking it worked](#checking-it-worked). It is worth checking, because
+the editor replaces that element's children, so a `body:` pointing at the
+page wrapper replaces the site's whole layout with a post.
 
 The bar never starts the editor. That is the switch's job, below.
 
@@ -332,18 +334,25 @@ drafts and pull requests, it simply offers no link to a page and says so.
 ### Checking it worked
 
 Open a published entry with `?cms-edit` on the end, signed out. You should
-get the bar, saying **Found `article.post-body`** and that nobody is signed
-in. That one request checks four things most likely to be wrong — the
+get the bar, naming the entry — `blog/first-post` — and saying where to
+sign in. That one request checks four things most likely to be wrong: the
 script loaded, the lazy chunk beside it loaded (a `dist/` deployed with
-`chunks/` missing 404s there and nowhere else), the config parsed, and the
-`page`/`body` pair describes this site — without needing a token at all,
-which is the point of the bar answering before authentication rather than
-after.
+`chunks/` missing 404s there and nowhere else), the config parsed, and
+`page:` maps this URL to an entry. No token needed, which is the point of
+the bar answering before authentication rather than after. If instead it
+says nothing on the page matches your selector, `body:` is why, and the
+message quotes what it looked for.
 
-Then press the pencil once, top left, with a token in the tab, and watch
-the toolbox appear and the body become editable. Until that press the page
-is still the one the site published, whether you typed `?cms-edit` yourself
-or arrived from `/admin`.
+Then press the pencil once, top left, with a token in the tab. The toolbox
+appears and the body becomes editable — **and this is the check on `body:`
+itself**. Look at what went editable. It should be the post and nothing
+around it; if your header, your nav or your footer has hover outlines on
+it, `body:` is pointing at a wrapper and the editor would replace the lot.
+Press the red cross and the page goes back exactly as it was, so the check
+costs nothing and writes nothing.
+
+Until that press the page is still the one the site published, whether you
+typed `?cms-edit` yourself or arrived from `/admin`.
 
 ### The site it is proved against
 

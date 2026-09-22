@@ -348,43 +348,33 @@ export function describe(state: BarState): {title: string; hint: string} {
             return {title: 'Not an editable page', hint: state.hint};
         case 'no-body':
             return {title: entryName(state.entry), hint: state.hint};
+        /* NONE of the four below names the element the `body` selector
+           matched, and they used to. `Found article#post-1.post, matched
+           by article.post.` is a deployment check written where an
+           author reads it, so every one of them paid for a line that
+           answered a question they had not asked -- on every page, every
+           time. The check itself is not lost: `no-body` still says
+           exactly what was looked for when nothing matched, which is the
+           arrangement that actually breaks. What went is the reassurance
+           in the case where it worked. */
         case 'ready':
-            /* Naming the ELEMENT, not just the selector, is the whole
-               point of this one and the three below. The editor replaces
-               that element's children, so a `body` selector that matches
-               the page wrapper replaces the site's layout with a post --
-               and `main.layout` against `article.post` is the
-               difference, read at a glance, before anybody presses
-               anything. */
-            return {
-                title: entryName(state.entry),
-                hint: `Found ${found(state)}.`
-            };
+            return {title: entryName(state.entry), hint: 'Ready to edit.'};
         case 'editing':
             return {
                 title: entryName(state.entry),
-                /* Two sentences rather than one, and which one is first
-                   is the point: with the switch off the page is still
-                   the site's own, so the honest lead is what was found
-                   -- the same words `signed-out` and `ready` use, for
-                   the same reason. "Editing" is claimed only once
-                   something is. */
+                /* "Editing" is claimed only once something is. With the
+                   switch off the page is still the site's own, and a bar
+                   saying otherwise over the reader's markup is the one
+                   thing this state must not do. */
                 hint: state.started
-                    ? `Editing ${found(state)}.`
-                    : `Found ${found(state)}. Press the pencil, top left `
-                        + 'of the page, to edit it.'
+                    ? 'Editing this page.'
+                    : 'Press the pencil, top left of the page, to edit it.'
             };
         case 'signed-out':
             return {
                 title: entryName(state.entry),
-                /* The element is named HERE TOO, and that is the point of
-                   saying it in two states rather than one: checking a
-                   `body` selector is a deployment job, and asking somebody
-                   to obtain a token before they can see whether they
-                   pointed it at the right element makes the check cost an
-                   afternoon instead of a page load. */
-                hint: `Found ${found(state)}. Sign in through the admin `
-                    + 'screens in this tab, then come back to edit it.'
+                hint: 'Sign in through the admin screens in this tab, then '
+                    + 'come back to edit it.'
             };
         case 'loading':
             return {
@@ -400,25 +390,7 @@ export function describe(state: BarState): {title: string; hint: string} {
     }
 }
 
-/** `article.post, matched by article.post` -- the element and its rule. */
-function found(state: Located): string {
-    return `${describeElement(state.body)}, matched by ${state.selector}`;
-}
-
 /** `blog/hello`: the spelling `<meta name="cms:entry">` uses. */
 function entryName(entry: PageEntry): string {
     return `${entry.collection}/${entry.slug}`;
-}
-
-/**
- * An element as a selector-shaped description: `article#post-3.prose`.
- *
- * Selector-shaped rather than prose because it is also the answer to the
- * question the person reading it is about to ask -- what they should have
- * written in `body:` instead.
- */
-export function describeElement(el: Element): string {
-    const id = el.id === '' ? '' : `#${el.id}`;
-    const classes = [...el.classList].map(name => `.${name}`).join('');
-    return `${el.tagName.toLowerCase()}${id}${classes}`;
 }
