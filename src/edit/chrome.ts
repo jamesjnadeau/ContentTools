@@ -305,6 +305,13 @@ export function buildBar(doc: Document, handlers: BarHandlers): Bar {
             const editing = state.kind === 'editing' ? state : null;
             actions.hidden = editing === null;
 
+            /* Gone whilst the pencil is showing. The pencil IS the
+               page's affordance in that state, and a bar beside it
+               saying "press the pencil" is the same thing said twice
+               over somebody's published page. Every other state keeps
+               the bar: those are the answers that land nowhere else. */
+            node.hidden = editing !== null && !editing.started;
+
             /* Asked of the form rather than of the state, because
                `update` is where "there is nothing to show" is decided
                -- a collection with no fields and a form that was closed
@@ -413,7 +420,10 @@ function draggable(
     };
 
     const contain = () => {
-        if (!node.isConnected || !node.style.left) {
+        /* Not while hidden: a box with no layout measures 0 by 0 at
+           the origin, and containing THAT would drop the bar in the
+           top left corner. */
+        if (!node.isConnected || node.hidden || !node.style.left) {
             return;
         }
         /* The document element's client size rather than `innerWidth`,

@@ -708,6 +708,61 @@ describe('the bar\u2019s editing controls', function() {
     });
 });
 
+describe('the bar beside the pencil', function() {
+
+    /** Whether the bar takes up any room on the page. */
+    const shown = bar => getComputedStyle(bar.node).display !== 'none';
+
+    it('is gone whilst the pencil is showing', function() {
+        /* Checked by computed display rather than the attribute, for
+           the reason the controls are: `:host { display: block }` is an
+           author rule, and it outranks the UA's `[hidden]`. */
+        const bar = onPage();
+        bar.update(editing({started: false}));
+
+        expect(shown(bar)).toBe(false);
+    });
+
+    it('comes back when the pencil is pressed, and goes at the tick',
+       function() {
+        const bar = onPage();
+        bar.update(editing({started: false}));
+
+        bar.update(editing({started: true}));
+        expect(shown(bar)).toBe(true);
+
+        bar.update(editing({started: false}));
+        expect(shown(bar)).toBe(false);
+    });
+
+    it('still says every answer that has no pencil beside it', function() {
+        const bar = onPage();
+        for (const state of [
+            {kind: 'broken', hint: 'x'},
+            {kind: 'not-an-entry', hint: 'x'},
+            {kind: 'no-body', entry, hint: 'x'}
+        ]) {
+            bar.update(state);
+            expect(shown(bar)).toBe(true);
+        }
+    });
+
+    it('keeps its dropped position across being hidden', function() {
+        /* A hidden box measures 0 by 0 at the origin, and a resize
+           landing while it is hidden must not contain it to there. */
+        localStorage.setItem(BAR_POSITION_KEY, '60,40');
+        const bar = onPage();
+        bar.update(editing({started: false}));
+
+        window.dispatchEvent(new Event('resize'));
+        bar.update(editing({started: true}));
+
+        const rect = bar.node.getBoundingClientRect();
+        expect(rect.left).toBe(60);
+        expect(rect.top).toBe(40);
+    });
+});
+
 describe('dragging the bar', function() {
 
     /** Press on the grip at (x, y), move to (toX, toY), and let go. */

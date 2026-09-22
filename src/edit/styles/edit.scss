@@ -59,6 +59,12 @@ $edit-panel-background: #f7f7f7;
     z-index: $base-z-index - 1;
 }
 
+// `hidden` on the host, which the UA's own `[hidden]` rule cannot manage:
+// that is user-agent origin, and the `display: block` above is author.
+:host([hidden]) {
+    display: none;
+}
+
 // The toolbox's panel, rule for rule (see ../../styles/ui/_toolbox.scss),
 // so the two floating things an author can drag about the page read as one
 // family. Copied rather than shared: that sheet is nested under `.ct-widget`
