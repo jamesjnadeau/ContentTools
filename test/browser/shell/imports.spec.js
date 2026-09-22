@@ -1,7 +1,7 @@
 /* The two editing surfaces' dependency direction, enforced rather than
  * commented.
  *
- * Three silent failures live here, and none of them produces an error at
+ * Four silent failures live here, and none of them produces an error at
  * the point of the mistake:
  *
  * 1. A `src/shell/`, `src/entry/` or `src/edit/` file importing another
@@ -27,7 +27,12 @@
  *    ends at `ct-saved`; one import the other way and the editor entry
  *    starts carrying a CMS.
  *
- * 3. A bare package in either. "Vanilla, no new runtime dependency" is a
+ * 3. One surface importing the other. They are siblings that share what
+ *    they share by reaching DOWN, so a sideways import puts the shell's
+ *    screens inside the script every reader of every page downloads --
+ *    visible only as a size budget nobody reads carefully that week.
+ *
+ * 4. A bare package in either. "Vanilla, no new runtime dependency" is a
  *    decision, and a decision nobody checks is a preference.
  *
  * The technique is test/browser/cms/leaf.spec.js's, including its
@@ -146,6 +151,35 @@ describe('the editing surfaces import one way only', () => {
                    up into a screen. */
                 if (resolved.includes('/src/shell/')
                     || resolved.includes('/src/edit/')) {
+                    violations.push(`${path} -> ${specifier}`);
+                }
+            }
+        }
+        expect(violations).toEqual([]);
+    });
+
+    it('keeps the two surfaces out of each other', () => {
+        /* Siblings, not layers. They share `src/entry/`, `src/cms/` and
+           `src/core/` by reaching DOWN into them -- which is why the
+           frontmatter form lives in `src/entry/` rather than being
+           imported out of the shell's views. One import sideways and
+           `dist/edit.js`, the file every reader of every page
+           downloads, starts carrying the collection browser.
+
+           Rule 2 above does not cover this: it asks what BELOW imports,
+           and neither surface is below the other. */
+        const violations = [];
+        for (const [path, source] of Object.entries(ABOVE)) {
+            /* `src/entry/` is in ABOVE too and is neither surface, so
+               it falls through both and is skipped -- it is held to the
+               direction rule by being in BELOW instead. */
+            let other = null;
+            if (path.includes('/src/shell/')) { other = '/src/edit/'; }
+            if (path.includes('/src/edit/')) { other = '/src/shell/'; }
+            if (other === null) { continue; }
+            for (const specifier of specifiersOf(source)) {
+                if (!specifier.startsWith('.')) { continue; }
+                if (resolveFrom(path, specifier).includes(other)) {
                     violations.push(`${path} -> ${specifier}`);
                 }
             }

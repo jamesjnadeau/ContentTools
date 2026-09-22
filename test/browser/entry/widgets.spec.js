@@ -1,6 +1,6 @@
 import {
     buildWidget, DEFAULT_WIDGETS, UNKNOWN_WIDGET
-} from '../../../src/shell/widgets/index.js';
+} from '../../../src/entry/widgets.js';
 
 /* One control per declared field, and the thing each one has to get right
  * is not rendering an input.
@@ -222,7 +222,7 @@ describe('the frontmatter widgets', function() {
            commas, and guessing commas writes one tag containing all of
            them. */
         const {node} = build({widget: 'list'}, ['one']);
-        expect(node.querySelector('.ct-cms__field-hint').textContent)
+        expect(node.querySelector('.ct-field__hint').textContent)
             .toBe('One per line.');
     });
 
@@ -232,7 +232,7 @@ describe('the frontmatter widgets', function() {
         /* The preview IS the widget. A wrong path is invisible in a text
            box until somebody looks at the built site. */
         const {node, control} = build({widget: 'image'}, '/images/a.png');
-        const preview = node.querySelector('.ct-cms__field-preview');
+        const preview = node.querySelector('.ct-field__preview');
         expect(preview.hidden).toBe(false);
         expect(preview.getAttribute('src')).toBe('/images/a.png');
 
@@ -247,7 +247,7 @@ describe('the frontmatter widgets', function() {
 
     it('hides the preview when there is no path to show', function() {
         const {node} = build({widget: 'image'}, undefined);
-        expect(node.querySelector('.ct-cms__field-preview').hidden).toBe(true);
+        expect(node.querySelector('.ct-field__preview').hidden).toBe(true);
     });
 
     // --- the unknown widget -------------------------------------------------
@@ -282,7 +282,7 @@ describe('the frontmatter widgets', function() {
     it('names the field that is required and empty', function() {
         const {widget, node} = build({required: true, label: 'Headline'}, undefined);
         expect(widget.validate()).toBe('Headline is required.');
-        const error = node.querySelector('.ct-cms__field-error');
+        const error = node.querySelector('.ct-field__error');
         expect(error.hidden).toBe(false);
         expect(error.textContent).toBe('Headline is required.');
     });
@@ -295,7 +295,7 @@ describe('the frontmatter widgets', function() {
         widget.validate();
         control.value = 'now filled';
         expect(widget.validate()).toBe(null);
-        const error = node.querySelector('.ct-cms__field-error');
+        const error = node.querySelector('.ct-field__error');
         expect(error.hidden).toBe(true);
         expect(error.textContent).toBe('');
     });
@@ -325,7 +325,7 @@ describe('the frontmatter widgets', function() {
         /* The asterisk and the attribute, so the accessibility tree
            agrees with what is on screen. */
         const {node, control} = build({required: true, label: 'Headline'}, undefined);
-        expect(node.querySelector('.ct-cms__field-label').textContent)
+        expect(node.querySelector('.ct-field__label').textContent)
             .toBe('Headline *');
         expect(control.hasAttribute('required')).toBe(true);
     });
@@ -333,14 +333,14 @@ describe('the frontmatter widgets', function() {
     it('ties the label to its control', function() {
         // Without this the label is decoration: clicking it focuses nothing.
         const {node, control} = build({name: 'weight', widget: 'number'}, 1);
-        const label = node.querySelector('.ct-cms__field-label');
+        const label = node.querySelector('.ct-field__label');
         expect(label.getAttribute('for')).toBe(control.id);
         expect(control.id).not.toBe('');
     });
 
     it('starts with the error hidden', function() {
         const {node} = build({required: true}, undefined);
-        expect(node.querySelector('.ct-cms__field-error').hidden).toBe(true);
+        expect(node.querySelector('.ct-field__error').hidden).toBe(true);
     });
 
     // --- the registry -----------------------------------------------------------------

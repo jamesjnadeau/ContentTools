@@ -79,7 +79,7 @@ import type {Gate} from './views/gate.js';
 import {buildStatus} from './views/status.js';
 import type {Status} from './views/status.js';
 import type {EntryState} from './views/entry.js';
-import type {FieldsState} from './views/fields.js';
+import type {FieldsState} from '../entry/fields.js';
 import {fieldDefaults, isMergeable} from '../entry/frontmatter.js';
 /* The open entry itself -- the editor over it, what a save would write,
    and the commit -- lives outside the shell, because the in-page editing
@@ -87,8 +87,8 @@ import {fieldDefaults, isMergeable} from '../entry/frontmatter.js';
    exactly the same answers. See src/entry/session.ts. */
 import {EntrySession, REGION} from '../entry/session.js';
 import type {Pending} from '../entry/session.js';
-import {DEFAULT_WIDGETS} from './widgets/index.js';
-import type {WidgetFactory} from './widgets/index.js';
+import {DEFAULT_WIDGETS} from '../entry/widgets.js';
+import type {WidgetFactory} from '../entry/widgets.js';
 
 export {EDITOR_SLOT, EDITOR_TAG, ContentToolsEditor};
 

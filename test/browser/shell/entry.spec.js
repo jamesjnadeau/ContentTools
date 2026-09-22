@@ -615,7 +615,7 @@ describe('the entry editor', function() {
 
         /** The control the widget for `name` rendered. */
         function control(el, name) {
-            return el.shadowRoot.querySelector(`#ct-cms-field-${name}`);
+            return el.shadowRoot.querySelector(`#ct-field-${name}`);
         }
 
         it('shows a control per declared field, holding what the file says',
@@ -722,7 +722,7 @@ describe('the entry editor', function() {
             const broken = '---\ntitle: "unterminated\n  - nope\n---\n\nWorld.\n';
             const {el, fake} = await openWith(broken);
             expect(control(el, 'title')).toBe(null);
-            expect(el.shadowRoot.querySelector('.ct-cms__fields').textContent)
+            expect(el.shadowRoot.querySelector('.ct-fields').textContent)
                 .toContain('could not be read');
 
             retype(el, 'Goodbye.', 0);
@@ -738,7 +738,7 @@ describe('the entry editor', function() {
             // `---\n- one\n- two\n---` parses fine and is a list.
             const {el} = await openWith('---\n- one\n- two\n---\n\nWorld.\n');
             expect(control(el, 'title')).toBe(null);
-            return expect(el.shadowRoot.querySelector('.ct-cms__fields').textContent)
+            return expect(el.shadowRoot.querySelector('.ct-fields').textContent)
                 .toContain('not a set of keys');
         });
 
@@ -747,7 +747,7 @@ describe('the entry editor', function() {
             // The panel is hidden rather than rendering a "Details"
             // heading over nothing.
             const {el} = await openWith(SEED, []);
-            expect(el.shadowRoot.querySelector('.ct-cms__fields').hidden).toBe(true);
+            expect(el.shadowRoot.querySelector('.ct-fields').hidden).toBe(true);
             return expect(control(el, 'title')).toBe(null);
         });
 
@@ -786,7 +786,7 @@ describe('the entry editor', function() {
             expect(alertText(el)).toContain('One field needs filling in');
             expect(alertText(el)).toContain('title is required.');
             // The message is also under the field it belongs to.
-            expect(el.shadowRoot.querySelector('.ct-cms__field-error').hidden)
+            expect(el.shadowRoot.querySelector('.ct-field__error').hidden)
                 .toBe(false);
             // And nothing was written.
             return expect(fake.history(BRANCH).length).toBe(0);

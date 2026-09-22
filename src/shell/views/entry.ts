@@ -14,8 +14,8 @@
  */
 import {h} from '../../core/render.js';
 import {formatRoute} from '../routes.js';
-import {buildFields} from './fields.js';
-import type {FieldsState, FieldsView, WidgetSource} from './fields.js';
+import {buildFields} from '../../entry/fields.js';
+import type {FieldsState, FieldsView, WidgetSource} from '../../entry/fields.js';
 import {statusOf} from '../../cms/status.js';
 import type {Entry} from '../../cms/repo.js';
 import type {EditorialStatus} from '../../cms/status.js';

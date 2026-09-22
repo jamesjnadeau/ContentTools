@@ -66,19 +66,19 @@ export function buildCreate(doc: Document, handlers: CreateHandlers): CreateView
     const heading = h(doc, 'h2', {class: 'ct-cms__heading'});
     const refusal = h(doc, 'p', {class: 'ct-cms__note'});
     const input = h(doc, 'input', {
-        class: 'ct-cms__field-input',
+        class: 'ct-field__input',
         id: 'ct-cms-new-title',
         type: 'text',
         autocomplete: 'off'
     }) as HTMLInputElement;
-    const preview = h(doc, 'p', {class: 'ct-cms__field-hint'});
+    const preview = h(doc, 'p', {class: 'ct-field__hint'});
     const submit = h(doc, 'button', {
         class: 'ct-cms__button',
         type: 'button'
     }, ['Create']) as HTMLButtonElement;
 
     const form = h(doc, 'div', {class: 'ct-cms__create-form'}, [
-        h(doc, 'label', {class: 'ct-cms__field-label', for: 'ct-cms-new-title'},
+        h(doc, 'label', {class: 'ct-field__label', for: 'ct-cms-new-title'},
           ['What is it called?']),
         input,
         preview,

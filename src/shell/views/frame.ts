@@ -23,7 +23,7 @@ import {buildMedia} from './media.js';
 import type {MediaHandlers, MediaState, MediaView} from './media.js';
 import {buildReview} from './review.js';
 import type {ReviewHandlers, ReviewState, ReviewView} from './review.js';
-import type {WidgetSource} from './fields.js';
+import type {WidgetSource} from '../../entry/fields.js';
 import {formatRoute} from '../routes.js';
 import type {Route} from '../routes.js';
 import type {Described} from '../errors.js';

@@ -77,7 +77,7 @@ function createButton(el) {
 }
 
 function previewText(el) {
-    return shadow(el).querySelector('.ct-cms__create-form .ct-cms__field-hint').textContent;
+    return shadow(el).querySelector('.ct-cms__create-form .ct-field__hint').textContent;
 }
 
 /** Press Submit and wait for the save to finish. */
@@ -350,8 +350,8 @@ describe('creating and deleting entries', function() {
             createButton(el).click();
             await until(() => editorOf(el) !== null, 'the editor');
 
-            expect(shadow(el).querySelector('#ct-cms-field-title').value).toBe('Untitled');
-            expect(shadow(el).querySelector('#ct-cms-field-draft').checked).toBe(true);
+            expect(shadow(el).querySelector('#ct-field-title').value).toBe('Untitled');
+            expect(shadow(el).querySelector('#ct-field-draft').checked).toBe(true);
 
             await until(() => editorOf(el).state === 'editing', 'the editor to start');
             retype(el, 'First post.', 0);

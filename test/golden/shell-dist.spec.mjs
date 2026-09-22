@@ -230,8 +230,8 @@ test('opening an entry, editing it, and submitting one reviewable line',
        so it is also the case that decides the assertion below: a widget
        reporting an untouched optional field as `''` would add a key to
        the block and rewrite the whole of it. */
-    await expect(shell(page).locator('#ct-cms-field-title')).toHaveValue('Hello');
-    await expect(shell(page).locator('#ct-cms-field-date')).toHaveValue('');
+    await expect(shell(page).locator('#ct-field-title')).toHaveValue('Hello');
+    await expect(shell(page).locator('#ct-field-date')).toHaveValue('');
 
     // Type into the body, the way a person does.
     const paragraph = editor.locator('[data-editable] p').first();
@@ -286,7 +286,7 @@ test('naming a new entry, writing it, and opening one pull request',
 
     // The filename, shown while it is typed rather than after the fact.
     await shell(page).locator('#ct-cms-new-title').fill('Hello World!');
-    await expect(shell(page).locator('.ct-cms__create-form .ct-cms__field-hint'))
+    await expect(shell(page).locator('.ct-cms__create-form .ct-field__hint'))
         .toHaveText('Saved as content/blog/hello-world.md');
     await shell(page).locator('.ct-cms__create-form .ct-cms__button').click();
 
@@ -764,14 +764,14 @@ test('the toolbox default clears the shell rather than landing on it',
             .shadowRoot.querySelector('.ct-toolbox');
         const named = {};
         /* The controls an author reaches for while an entry is open.
-           `.ct-cms__fields` rather than each input, because the fields
+           `.ct-fields` rather than each input, because the fields
            pane is the box that must stay clickable all the way across
            -- a widget covering only its right half is still covering
            a `select` or a wide text field somebody else configured. */
         for (const [name, selector] of [
             ['header', '.ct-cms__header'],
             ['the action row', '.ct-cms__entry-head'],
-            ['fields', '.ct-cms__fields']
+            ['fields', '.ct-fields']
         ]) {
             const el = root.querySelector(selector);
             /* A missing selector would make this test pass by having

@@ -1,5 +1,14 @@
 /* The frontmatter form, above the body the editor holds.
  *
+ * Beside `session.ts` rather than inside either surface, because both of
+ * them build this same form: the shell renders it above the editor under
+ * /admin, and the in-page script renders it inside the bar on the site's
+ * own page. The two look different and the CONTROLS must not -- a `date`
+ * that reports an unshowable value as cleared on one surface and leaves
+ * it alone on the other is a file that loses a key depending on where it
+ * was edited. So the markup and the "empty versus absent" rules are
+ * here, and each surface writes its own rules for the classes.
+ *
  * Built once per ENTRY and not once per render, and that is the whole
  * design. The frame re-renders on every state change -- a save starting,
  * a notice arriving -- and rebuilding the controls each time would
@@ -13,11 +22,11 @@
  * copy, and keying on that would rebuild the form -- losing focus --
  * every time somebody pressed Submit.
  */
-import {h} from '../../core/render.js';
-import {buildWidget, DEFAULT_WIDGETS} from '../widgets/index.js';
-import type {Widget, WidgetFactory} from '../widgets/index.js';
-import type {Field} from '../../cms/config.js';
-import type {FieldValues} from '../../entry/frontmatter.js';
+import {h} from '../core/render.js';
+import {buildWidget, DEFAULT_WIDGETS} from './widgets.js';
+import type {Widget, WidgetFactory} from './widgets.js';
+import type {Field} from '../cms/config.js';
+import type {FieldValues} from './frontmatter.js';
 
 export interface FieldsState {
     /** Changes when a different entry is loaded. */
@@ -51,10 +60,10 @@ export type WidgetSource = () => Readonly<Record<string, WidgetFactory>>;
 
 export function buildFields(doc: Document, registry: WidgetSource = () => DEFAULT_WIDGETS
         ): FieldsView {
-    const rows = h(doc, 'div', {class: 'ct-cms__field-rows'});
+    const rows = h(doc, 'div', {class: 'ct-fields__rows'});
     const note = h(doc, 'p', {class: 'ct-cms__note'});
-    const node = h(doc, 'section', {class: 'ct-cms__fields'}, [
-        h(doc, 'h3', {class: 'ct-cms__fields-heading'}, ['Details']),
+    const node = h(doc, 'section', {class: 'ct-fields'}, [
+        h(doc, 'h3', {class: 'ct-fields__heading'}, ['Details']),
         note,
         rows
     ]);

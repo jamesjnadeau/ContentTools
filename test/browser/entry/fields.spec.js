@@ -1,5 +1,5 @@
-import {buildFields} from '../../../src/shell/views/fields.js';
-import {DEFAULT_WIDGETS} from '../../../src/shell/widgets/index.js';
+import {buildFields} from '../../../src/entry/fields.js';
+import {DEFAULT_WIDGETS} from '../../../src/entry/widgets.js';
 
 /* The form as a whole: when it is rebuilt, when it refuses, and what it
  * reports.
@@ -192,7 +192,7 @@ describe('the frontmatter form', function() {
             data: {}
         }));
         expect(view.errors()).toEqual(['A is required.', 'B is required.']);
-        expect(view.node.querySelectorAll('.ct-cms__field-error:not([hidden])').length)
+        expect(view.node.querySelectorAll('.ct-field__error:not([hidden])').length)
             .toBe(2);
     });
 

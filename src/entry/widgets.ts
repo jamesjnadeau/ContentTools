@@ -1,5 +1,10 @@
 /* The frontmatter form: one control per declared field.
  *
+ * Shared by both surfaces -- see the head of ./fields.ts. The class
+ * names are surface-neutral for that reason: `ct-field__input` is
+ * styled by the shell's sheet under /admin and by the in-page bar's
+ * sheet on the site's own page, and the markup is the same either way.
+ *
  * WHAT A WIDGET HAS TO GET RIGHT is not rendering an input, it is knowing
  * the difference between "empty" and "absent". A markdown file's
  * frontmatter is hand-written and hand-read, and most fields most sites
@@ -21,8 +26,8 @@
  * the key passes through untouched. Falling back to `string` would let a
  * structured field be flattened to text and written back that way.
  */
-import {h} from '../../core/render.js';
-import type {Field} from '../../cms/config.js';
+import {h} from '../core/render.js';
+import type {Field} from '../cms/config.js';
 
 export interface Widget {
     readonly node: HTMLElement;
@@ -52,7 +57,7 @@ function wasSet(value: unknown): boolean {
 /** The label, the control, and room for an error under it. */
 function fieldRow(doc: Document, field: Field, control: HTMLElement,
                   extra: HTMLElement[] = []): {node: HTMLElement; error: HTMLElement} {
-    const id = `ct-cms-field-${field.name}`;
+    const id = `ct-field-${field.name}`;
     control.setAttribute('id', id);
     if (field.required) {
         /* The attribute as well as the label, so the browser and the
@@ -61,10 +66,10 @@ function fieldRow(doc: Document, field: Field, control: HTMLElement,
            nothing would otherwise consult the browser's opinion. */
         control.setAttribute('required', 'required');
     }
-    const error = h(doc, 'p', {class: 'ct-cms__field-error', role: 'alert'});
+    const error = h(doc, 'p', {class: 'ct-field__error', role: 'alert'});
     error.hidden = true;
-    const node = h(doc, 'div', {class: 'ct-cms__field'}, [
-        h(doc, 'label', {class: 'ct-cms__field-label', for: id},
+    const node = h(doc, 'div', {class: 'ct-field'}, [
+        h(doc, 'label', {class: 'ct-field__label', for: id},
           [field.required ? `${field.label} *` : field.label]),
         control,
         ...extra,
@@ -80,7 +85,7 @@ function requireFilled(field: Field, empty: boolean): string | null {
 
 function textLike(tag: 'input' | 'textarea', type?: string): WidgetFactory {
     return (doc, field, value) => {
-        const props: Record<string, string> = {class: 'ct-cms__field-input'};
+        const props: Record<string, string> = {class: 'ct-field__input'};
         if (type) {
             props.type = type;
         }
@@ -108,7 +113,7 @@ const textWidget = textLike('textarea');
 
 const numberWidget: WidgetFactory = (doc, field, value) => {
     const control = h(doc, 'input',
-                      {class: 'ct-cms__field-input', type: 'number'}) as HTMLInputElement;
+                      {class: 'ct-field__input', type: 'number'}) as HTMLInputElement;
     const had = wasSet(value);
     /* Only a real number goes in, and `shown` records whether one did.
        A `number` field over a file holding `weight: "3"` or `weight:
@@ -139,7 +144,7 @@ const numberWidget: WidgetFactory = (doc, field, value) => {
 
 const booleanWidget: WidgetFactory = (doc, field, value) => {
     const control = h(doc, 'input',
-                      {class: 'ct-cms__field-check', type: 'checkbox'}) as HTMLInputElement;
+                      {class: 'ct-field__check', type: 'checkbox'}) as HTMLInputElement;
     const had = wasSet(value);
     control.checked = value === true;
     const {node} = fieldRow(doc, field, control);
@@ -158,7 +163,7 @@ const booleanWidget: WidgetFactory = (doc, field, value) => {
 function dateLike(type: 'date' | 'datetime-local'): WidgetFactory {
     return (doc, field, value) => {
         const control = h(doc, 'input',
-                          {class: 'ct-cms__field-input', type}) as HTMLInputElement;
+                          {class: 'ct-field__input', type}) as HTMLInputElement;
         const had = wasSet(value);
         control.value = textOfDate(value, type);
         /* Asked of the CONTROL, after the assignment, because it is the
@@ -207,7 +212,7 @@ function textOfDate(value: unknown, type: 'date' | 'datetime-local'): string {
 }
 
 const selectWidget: WidgetFactory = (doc, field, value) => {
-    const control = h(doc, 'select', {class: 'ct-cms__field-input'}) as HTMLSelectElement;
+    const control = h(doc, 'select', {class: 'ct-field__input'}) as HTMLSelectElement;
     const had = wasSet(value);
     /* A blank first choice only when the key is absent. Offering it for a
        field that HAS a value would make "none of these" reachable by
@@ -229,10 +234,10 @@ const selectWidget: WidgetFactory = (doc, field, value) => {
 
 const listWidget: WidgetFactory = (doc, field, value) => {
     const control = h(doc, 'textarea',
-                      {class: 'ct-cms__field-input'}) as HTMLTextAreaElement;
+                      {class: 'ct-field__input'}) as HTMLTextAreaElement;
     const had = wasSet(value);
     control.value = Array.isArray(value) ? value.join('\n') : '';
-    const hint = h(doc, 'p', {class: 'ct-cms__field-hint'}, ['One per line.']);
+    const hint = h(doc, 'p', {class: 'ct-field__hint'}, ['One per line.']);
     const {node, error} = fieldRow(doc, field, control, [hint]);
     const lines = () => control.value.split('\n').map(line => line.trim())
         .filter(line => line !== '');
@@ -253,7 +258,7 @@ const listWidget: WidgetFactory = (doc, field, value) => {
 
 const imageWidget: WidgetFactory = (doc, field, value) => {
     const control = h(doc, 'input',
-                      {class: 'ct-cms__field-input', type: 'text'}) as HTMLInputElement;
+                      {class: 'ct-field__input', type: 'text'}) as HTMLInputElement;
     const had = wasSet(value);
     control.value = had && value !== null ? String(value) : '';
     /* The preview IS the widget. Getting the path wrong is the common
@@ -265,7 +270,7 @@ const imageWidget: WidgetFactory = (doc, field, value) => {
        deliberately no upload button either -- media has to travel in the
        same commit as the entry that references it, and only the editor's
        own dialog stages it that way. */
-    const preview = h(doc, 'img', {class: 'ct-cms__field-preview', alt: ''});
+    const preview = h(doc, 'img', {class: 'ct-field__preview', alt: ''});
     const paint = () => {
         preview.hidden = control.value === '';
         if (control.value !== '') {
@@ -284,12 +289,12 @@ const imageWidget: WidgetFactory = (doc, field, value) => {
 
 const unknownWidget: WidgetFactory = (doc, field, value) => {
     const control = h(doc, 'input', {
-        class: 'ct-cms__field-input',
+        class: 'ct-field__input',
         type: 'text',
         readonly: 'readonly'
     }) as HTMLInputElement;
     control.value = value === undefined || value === null ? '' : JSON.stringify(value);
-    const note = h(doc, 'p', {class: 'ct-cms__field-hint'},
+    const note = h(doc, 'p', {class: 'ct-field__hint'},
                    [`No widget called "${field.widget}". Shown as stored, and left alone.`]);
     const {node} = fieldRow(doc, field, control, [note]);
     return {
