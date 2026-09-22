@@ -1,5 +1,5 @@
 /* The bar, and the two things it has to survive: a page written by
-   somebody else, and four answers it must not confuse. */
+   somebody else, and eight answers it must not confuse. */
 
 import {
     BAR_TAG, buildBar, describe as describeState, describeElement
@@ -68,6 +68,69 @@ describe('describeState', function() {
         const said = describeState({kind: 'ready', entry, selector: 'main', body});
 
         expect(said.hint).toBe('Editing main.layout, matched by main.');
+    });
+
+    it('names the element while it is editing, in the same words', function() {
+        /* The same sentence as `ready`, deliberately: the bar never
+           stops at a decision, it reports where the decision LED, and
+           somebody reading it a minute later should not have to work
+           out which of two spellings means the editor is up. */
+        const body = document.createElement('article');
+        body.className = 'post';
+
+        const said = describeState({
+            kind: 'editing', entry, selector: 'article.post', body
+        });
+
+        expect(said.title).toBe('blog/hello');
+        expect(said.hint).toBe('Editing article.post, matched by article.post.');
+    });
+
+    it('names the element for somebody who is not signed in', function() {
+        /* Said in TWO states rather than one, and this is the reason:
+           checking a `body` selector is a deployment job, and making
+           somebody obtain a token before they can see whether they
+           pointed it at the right element makes the check cost an
+           afternoon instead of a page load. */
+        const body = document.createElement('article');
+        body.className = 'post';
+
+        const said = describeState({
+            kind: 'signed-out', entry, selector: '.post', body
+        });
+
+        expect(said.title).toBe('blog/hello');
+        expect(said.hint).toContain('Found article.post, matched by .post.');
+        /* And where to go. A credential field on a published page is
+           the thing every phishing guide warns about, so the answer is
+           a sentence pointing at the admin screens rather than an
+           input. */
+        expect(said.hint).toContain('admin');
+    });
+
+    it('says which version it is reading, while it reads', function() {
+        /* "the branch", not "the repository": the surprising part is
+           that the words about to replace what is on screen are the
+           ones under review rather than the ones this page was built
+           from. */
+        const said = describeState({
+            kind: 'loading', entry, selector: 'article',
+            body: document.createElement('article')
+        });
+
+        expect(said.title).toBe('blog/hello');
+        expect(said.hint).toBe('Reading the version on the branch...');
+    });
+
+    it('carries the hint for a read that failed, and still names the entry',
+       function() {
+        const said = describeState({
+            kind: 'failed', entry, selector: 'article',
+            body: document.createElement('article'), hint: 'the network said no'
+        });
+
+        expect(said.title).toBe('blog/hello');
+        expect(said.hint).toBe('the network said no');
     });
 });
 
@@ -178,6 +241,40 @@ describe('buildBar', function() {
 
         expect(bar.node.shadowRoot.adoptedStyleSheets.length).toBe(1);
         expect(getComputedStyle(panel).fontFamily).toContain('arial');
+    });
+
+    it('colours a failure as a failure, and a signed-out page not', function() {
+        /* Three states need somebody to go and change something and say
+           so in the colour this project already uses for a refusal.
+           `signed-out` deliberately does not: arriving at a page without
+           a token is a thing that simply happens, and colouring the
+           ordinary answer as a fault teaches an author to ignore the
+           colour. Computed, because the class name alone cannot see
+           whether any rule acts on it. */
+        const bar = onPage();
+        const title = bar.node.shadowRoot.querySelector('.ct-edit__title');
+        const body = document.createElement('article');
+        const located = {entry, selector: 'article', body};
+
+        bar.update({kind: 'failed', ...located, hint: 'x'});
+        const failed = getComputedStyle(title).color;
+
+        bar.update({kind: 'signed-out', ...located});
+        expect(getComputedStyle(title).color).not.toBe(failed);
+    });
+
+    it('says a read is in flight without animating anything', function() {
+        /* Not a spinner: an animation inside a shadow root on somebody's
+           published page is motion nobody asked for, and the bar is one
+           line that changes twice. */
+        const bar = onPage();
+        const hint = bar.node.shadowRoot.querySelector('.ct-edit__hint');
+        const body = document.createElement('article');
+
+        bar.update({kind: 'loading', entry, selector: 'article', body});
+
+        expect(getComputedStyle(hint).fontStyle).toBe('italic');
+        expect(getComputedStyle(hint).animationName).toBe('none');
     });
 
     it('is pinned to the viewport rather than laid out in the page', function() {

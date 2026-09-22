@@ -28,8 +28,14 @@ export interface PatAuthOptions {
      * refusal, and `authenticate()` rejects rather than carrying on with
      * nothing -- a client built around a missing token fails later, at a
      * request, where the error says 401 and not "you have not signed in".
+     *
+     * OPTIONAL, because a surface can want `currentToken()` and nothing
+     * else: the in-page script asks whether this tab is already signed in
+     * and must never put a credential field on somebody's published page.
+     * An adapter built without one refuses to authenticate, in the same
+     * words a refused prompt gets.
      */
-    prompt: () => string | null | Promise<string | null>;
+    prompt?: () => string | null | Promise<string | null>;
     /** Defaults to `sessionStorage`. */
     storage?: TokenStorage;
     /** Defaults to `content-tools:github-token`. */
@@ -47,7 +53,7 @@ export class NotAuthenticatedError extends Error {
 
 export class PatAuthAdapter implements AuthAdapter {
 
-    private readonly ask: () => string | null | Promise<string | null>;
+    private readonly ask: (() => string | null | Promise<string | null>) | undefined;
     private readonly key: string;
     private storage: TokenStorage;
 
@@ -79,7 +85,12 @@ export class PatAuthAdapter implements AuthAdapter {
            with a trailing newline about as often as not, and a bearer
            header with one in it fails as a 401 that says nothing about
            whitespace. */
-        const given = (await this.ask() ?? '').trim();
+        /* No prompt is a refusal, not a crash. Under
+           `strictNullChecks: false` an absent one arrives here as
+           `undefined` however carefully the caller was written, and
+           "this.ask is not a function" on an author's own blog post is
+           the worst available way to say nobody is signed in. */
+        const given = (this.ask ? await this.ask() ?? '' : '').trim();
         if (!given) {
             throw new NotAuthenticatedError();
         }

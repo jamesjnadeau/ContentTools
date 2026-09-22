@@ -241,10 +241,20 @@ export default [
            the two surfaces sharing one answer to what an entry is, and
            it is the right thing to pay -- two copies of that mapping are
            two places that can disagree about which entry a page is
-           showing. */
+           showing.
+
+           222 kB -> 224 kB the same way, and again for no shell code:
+           the in-page script now mounts an editor, so `EntrySession`,
+           the editor element and the markdown parser are all reached by
+           two entries instead of one and Rollup splits each into its own
+           chunk. `dist/shell.js` itself drops 143 kB -> 101 kB raw; the
+           closure grows 1.5 kB because five files gzipped apart do not
+           compress as well as two, and what this budget measures is the
+           bytes a page downloads. The published total is what it was;
+           only the boundaries moved. */
         name: 'shell entry + its chunks',
         path: closureOf('dist/shell.js'),
-        limit: '222 kB',
+        limit: '224 kB',
         gzip: true
     },
     {
@@ -271,24 +281,27 @@ export default [
 
            Measured as a set difference rather than a glob because this
            chunk shares `dist/chunks/` with the library -- see
-           `lazyClosureOf`. At this sub-phase it is the frame alone: the
-           config loader, the page-to-entry mapping and the bar, with no
-           editor and no markdown parser behind them yet. The next
-           commit mounts an editor and this number goes up by roughly
-           what `element` and `markdown` cost, exactly as the shell's
-           did; that rise is the editor arriving, and it should be
-           visible as its own line rather than folded into a total.
+           `lazyClosureOf`.
 
-           43.6 kB of the 52 is `yaml`, reached through `loadConfig`'s
-           own dynamic import -- the same parser `dist/cms.js` budgets
-           separately, and the same bargain: a site whose config is JSON
-           never fetches it, and one whose config is YAML fetches it once
-           per author rather than once per reader. The frame itself --
-           the bar, the page-to-entry mapping and the config schema -- is
-           the other 8.5 kB. */
+           53 kB -> 202 kB with the mount, and the rise is the editor
+           arriving: ~25 kB for the editor element, ~56 kB for the
+           library behind it, and ~98 kB of micromark, mdast and `yaml`
+           for the markdown round trip -- roughly the sum of the
+           `element` and `markdown` budgets, which is the same shape the
+           shell's number took at M5-3 and for the same reason. An
+           author editing on the site downloads what an author editing
+           under /admin downloads, because it is the same editor reading
+           the same bytes.
+
+           What matters is which side of the `import()` it is on. The
+           budget above -- `edit entry (every page)`, 1.5 kB -- is the
+           one a reader pays, and it did not move. This one is paid once
+           by the person who pressed Edit, and a jump HERE is only ever
+           news about the editor; a jump THERE would mean the decision
+           had stopped being a decision. */
         name: 'edit lazy surface',
         path: lazyClosureOf('dist/edit.js'),
-        limit: '53 kB',
+        limit: '202 kB',
         gzip: true
     },
     {

@@ -83,8 +83,26 @@ export async function boot(where: Window): Promise<void> {
         return;
     }
     const {open} = await import('./surface.js');
-    await open(where);
+    await open(where, {contentStyles: CONTENT_STYLES});
 }
+
+/**
+ * Where the content stylesheet is, worked out from where THIS file is.
+ *
+ * It has to be computed here and passed down, rather than in the module
+ * that uses it: `./surface.js` is bundled into a hashed chunk in
+ * `dist/chunks/`, so its own `import.meta.url` is a directory deeper and
+ * a relative href from there points at a file that is not on the server.
+ * This module is `dist/edit.js` itself -- the one path the site wrote in
+ * its own `<script src>` -- so it is the only place on this side of the
+ * dynamic import that knows where `dist/` is.
+ *
+ * Minified, unlike the ESM entries: this one is served to an author's
+ * browser as-is rather than handed to somebody's bundler, and the rules
+ * are identical either way.
+ */
+const CONTENT_STYLES =
+    new URL('./content-tools-content.min.css', import.meta.url).href;
 
 /* `typeof` rather than a bare read, so importing this module in a
    non-browser context -- a bundler's SSR pass, a Node test -- is inert

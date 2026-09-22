@@ -42,10 +42,10 @@ import {DIRECTORY_LIMIT} from '../cms/github.js';
 import type {EditorialStatus} from '../cms/status.js';
 import type {Entry, InFlightEntry} from '../cms/repo.js';
 import {MediaStore} from '../cms/media.js';
+import {adapterFor} from '../auth/adapter.js';
 import {PatAuthAdapter} from '../auth/pat.js';
 import {sessionStorageOrMemory} from '../auth/storage.js';
 import type {TokenStorage} from '../auth/storage.js';
-import {GitHubAppAuthAdapter} from '../auth/github-app.js';
 import type {AuthAdapter} from '../auth/types.js';
 /* The CLASS module, never `../element/index.js`, and never
    `../markdown/index.js`. Both of those are build ENTRIES of the same Vite
@@ -1534,13 +1534,14 @@ export class ContentToolsCms extends HTMLElement {
      * the M3 client was found, and the reason that suite exists.
      */
     private _adapterFor(config: CmsConfig): AuthAdapter {
-        const auth = config.backend.auth;
-        if (auth.kind !== 'github-app') {
-            return new PatAuthAdapter({prompt: () => this._offered});
-        }
-        return new GitHubAppAuthAdapter({
-            clientId: auth.clientId,
-            proxy: auth.proxy,
+        /* The CHOICE is shared with the in-page script, which asks the
+           same question of the same config for the opposite reason --
+           it only ever reads a token. Two spellings of "what does
+           `kind: github-app` mean" diverge the day one of them is
+           updated, and the way that shows is an author who signs in
+           here and is asked again on their own site. */
+        return adapterFor(config, {
+            prompt: () => this._offered,
             fetch: (input, init) => {
                 const http = this.fetch;
                 return http(input, init);

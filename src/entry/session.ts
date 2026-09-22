@@ -73,6 +73,27 @@ export interface SessionOptions {
      * answers nobody had given yet.
      */
     readonly values: () => FieldValues | null;
+    /**
+     * The element on the page whose children ARE the body, when there is
+     * one already.
+     *
+     * The shell has none: it builds a region of its own inside the editor,
+     * because under /admin there is no page and the editor owns everything
+     * around the words. The in-page surface has exactly one -- the site's
+     * own `<article class="post">`, found by the `body` selector -- and it
+     * must stay where it is, with its classes and its ancestry intact, or
+     * the site's own CSS stops matching it and the page reflows the moment
+     * somebody presses Edit.
+     *
+     * Its CHILDREN are replaced either way. What the site's template
+     * rendered is HTML built from the base branch by a static site
+     * generator; what the editor must hold is our render of the markdown
+     * on the branch being edited, with the `data-ct-md` indices the splice
+     * reads back. Those are different documents even when they look
+     * identical, and editing the former would serialize to bytes that
+     * splice against the wrong blocks.
+     */
+    readonly region?: HTMLElement;
 }
 
 export class EntrySession {
@@ -106,7 +127,7 @@ export class EntrySession {
         this.store = options.store;
         this._values = options.values;
         this._edited = null;
-        this.editor = this._build(options.document);
+        this.editor = this._build(options);
     }
 
     /**
@@ -270,7 +291,8 @@ export class EntrySession {
      * to be rebooted, which tears down and re-claims the lease for
      * nothing.
      */
-    private _build(document: Document): ContentToolsEditor {
+    private _build(options: SessionOptions): ContentToolsEditor {
+        const document = options.document;
         const editor = document.createElement(EDITOR_TAG) as ContentToolsEditor;
         editor.setAttribute('regions', EDITOR_REGIONS);
         /* The whole reason markdown mode exists: the editor must not be
@@ -281,11 +303,28 @@ export class EntrySession {
            own leaves an orphan blob behind every abandoned edit. */
         editor.imageUploader = mediaUploader({store: this.store});
 
-        const region = document.createElement('div');
-        region.setAttribute('data-editable', '');
+        const region = options.region ?? document.createElement('div');
+        /* The name the saved-regions map arrives under, and the only
+           attribute set on an element we did not make. `data-editable` is
+           NOT set beside it when the page supplied the element: with the
+           region named directly there is no selector to satisfy, and an
+           attribute written onto somebody's published markup for the
+           benefit of a query nobody runs is a change to their page for
+           nothing. */
         region.setAttribute('data-name', REGION);
         region.innerHTML = this.doc.toHTML();
-        editor.appendChild(region);
+
+        if (options.region) {
+            /* Named rather than matched, and the editor stays empty. See
+               `regionElements`: moving this element under the editor to
+               make `[data-editable]` reach it would change its ancestry,
+               and the site's own CSS is written against the ancestry it
+               has. */
+            editor.regionElements = [region];
+        } else {
+            region.setAttribute('data-editable', '');
+            editor.appendChild(region);
+        }
 
         editor.addEventListener('ct-saved', ev => this._remember(ev as CustomEvent));
         return editor;

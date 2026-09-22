@@ -74,11 +74,22 @@ $edit-border-color: #d0d0d0;
     margin: 4px 0 0;
 }
 
-// The two states that need somebody to go and change a file say so in the
-// colour this project already uses for a refusal. `not-an-entry` does not:
-// most pages of most sites are not entries, and colouring the ordinary
-// answer as a fault teaches an author to ignore the colour.
+// The three states that need somebody to go and change something say so in
+// the colour this project already uses for a refusal. `not-an-entry` does
+// not: most pages of most sites are not entries, and colouring the ordinary
+// answer as a fault teaches an author to ignore the colour. Neither does
+// `signed-out`, for the same reason one step along -- arriving at a page
+// without a token is a thing that simply happens, and it is already said
+// in words.
 .ct-edit--broken .ct-edit__title,
-.ct-edit--no-body .ct-edit__title {
+.ct-edit--no-body .ct-edit__title,
+.ct-edit--failed .ct-edit__title {
     color: $cancel-action-color;
+}
+
+// While the branch is being read. Not a spinner: an animation inside a
+// shadow root on somebody's published page is motion nobody asked for, and
+// the bar is one line that changes twice.
+.ct-edit--loading .ct-edit__hint {
+    font-style: italic;
 }

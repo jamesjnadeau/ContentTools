@@ -69,11 +69,13 @@ const DEFAULT_NAMING_PROP = 'data-name';
 const DEFAULT_FIXTURE_TEST = (domElement: Element) =>
     domElement.hasAttribute('data-fixture');
 
-const SETTABLE_PROPERTIES = ['tools', 'fixtureTest', 'stylePalette', 'imageUploader'];
+const SETTABLE_PROPERTIES = ['tools', 'fixtureTest', 'stylePalette',
+                             'imageUploader', 'regionElements'];
 
 export class ContentToolsEditor extends HTMLElement {
 
     declare _adopted: CSSStyleSheet[];
+    declare _regionElements: HTMLElement[] | null;
     declare _app: any;
     declare _booted: boolean;
     declare _bridge: EventBridge | null;
@@ -130,6 +132,7 @@ export class ContentToolsEditor extends HTMLElement {
         this._adopted = [];
         this._fallbackStyles = [];
         this._tools = null;
+        this._regionElements = null;
         this._fixtureTest = null;
         // `undefined` means "never set", which is different from an explicit
         // null; globals.ts writes only the keys that are not undefined.
@@ -277,6 +280,44 @@ export class ContentToolsEditor extends HTMLElement {
         }
     }
 
+    /**
+     * The regions, as ELEMENTS, when a selector cannot say which they are.
+     *
+     * Mode A resolves the `regions` selector against this element's own
+     * light children, which is right wherever the editor owns the markup
+     * around what is being edited. The in-page surface does not: it edits
+     * ONE element of somebody's published page, in place, with the site's
+     * template and stylesheet around it -- and moving that element under
+     * this one to make a selector reach it changes its ancestry, so
+     * `.layout > article` stops matching and the page reflows the moment
+     * an author presses Edit. Preview fidelity is the whole reason that
+     * surface exists, so the page is left exactly as it is and the
+     * elements are named directly.
+     *
+     * `EditorApp.init` has taken a list of elements since 1.6 -- it is
+     * the documented `queryOrDOMElements` half of its contract -- so this
+     * is that capability reaching the element rather than a new one. It
+     * also removes a whole class of mistake the selector has: nothing
+     * else on a page we do not own can match by accident.
+     *
+     * Null (the default) means the `regions` selector decides, exactly as
+     * before.
+     */
+    get regionElements(): readonly HTMLElement[] | null {
+        return this._regionElements;
+    }
+
+    set regionElements(value: readonly HTMLElement[] | null) {
+        /* Copied, because `init` keeps the list and reads it again on
+           every `syncRegions` -- a caller who mutates the array they
+           passed would be editing the editor's region set from outside,
+           at a moment nothing re-mounts. */
+        this._regionElements = value ? [...value] : null;
+        if (this._booted) {
+            this._app.syncRegions(this._regionSource());
+        }
+    }
+
     get fixtureTest(): ((el: Element) => boolean) | null {
         return this._fixtureTest;
     }
@@ -377,7 +418,7 @@ export class ContentToolsEditor extends HTMLElement {
         switch (name) {
         case 'regions':
             // Cheap and live: this is exactly what refresh() does.
-            this._app.syncRegions(this.regions);
+            this._app.syncRegions(this._regionSource());
             break;
         case 'naming-prop':
         case 'ignition':
@@ -428,8 +469,27 @@ export class ContentToolsEditor extends HTMLElement {
     }
 
     /** Re-scan the page for regions. Safe while editing. */
+    /**
+     * What the regions ARE right now: the element list, or the selector.
+     *
+     * One expression, in one place, because it is asked at four moments
+     * -- boot, a `regions` attribute change, `refresh()`, and the
+     * `regionElements` setter -- and the four disagreeing means a
+     * refresh silently swaps a supplied element for whatever the
+     * selector happens to match. For the in-page surface that is the
+     * site's own `<article>` being dropped in favour of nothing.
+     *
+     * Never null. `syncRegions` leaves the existing query in place for a
+     * falsy argument, so a withdrawn list has to be answered with the
+     * selector or the editor carries on editing the elements the caller
+     * just took away.
+     */
+    private _regionSource(): HTMLElement[] | string {
+        return this._regionElements ?? this.regions;
+    }
+
     refresh(): void {
-        this._requireApp().syncRegions(this.regions);
+        this._requireApp().syncRegions(this._regionSource());
     }
 
     /** Show a flash indicator: `ok` or `no`. */
@@ -549,7 +609,7 @@ export class ContentToolsEditor extends HTMLElement {
         this._app.profile(PROFILES[this.mode]);
 
         this._app.init(
-            this.regions,
+            this._regionSource(),
             this.namingProp,
             this._fixtureTest || DEFAULT_FIXTURE_TEST,
             this.ignition

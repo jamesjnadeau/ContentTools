@@ -3,8 +3,8 @@
  * Everything heavy is behind here rather than in `./index.ts`, which is
  * the module every reader of the site downloads. See that file's header.
  *
- * Three questions, in this order, and each is a state a person can be
- * left in:
+ * Three questions about the page, in this order, and each is a state a
+ * person can be left in:
  *
  *   1. Is there a config, and does it parse? A deployment problem, and
  *      the operator's likeliest failure -- so it gets the best message
@@ -18,15 +18,31 @@
  *      element's children, so a `body:` selector pointing at the page
  *      wrapper replaces the site's whole layout with a post. Finding out
  *      at deploy time, from a bar that names the element it found, is
- *      worth the whole of this sub-phase.
+ *      worth having said twice.
+ *
+ * Then two about the person: is anybody signed in, and does the entry
+ * read? And then the editor goes up over the element from question 3, IN
+ * PLACE. Nothing on the page moves -- see `EntrySession`'s `region` and
+ * the element's `regionElements` for why that is worth the plumbing it
+ * costs.
  */
 
 import {loadConfig, findCollection, ConfigError} from '../cms/config.js';
 import type {CmsConfig} from '../cms/config.js';
 import {bodySelector, declaredEntry, entryForUrl} from '../cms/preview.js';
 import type {PageEntry} from '../cms/preview.js';
+import {CmsRepo} from '../cms/repo.js';
+import {MediaStore} from '../cms/media.js';
+import {adapterFor} from '../auth/adapter.js';
+import {MarkdownDocument} from '../markdown/document.js';
+import {EntrySession} from '../entry/session.js';
+/* The CLASS module, never `../element/index.js` -- that is a build ENTRY
+   of the same Vite invocation, and no other module may import it. Same
+   rule the shell follows, same test enforcing it. */
+import {ContentToolsEditor, TAG_NAME as EDITOR_TAG}
+    from '../element/content-tools-editor.js';
 import {buildBar} from './chrome.js';
-import type {Bar, BarState} from './chrome.js';
+import type {Bar, BarState, Located} from './chrome.js';
 
 /**
  * Where the config lives, when the page does not say.
@@ -38,12 +54,37 @@ import type {Bar, BarState} from './chrome.js';
  */
 export const DEFAULT_CONFIG_URL = '/cms-config.yml';
 
-/** `<meta name="cms:config" content="...">`, the page's own answer. */
+/** `<meta name="cms:entry">`, the page's own answer. */
 export const CONFIG_META = 'cms:config';
+
+/** Marks the stylesheet link, so a second `open()` does not add another. */
+export const CONTENT_STYLES_MARK = 'ct-edit-content-styles';
 
 export interface OpenOptions {
     /** Defaults to the real one. A test hands over its own. */
     readonly fetch?: typeof globalThis.fetch;
+    /**
+     * Where `content-tools-content.css` is, so the editing affordances
+     * reach the site's own document.
+     *
+     * The content rules -- `.ce-element`, the drop indicators, the drag
+     * and resize cursors -- style the CONTENT, which in Mode A stays in
+     * the light DOM. They cannot be adopted into the bar's shadow root
+     * for two reasons: they would not reach the content, and the sheet
+     * carries `url()` references to the drop-indicator SVGs that only
+     * resolve relative to a real stylesheet URL.
+     *
+     * So it is a `<link>`, and the href comes from `./index.ts`, which is
+     * the file whose own location the site knows -- the surface lives in
+     * a hashed chunk and has no idea where `dist/` is.
+     */
+    readonly contentStyles?: string;
+}
+
+/** An open surface: the bar, and the editor if one went up. */
+export interface Surface {
+    readonly bar: Bar;
+    readonly session: EntrySession | null;
 }
 
 /**
@@ -54,20 +95,47 @@ export interface OpenOptions {
  * failure lands in the bar, where the person who can fix it will see it,
  * and nowhere else.
  */
-export async function open(where: Window, options: OpenOptions = {}): Promise<Bar> {
+export async function open(
+        where: Window, options: OpenOptions = {}): Promise<Surface> {
     const doc = where.document;
     const bar = buildBar(doc);
     doc.body.appendChild(bar.node);
 
+    let located: BarState;
     try {
-        bar.update(await resolve(where, options));
+        located = await resolve(where, options);
     } catch (error) {
         bar.update(failure(error));
+        return {bar, session: null};
     }
-    return bar;
+
+    bar.update(located);
+    if (located.kind !== 'ready') {
+        return {bar, session: null};
+    }
+
+    /* The three fields every state from here on shares, lifted out of the
+       `ready` state so the config does not ride along into states that
+       have no use for it. */
+    const seen: Located = {
+        entry: located.entry, selector: located.selector, body: located.body
+    };
+
+    try {
+        return {
+            bar,
+            session: await start(where, bar, located.config, seen, options)
+        };
+    } catch (error) {
+        /* The element is still named while the bar says what went wrong.
+           A read that failed did not un-find the body, and somebody
+           looking at a 404 still wants to know the selector was right. */
+        bar.update({kind: 'failed', ...seen, hint: said(error)});
+        return {bar, session: null};
+    }
 }
 
-/** What the bar should say, once everything it needs has been read. */
+/** What the bar should say about the PAGE, once everything is read. */
 export async function resolve(
         where: Window, options: OpenOptions = {}): Promise<BarState> {
     const doc = where.document;
@@ -83,6 +151,114 @@ export async function resolve(
     }
 
     return located(config, entry, doc);
+}
+
+/**
+ * Open the entry and put an editor over its body.
+ *
+ * Nothing is committed and nothing can be: Submit is the next step. What
+ * this proves is the part that has to be right first -- that the bytes on
+ * the branch, rendered by us, land inside the site's own element with the
+ * site's own template and stylesheet around them.
+ */
+async function start(
+        where: Window, bar: Bar, config: CmsConfig, seen: Located,
+        options: OpenOptions): Promise<EntrySession | null> {
+    /* Only ever READ. The in-page script must not offer to sign anybody
+       in: a credential field that appears on a published blog post is
+       indistinguishable from the thing every phishing guide warns about,
+       and the admin screens are one link away. */
+    const token = adapterFor(config).currentToken();
+    if (token === null) {
+        bar.update({kind: 'signed-out', ...seen});
+        return null;
+    }
+
+    bar.update({kind: 'loading', ...seen});
+
+    const repo = new CmsRepo({config, token, fetch: options.fetch});
+    /* The media folder in the SAME round trip, for the reason the shell
+       does it: the names it already holds are what an upload is staged
+       against, and a collision has to be settled when the image is
+       inserted rather than at commit time -- the URL the editor shows
+       has to be the URL that ends up in the file. */
+    const [entry, folder] = await Promise.all([
+        repo.readEntry(seen.entry.collection, seen.entry.slug),
+        repo.github.listDirectory(config.media.folder, repo.base)
+    ]);
+
+    /* After the awaits and before anything is moved, so a stylesheet
+       that 404s from a badly-deployed `dist/` costs a request rather
+       than the editor. */
+    linkContentStyles(where.document, options.contentStyles);
+    defineEditor();
+
+    const session = new EntrySession({
+        document: where.document,
+        entry,
+        doc: MarkdownDocument.parse(entry.content ?? ''),
+        store: new MediaStore({config, taken: folder.map(file => file.name)}),
+        /* No frontmatter form on the page yet, and `null` is exactly how
+           a session is told there is none -- it then reaches `update`
+           with no options object at all, which is what preserves the
+           block byte for byte. The panel is the next step. */
+        values: () => null,
+        /* THE site's own element, edited where it stands. */
+        region: seen.body
+    });
+
+    /* The editor element itself holds nothing and goes at the end of
+       <body>: its regions are named rather than matched, so it needs no
+       children, and an empty `position: relative` block is the smallest
+       footprint a custom element can have on a page it does not own. */
+    where.document.body.appendChild(session.editor);
+    session.start();
+
+    bar.update({kind: 'editing', ...seen});
+    return session;
+}
+
+/**
+ * Register `<content-tools-editor>`, if nothing else has.
+ *
+ * `EntrySession` creates one, and on this path nothing else would ever
+ * have registered it: `../element/index.js` is the element's own build
+ * entry and is not importable from here, so the tag arrives through the
+ * class module and a `define` of our own -- exactly as the shell does
+ * it. An unregistered tag is not an error anywhere, which is what makes
+ * this worth a function rather than an assumption: `createElement`
+ * answers with an inert unknown element, `regionElements` becomes a
+ * plain property nobody reads, `start()` is not a method, and the page
+ * gets a bar that says it is editing over content that cannot be.
+ *
+ * Guarded on `get` so a page that also loaded `./element` or `./shell`
+ * is unaffected and whichever registered it first wins, rather than
+ * throwing `NotSupportedError` out of the middle of a mount.
+ */
+function defineEditor(): void {
+    if (typeof customElements === 'undefined' || customElements.get(EDITOR_TAG)) {
+        return;
+    }
+    customElements.define(EDITOR_TAG, ContentToolsEditor);
+}
+
+/**
+ * Put the content stylesheet in the page, once.
+ *
+ * Idempotent by marker rather than by a module-level flag, because the
+ * thing that must not happen twice is a LINK IN THIS DOCUMENT -- and a
+ * flag would also suppress it in a second document the same module is
+ * running against.
+ */
+function linkContentStyles(doc: Document, href: string | undefined): void {
+    if (!href || doc.querySelector(`link[data-content-tools="${CONTENT_STYLES_MARK}"]`)) {
+        return;
+    }
+    const link = doc.createElement('link');
+    link.setAttribute('data-content-tools', CONTENT_STYLES_MARK);
+    link.rel = 'stylesheet';
+    link.href = href;
+    doc.head.appendChild(link);
 }
 
 /** The state for a page that IS an entry: found its body, or did not. */
@@ -113,7 +289,7 @@ function located(config: CmsConfig, entry: PageEntry, doc: Document): BarState {
             hint: `Nothing on this page matches \`${selector}\`.`
         };
     }
-    return {kind: 'ready', entry, selector, body};
+    return {kind: 'ready', config, entry, selector, body};
 }
 
 /** Why this page maps to nothing, in terms the operator can act on. */
@@ -132,7 +308,7 @@ function unmapped(config: CmsConfig): string {
 }
 
 /**
- * A failure, said in the operator's own terms where we have them.
+ * A failure before the page was even located.
  *
  * `ConfigError.path` verbatim, because a typo in a hand-edited YAML file
  * is the single most likely thing to go wrong here and
@@ -140,12 +316,15 @@ function unmapped(config: CmsConfig): string {
  * function" is not.
  */
 function failure(error: unknown): BarState {
-    return {
-        kind: 'broken',
-        hint: error instanceof ConfigError && error.path !== ''
-            ? `${error.path}: ${error.message}`
-            : error instanceof Error ? error.message : String(error)
-    };
+    return {kind: 'broken', hint: said(error)};
+}
+
+/** An error as the best sentence we have for it. */
+function said(error: unknown): string {
+    if (error instanceof ConfigError && error.path !== '') {
+        return `${error.path}: ${error.message}`;
+    }
+    return error instanceof Error ? error.message : String(error);
 }
 
 /** The config URL this page names, or the default. */

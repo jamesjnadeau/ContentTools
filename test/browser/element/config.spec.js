@@ -298,3 +298,139 @@ describe('mode', () => {
         el.stop();
     });
 });
+
+/* Regions given as ELEMENTS rather than as a selector.
+ *
+ * `EditorApp.init` has taken a list of DOM elements since 1.6 -- the
+ * documented `queryOrDOMElements` half of its contract -- and this is that
+ * capability reaching the element. It exists for the in-page surface,
+ * which edits the site's own `<article>` where it stands: moving it under
+ * the editor to make a selector reach it would change its ancestry, and
+ * the site's CSS is written against the ancestry it has.
+ */
+describe('regionElements', () => {
+
+    let el;
+    afterEach(async () => { if (el) await unmount(el); el = null; assertNoResidue(); });
+
+    /** An element OUTSIDE the editor, exactly as a site's page has. */
+    function outside(name = 'body') {
+        const node = document.createElement('article');
+        node.className = 'post';
+        node.setAttribute('data-name', name);
+        node.innerHTML = '<p>on the page</p>';
+        document.body.appendChild(node);
+        return node;
+    }
+
+    let page = [];
+    afterEach(() => { for (const node of page.splice(0)) node.remove(); });
+
+    it('edits an element the editor does not contain', () => {
+        const node = outside();
+        page.push(node);
+        el = create({}, '');
+        el.regionElements = [node];
+        document.body.appendChild(el);
+        el.start();
+
+        expect(Object.keys(el.editorApp.regions())).toEqual(['body']);
+        /* Still where the page put it, and still not a child of ours. */
+        expect(node.parentElement).toBe(document.body);
+        expect(el.children).toHaveLength(0);
+    });
+
+    it('ignores the regions selector while a list is set', () => {
+        /* Both would match if the selector were consulted: the fixture
+           has two `[data-editable]` divs of its own. The list is the
+           whole answer, not an addition to one. */
+        const node = outside('outside');
+        page.push(node);
+        el = create();
+        el.regionElements = [node];
+        document.body.appendChild(el);
+        el.start();
+
+        expect(Object.keys(el.editorApp.regions())).toEqual(['outside']);
+    });
+
+    it('applies a list assigned AFTER connection', () => {
+        const node = outside('later');
+        page.push(node);
+        el = mount();
+        el.start();
+        el.regionElements = [node];
+
+        expect(Object.keys(el.editorApp.regions())).toEqual(['later']);
+    });
+
+    it('goes back to the selector when the list is withdrawn', () => {
+        /* Not `syncRegions(null)`: that leaves the existing query in
+           place for a falsy argument, so the editor would carry on
+           editing the elements the caller just took away -- including,
+           for the in-page surface, an element removed from the page. */
+        const node = outside('outside');
+        page.push(node);
+        el = mount();
+        el.start();
+        el.regionElements = [node];
+        el.regionElements = null;
+
+        expect(Object.keys(el.editorApp.regions()).sort())
+            .toEqual(['aside', 'body', 'title']);
+    });
+
+    it('copies the list, so a caller cannot edit the region set later', () => {
+        /* `init` keeps the list and reads it again on every
+           `syncRegions`, so a caller mutating the array they passed
+           would be changing the editor's regions from outside at a
+           moment nothing re-mounts. */
+        const node = outside();
+        page.push(node);
+        const given = [node];
+        el = create({}, '');
+        el.regionElements = given;
+        document.body.appendChild(el);
+        el.start();
+        given.length = 0;
+        el.refresh();
+
+        expect(Object.keys(el.editorApp.regions())).toEqual(['body']);
+    });
+
+    it('applies a list assigned before the element upgraded', () => {
+        /* The upgrade-property pattern, as for the other four: a value
+           set before the definition loads becomes an own property that
+           shadows the accessor for ever. */
+        const node = outside();
+        page.push(node);
+        el = create({}, '');
+        Object.defineProperty(el, 'regionElements', {
+            value: [node], writable: true, configurable: true, enumerable: true
+        });
+        document.body.appendChild(el);
+        el.start();
+
+        expect(Object.keys(el.editorApp.regions())).toEqual(['body']);
+    });
+
+    it('keeps the list when the regions ATTRIBUTE changes', () => {
+        /* The attribute handler re-syncs, and re-syncing from the
+           selector here would silently drop the element the caller
+           supplied -- which for the in-page surface is the site's own
+           article, left on the page and no longer editable. */
+        const node = outside('outside');
+        page.push(node);
+        el = mount();
+        el.start();
+        el.regionElements = [node];
+        el.setAttribute('regions', '[data-editable]');
+
+        expect(Object.keys(el.editorApp.regions())).toEqual(['outside']);
+    });
+
+    it('reads back as null until one is set', () => {
+        el = mount();
+        expect(el.regionElements).toBe(null);
+    });
+});

@@ -140,3 +140,12 @@ export {
     AUTHORIZE_URL, APP_TOKEN_KEY, APP_FLOW_KEY, EXPIRY_SKEW_MS
 } from '../auth/github-app.js';
 export type {GitHubAppAuthOptions} from '../auth/github-app.js';
+
+/* Which of the two a config asks for. Shared rather than spelled once per
+ * surface: the shell asks so it can put a sign-in screen up, the in-page
+ * script asks so it can find out whether this tab is already signed in,
+ * and an answer that differs between them reads to an author as signing
+ * in twice and being believed once.
+ */
+export {adapterFor} from '../auth/adapter.js';
+export type {AdapterOptions} from '../auth/adapter.js';

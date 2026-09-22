@@ -95,6 +95,19 @@ describe('PatAuthAdapter', function() {
         return expect(auth.currentToken()).toBe(null);
     });
 
+    it('refuses when it was built with no prompt at all', async function() {
+        /* A surface can want `currentToken()` and nothing else -- the
+           in-page script asks whether this tab is signed in and must
+           never put a credential field on somebody's published page. It
+           reaches here as `undefined`, which under
+           `strictNullChecks: false` no amount of care at the call site
+           prevents, and "this.ask is not a function" on an author's own
+           blog post is a worse answer than the refusal. */
+        const auth = new PatAuthAdapter({storage: fakeStorage()});
+        await expect(auth.authenticate()).rejects.toThrow(NotAuthenticatedError);
+        return expect(auth.currentToken()).toBe(null);
+    });
+
     it('takes a prompt that answers later', async function() {
         // A dialog the user types into, rather than `window.prompt`.
         const auth = adapter({prompt: async () => 'from-a-dialog'});
