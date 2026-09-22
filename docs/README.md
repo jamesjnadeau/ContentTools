@@ -10,6 +10,9 @@
   branch-per-entry pull request workflow a save becomes.
 - **[The shell](shell.md)** — `<content-tools-cms>`: the application authors open, and
   how a deployment is configured and installed.
+- **[The round trip, by hand](round-trip.md)** — the one check no test can make:
+  edit an entry from a real repository, submit it, and read the pull request
+  GitHub actually received.
 - **[Signing in](auth.md)** — the two auth adapters: a fine-grained token for one
   operator, a GitHub App for a site with authors, and the small proxy the second needs.
 - **[Content scope: Mode A and Mode B](content-scope.md)** — where the editable content lives,

@@ -14,16 +14,27 @@ and there is a CMS shell on top of it that edits a git repository by pull
 request — with authors signing in either with their own token or through a
 GitHub App.**
 
-**`2.0.0-rc.0`** is the current release, and it carries all five: the API
-is frozen, every gate is green, and what is left before `2.0.0` is not
-code. Three things can only be checked by hand and have not been —
-the round trip against a real repository, a real GitHub App signing a real
-person in, and whether GitHub's App web flow *enforces* PKCE rather than
-merely accepting it. A tool that writes to somebody's git history should
-have written to one before it calls itself final.
+**`2.0.0-rc.1`** is the current release, and it carries all five: the API
+is frozen and every gate is green.
+
+`rc.1` exists because `rc.0` could not write. The GitHub client sent the
+versioned `application/vnd.github+json` as its request **Content-Type**,
+which GitHub accepts on `Accept` and refuses on a body, so every write —
+blob, tree, commit, ref, pull request, label — came back `415`. Reads were
+unaffected, so the failure only appeared on the first Submit. It was found
+by the first save against a real repository, which is precisely the check
+this project had been carrying as owed by hand; see
+[docs/round-trip.md](docs/round-trip.md) to run it yourself.
+
+What is still owed, and it is not code: the write half of that round trip
+end to end (a real branch, commit and pull request opened by the shell), a
+real GitHub App signing a real person in, and whether GitHub's App web flow
+*enforces* PKCE rather than merely accepting it. A tool that writes to
+somebody's git history should have written to one before it calls itself
+final.
 
 Not yet on npm. `npm pack` produces the artifact; the tag is
-`v2.0.0-rc.0`.
+`v2.0.0-rc.1`.
 
 | | |
 |---|---|
