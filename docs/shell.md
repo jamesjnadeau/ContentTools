@@ -319,10 +319,13 @@ to the gate rather than failing every later request the same way.
 - **Rotate and crop.** Both need something that can re-encode an image, and
   this deployment is a repository and a browser with nothing in between.
 
-One rough edge worth knowing about: the editor's toolbox is `position:
-fixed` chrome that defaults to the top-left of the viewport, which in this
-shell is over the first column of the main pane. It is draggable and its
-position is remembered, so it costs an author one drag, once.
+One thing worth knowing about the layout: the editor's toolbox is
+`position: fixed` chrome, so it floats over the pane rather than sitting in
+it. It defaults to the bottom-right corner, which clears the header, the
+action row and the frontmatter form — a dist test asserts exactly that — but
+a long entry's text still runs underneath it. It is draggable by the grip at
+its top and the position is remembered in `localStorage`, so moving it costs
+an author one drag, once.
 
 ## Trying it
 

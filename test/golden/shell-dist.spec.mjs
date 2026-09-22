@@ -362,21 +362,16 @@ test('the media folder falls back to an authenticated read, and inserts',
     const logged = collectConsoleErrors(page);
 
     const fake = await serveGitHub(page);
-    /* The toolbox where a returning author left it. It is `position:
-       fixed` chrome floating over the whole page, it is draggable, and
-       `ct-toolbox-position` is where the editor remembers it -- so this
-       is a real browser's state, not a test fixture.
+    /* NOTHING is seeded into `ct-toolbox-position` here, and that is the
+       point. This test used to have to put the toolbox somewhere by hand,
+       because the default landed at 128,128 -- the top-left of this
+       shell's main pane, over the first column of the media grid and the
+       first frontmatter field with it. The default is now the bottom
+       right corner, which covers none of them.
 
-       It is seeded because the DEFAULT position lands at 128,128, which
-       in this shell is over the top-left of the main pane: the first
-       column of the media grid, and the first frontmatter field with it.
-       That collision is real and it is not the media library's -- it is
-       the editor's chrome over the shell's pane, and it covers the entry
-       body just as readily. Recorded as such rather than papered over
-       here; the click below is a genuine hit-tested one, so a stacking
-       mistake in the shell's OWN rules still fails this test. */
-    await page.addInitScript(() =>
-        localStorage.setItem('ct-toolbox-position', '1000,120'));
+       So the Insert click below is a genuine hit-tested click against the
+       shipped default, and if that default ever moves back over the grid
+       this test fails rather than quietly passing on a fixture. */
     await page.goto(PAGE);
     await shell(page).locator('.ct-cms__input').fill(TOKEN);
     await shell(page).locator('.ct-cms__gate-form button').click();
@@ -719,4 +714,159 @@ test('a proxy that is not deployed says so on the page, naming itself',
         .toHaveAttribute('state', 'signed-out');
     expect(new URL(page.url()).search).toBe('');
     expect(logged).toEqual([]);
+});
+
+test('the toolbox default clears the shell rather than landing on it',
+     async ({page}) => {
+    /* The editor's toolbox is `position: fixed` chrome, 138px wide and
+       ~320px tall, floating over whatever the host page put underneath
+       it -- and the host page here is the shell. Its DEFAULT position
+       is therefore a product decision about somebody else's layout,
+       and it is the one thing about the toolbox that no unit test can
+       see: the source browser specs load no stylesheet at all, so
+       `getComputedStyle` there reports the UA's `auto` for every edge
+       whatever the rule says.
+
+       So this asserts the requirement rather than the rule: with
+       NOTHING in `ct-toolbox-position`, the shipped default must not
+       cover a control. It used to land at 128,128 -- over the first
+       frontmatter field -- and top-right was measured too and is worse,
+       covering Sign out and Submit. An overlap assertion states what
+       actually matters and survives a deliberate move to some other
+       free corner; a pixel assertion would fail on the move and pass
+       on a regression into a different control. */
+    const errors = [];
+    page.on('pageerror', error => errors.push(`${error.name}: ${error.message}`));
+
+    await serveGitHub(page);
+    await page.goto(PAGE);
+    await shell(page).locator('.ct-cms__input').fill(TOKEN);
+    await shell(page).locator('.ct-cms__gate-form button').click();
+    await shell(page).locator('.ct-cms__nav-link').first().click();
+    await shell(page).locator('.ct-cms__entry-link').first().click();
+    await expect(page.locator('content-tools-cms > content-tools-editor'))
+        .toHaveAttribute('state', 'editing');
+
+    /* Every widget transitions itself in behind a 100ms timer, so an
+       immediate read measures a toolbox mid-animation rather than where
+       it comes to rest -- the same race Phase 7e met from the other
+       side. */
+    await expect(page.locator('content-tools-cms > content-tools-editor')
+        .locator('.ct-toolbox.ct-widget--active')).toBeVisible();
+
+    const boxes = await page.evaluate(() => {
+        const rect = el => {
+            const r = el.getBoundingClientRect();
+            return {left: r.left, top: r.top, right: r.right, bottom: r.bottom};
+        };
+        const root = document.querySelector('content-tools-cms').shadowRoot;
+        const toolbox = document.querySelector('content-tools-editor')
+            .shadowRoot.querySelector('.ct-toolbox');
+        const named = {};
+        /* The controls an author reaches for while an entry is open.
+           `.ct-cms__fields` rather than each input, because the fields
+           pane is the box that must stay clickable all the way across
+           -- a widget covering only its right half is still covering
+           a `select` or a wide text field somebody else configured. */
+        for (const [name, selector] of [
+            ['header', '.ct-cms__header'],
+            ['the action row', '.ct-cms__entry-head'],
+            ['fields', '.ct-cms__fields']
+        ]) {
+            const el = root.querySelector(selector);
+            /* A missing selector would make this test pass by having
+               nothing to overlap, which is the failure shape an
+               overlap assertion is most prone to. */
+            if (!el) throw new Error(`no ${name} (${selector}) to measure`);
+            named[name] = rect(el);
+        }
+        return {toolbox: rect(toolbox), ...named};
+    });
+
+    const {toolbox, ...controls} = boxes;
+    for (const [name, box] of Object.entries(controls)) {
+        const overlaps = toolbox.left < box.right && toolbox.right > box.left
+            && toolbox.top < box.bottom && toolbox.bottom > box.top;
+        expect(overlaps, `the toolbox covers ${name}`).toBe(false);
+    }
+
+    // And it is on screen: "clears everything" must not mean "is elsewhere".
+    const size = page.viewportSize();
+    expect(toolbox.left).toBeGreaterThanOrEqual(0);
+    expect(toolbox.top).toBeGreaterThanOrEqual(0);
+    expect(toolbox.right).toBeLessThanOrEqual(size.width);
+    expect(toolbox.bottom).toBeLessThanOrEqual(size.height);
+
+    expect(errors).toEqual([]);
+});
+
+test('dragging the toolbox moves it rather than stretching it',
+     async ({page}) => {
+    /* The default position is anchored with `bottom`, and the toolbox has
+       no `height`. A `position: fixed` box with `top` AND `bottom` set and
+       `height: auto` is STRETCHED to span both edges -- only the
+       all-three-specified case is over-constrained and drops one -- so an
+       inline `top` written on its own does not move the toolbox, it makes
+       it as tall as the gap. `ToolboxUI._moveTop()` clears `bottom`
+       first, and this is the only place that can tell: the source browser
+       specs load no stylesheet, so there is no `bottom` there to fail to
+       clear, and the visual suite drives the FROZEN v1.6.16 bundle, which
+       has no `_moveTop` in it to test.
+
+       Every drag would be affected, not an edge case -- the grip is the
+       advertised way out of the toolbox's way, and the first drag would
+       have turned it into a column of tools down the side of the page. */
+    const errors = [];
+    page.on('pageerror', error => errors.push(`${error.name}: ${error.message}`));
+
+    await serveGitHub(page);
+    await page.goto(PAGE);
+    await shell(page).locator('.ct-cms__input').fill(TOKEN);
+    await shell(page).locator('.ct-cms__gate-form button').click();
+    await shell(page).locator('.ct-cms__nav-link').first().click();
+    await shell(page).locator('.ct-cms__entry-link').first().click();
+    await expect(page.locator('content-tools-cms > content-tools-editor'))
+        .toHaveAttribute('state', 'editing');
+
+    const toolbox = page.locator('content-tools-cms > content-tools-editor')
+        .locator('.ct-toolbox');
+    await expect(toolbox).toHaveClass(/ct-widget--active/);
+
+    const before = await toolbox.boundingBox();
+
+    /* Dragged by the grip, which is what `_onStartDragging` binds --
+       a drag from anywhere else on the toolbox moves nothing. */
+    const grip = page.locator('content-tools-cms > content-tools-editor')
+        .locator('.ct-toolbox__grip');
+    const from = await grip.boundingBox();
+    /* Rounded, because Chromium delivers integer `clientX`/`clientY` to
+       the page: grabbing at a half-pixel makes the offset the handler
+       computes differ from the one asserted here by half a pixel. */
+    const grab = {x: Math.round(from.x + from.width / 2),
+                  y: Math.round(from.y + from.height / 2)};
+    const to = {x: 400, y: 300};
+    await page.mouse.move(grab.x, grab.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, {steps: 8});
+    await page.mouse.up();
+
+    const after = await toolbox.boundingBox();
+
+    /* It ended up WHERE IT WAS DRAGGED, which is a different claim from
+       "it moved" and the difference is the whole test. `_onDrag` sets
+       `top` to the cursor minus the grab offset, so the point of the
+       toolbox under the cursor is the same point it was grabbed by.
+
+       Asserting only that y changed passes when `top` is never written
+       at all: clearing `bottom` on its own drops the toolbox to its
+       static position, which is a vertical move of several hundred
+       pixels that has nothing to do with the drag. */
+    expect(after.x).toBeCloseTo(to.x - (grab.x - before.x), 0);
+    expect(after.y).toBeCloseTo(to.y - (grab.y - before.y), 0);
+
+    // And it is the same toolbox, not a column: same height, same width.
+    expect(Math.round(after.height)).toBe(Math.round(before.height));
+    expect(Math.round(after.width)).toBe(Math.round(before.width));
+
+    expect(errors).toEqual([]);
 });

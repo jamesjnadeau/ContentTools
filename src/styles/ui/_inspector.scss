@@ -20,7 +20,7 @@
         // (it yields hsl(0 0% 101.37%)), so the clamped result is written out.
         border-top: 1px solid rgba(white, 0.1);
         bottom: 0;
-        height: 32px;
+        height: $inspector-height;
         left: 0;
         overflow: hidden;
         padding: 3px 16px 0;

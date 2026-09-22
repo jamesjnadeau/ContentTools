@@ -20,6 +20,19 @@ $in-page-background: #e9e9e9 !default;
  */
 $shadow-color: rgba(black, 0.35) !default;
 
+// The height of the inspector bar, which is `position: fixed` along the
+// bottom of the viewport whenever the editor is running.
+//
+// It lives here rather than in `ui/_inspector.scss` because it is not the
+// inspector's private business: the toolbox's default position is measured
+// up from the bottom edge and has to clear this bar, and a 32 written
+// separately in each file is how the two come to disagree -- silently, as a
+// floating palette sitting on top of the breadcrumb.
+//
+// `//` and not `/* */`: a note about a Sass variable is meaningless in the
+// compiled sheet, where no `$inspector-height` exists to explain.
+$inspector-height: 32px !default;
+
 /**
  * Confirm, Cancel and Edit actions are common amoung the various ui components.
  * Each action has an associated/common colour.

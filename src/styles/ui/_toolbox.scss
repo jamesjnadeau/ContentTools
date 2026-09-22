@@ -31,16 +31,71 @@
          * storage). However we set a default position for the first time the
          * toolbox is displayed.
          */
+
+        // The rest of this note is `//` rather than `/* */` DELIBERATELY.
+        // `chrome.scss?inline` ships as a string inside `dist/element.js`'s
+        // shared chunk, which is not minified, so a `/* */` comment here is
+        // bytes on every page that loads the element. Written as a doc
+        // comment first, this one cost 1.19 kB gzipped and took the element
+        // and shell budgets to within 100 bytes of their limits. Sass drops
+        // `//` from the output, so the reasoning stays where a maintainer
+        // reads it and reaches nobody's browser.
+        //
+        // The default is the BOTTOM RIGHT corner, and it was measured
+        // against the layouts this library actually meets rather than
+        // picked for looks.
+        //
+        // It replaces `left: 128px; top: 128px`, which is fine on a
+        // centred-column site -- it lands in the left gutter -- and wrong
+        // everywhere else, because it is the one corner every layout puts
+        // something in. In the CMS shell 128,128 covers the first
+        // frontmatter field and the opening lines of the body; on a
+        // full-width site it covers the start of the article.
+        //
+        // Top right was measured too, and is worse than either: it covers
+        // the shell's Sign out link and its Submit button, which are the
+        // two controls somebody is most likely to want next.
+        //
+        // Bottom right covers nothing in the shell, and on an ordinary page
+        // it is the corner least likely to hold a masthead, a nav or the
+        // first paragraph. Text is also ragged-right, so the right end of a
+        // line is the emptiest part of a column at any width.
+        //
+        // Anchored to two viewport EDGES rather than offset from the
+        // top-left, because a constant 128px is the same 128px in a
+        // phone-width window and on a 3440px monitor -- so it stays out of
+        // the way at every size without measuring the host's layout, which
+        // a library cannot see.
+        //
+        // `bottom` rather than `top` for the vertical half, even though a
+        // window shorter than the toolbox then clips its top: the grip is
+        // at the top, so bottom-anchoring is what keeps the toolbox
+        // draggable as the window shrinks, and `_contain()` pulls it back
+        // to `top: 0` on the resize.
+        //
+        // The drag handler writes inline `left` and `top`, which take the
+        // toolbox off this anchor for good; `_contain()` stores pixels from
+        // then on. The two axes get there differently, and the difference
+        // is load-bearing:
+        //
+        // - `left` + `width` + `right` is over-constrained, so CSS drops
+        //   the `right` below and the inline `left` simply wins.
+        // - `top` + `bottom` with `height: auto` is NOT over-constrained --
+        //   the box is STRETCHED to span both edges. An inline `top` alone
+        //   would make the toolbox as tall as the gap instead of moving it,
+        //   so `ToolboxUI._moveTop()` clears `bottom` whenever it sets
+        //   `top`. Do not give this rule a `height`, and do not write
+        //   `style.top` anywhere but that method.
         background: rgba($in-page-background, 0.9);
         // `lighten($in-page-background, 10%)` clamped to white: #e9e9e9 is 91.4%
         // lightness, so +10% exceeds the gamut. color.adjust() does NOT clamp
         // (it yields hsl(0 0% 101.37%)), so the clamped result is written out.
         border: 1px solid rgba(white, 0.5);
         box-shadow: 0 3px 3px $shadow-color;
-        left: 128px;
         padding: $spacing;
         position: fixed;
-        top: 128px;
+        bottom: $inspector-height + ($spacing * 2);
+        right: $spacing * 2;
         width: 138px;
 
         /**

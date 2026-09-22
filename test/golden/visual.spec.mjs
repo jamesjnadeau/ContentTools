@@ -53,6 +53,47 @@ test.describe('visual regression', () => {
 
     test('whole editing surface', async ({page}) => {
         await boot(page);
+
+        /* The toolbox is hidden for THIS shot, and only this one.
+         *
+         * Its default position deliberately differs between the two sheets
+         * this suite compares: the frozen legacy file puts it at 128,128
+         * and the rebuilt one puts it in the bottom-right corner, clear of
+         * the host page's controls. A frozen file can never be updated to
+         * agree, so leaving it in would report a diff for a change made on
+         * purpose, for ever -- and the only way to clear that is to
+         * regenerate this baseline from the NEW css, which would quietly
+         * turn the one shot covering the whole surface into a comparison
+         * with itself and bake in whatever rendering regression happened to
+         * be present that day.
+         *
+         * Nothing is lost by hiding it. What this shot is for is the
+         * Bourbon removal -- whether the rebuilt sheet RENDERS like the
+         * legacy one -- and the toolbox's own rendering is covered at full
+         * detail by `toolbox.png` above, which is element-scoped and so
+         * does not care where it sits. Its position is a layout
+         * requirement about the host page's controls, and that is asserted
+         * where it can actually be seen: against the real shell, in
+         * `shell-dist.spec.mjs`.
+         *
+         * `visibility`, not `display`: it keeps the box, so a rule that
+         * wrongly made the toolbox affect the flow of the page would still
+         * show up here. */
+        await page.addStyleTag({content:
+            '.ct-widget.ct-toolbox {visibility: hidden !important;}'});
+
+        /* Asserted rather than left to the screenshot, because the
+           screenshot cannot see it. The baseline is generated WITH the hide
+           in place, so dropping the rule leaves a diff of nothing but the
+           toolbox's dark icon glyphs -- its background is `#e9e9e9` at 90%
+           over white, which is inside Playwright's per-pixel colour
+           threshold -- and ~2000 px of a 1280x1129 image is under the
+           0.002 ratio below. So the shot would still pass while quietly
+           comparing a surface that has a toolbox against a baseline that
+           does not, and spending the whole pixel budget this suite's real
+           job needs. */
+        await expect(page.locator('.ct-toolbox')).toBeHidden();
+
         await expect(page).toHaveScreenshot('surface.png', {...SHOT, fullPage: true});
     });
 

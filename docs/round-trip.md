@@ -151,14 +151,14 @@ Click your collection in the left nav, then a post. You should see:
   title in a text field, the date in a date control, and so on, one widget per
   declared field;
 - the **body** below it, rendered as editable content;
-- the editor's floating **toolbox**.
+- the editor's floating **toolbox**, bottom right.
 
-**Drag the toolbox out of the way.** It is `position: fixed` chrome that
-defaults to 128,128 — which in the shell's layout is the top-left of the main
-pane, over the first frontmatter field and the first lines of the body. Its
-position is remembered in `localStorage` under `ct-toolbox-position`, so this
-costs you one drag, once, and never again in that browser. It is a known
-layout collision, recorded rather than fixed.
+The toolbox is `position: fixed` chrome, so it floats over the page rather
+than sitting in the layout. It defaults to the bottom-right corner, which
+clears the shell's controls and both frontmatter fields — but a long entry's
+text runs underneath it. Drag it by the grip at its top if it is in your way;
+the position is remembered in `localStorage` under `ct-toolbox-position`, so
+that costs you one drag, once, in that browser.
 
 ## 7. Edit one paragraph, and only one
 

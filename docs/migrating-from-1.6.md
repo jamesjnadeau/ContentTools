@@ -127,6 +127,19 @@ it the singleton again, so the destroy-then-reinitialise shape works exactly
 as it did. What changes is that `get()` after a `destroy()` gives you a
 working editor instead of a broken one.
 
+**The toolbox's default position moved to the bottom-right corner.** It was
+`left: 128px; top: 128px`, which sits in the left gutter of a centred-column
+site and over the content of every other layout — including the first
+paragraph of a full-width page. Only the *default* changed: a position
+already saved under `ct-toolbox-position` still wins, so a returning user
+sees no difference, and `position: fixed` and the drag behaviour are
+untouched. If you were relying on the old corner, one rule in your own
+stylesheet puts it back:
+
+```css
+.ct-widget.ct-toolbox { bottom: auto; right: auto; left: 128px; top: 128px; }
+```
+
 **The build requires Node 22.** Only to build it — the published artifacts
 target the same browsers v1.6.16 did, and the legacy IE branches are still in
 the code.

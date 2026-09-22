@@ -122,7 +122,19 @@ saved state`, function() {
 
             // Check the restore position was respected
             expect(toolbox.domElement().style.left).toBe('7px');
-            return expect(toolbox.domElement().style.top).toBe('7px');
+            expect(toolbox.domElement().style.top).toBe('7px');
+
+            /* And that `bottom` was cleared on the way. The stylesheet
+               anchors the default position with `bottom`, and a fixed box
+               with `top` and `bottom` both set and no `height` is
+               STRETCHED to span both edges rather than moved -- so a
+               restored `top: 7px` alone makes the toolbox as tall as the
+               window instead of putting it near the corner it was left in.
+               No stylesheet is loaded here, so this is the inline style
+               rather than the computed one; what that costs is the rule
+               itself, which `shell-dist.spec.mjs` asserts against the real
+               sheet. */
+            return expect(toolbox.domElement().style.bottom).toBe('auto');
         });
 
         return it('should always be contained within the viewport', function() {

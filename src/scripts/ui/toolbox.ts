@@ -119,7 +119,7 @@ ContentTools.ToolboxUI = class ToolboxUI extends ContentTools.WidgetUI {
         if (restore && /^\d+,\d+$/.test(restore)) {
             const position = (Array.from<any>(restore.split(',')).map((coord) => parseInt(coord)));
             this._domElement.style.left = `${ position[0] }px`;
-            this._domElement.style.top = `${ position[1] }px`;
+            this._moveTop(`${ position[1] }px`);
 
             // After restoring the position make sure the toolbox is still
             // visible in the window.
@@ -409,6 +409,27 @@ ContentTools.ToolboxUI = class ToolboxUI extends ContentTools.WidgetUI {
         return rootContext().on('window', 'keydown', this._handleKeyDown);
     }
 
+    _moveTop(px) {
+        /* Writing an inline `top` is only HALF of moving the toolbox
+           vertically, and the missing half stretches it instead.
+
+           The default position is anchored with `bottom` (see
+           `styles/ui/_toolbox.scss`), and the toolbox has no explicit
+           `height`. A fixed box with `top` and `bottom` both set and
+           `height: auto` is stretched to span both edges -- it is only the
+           all-three-specified case that is over-constrained and drops one.
+           So `top = '128px'` against the default `bottom: 48px` in a 900px
+           window does not move the toolbox to 128: it makes it 724px tall,
+           a column of tools down the side of the page.
+
+           There is deliberately no `_moveLeft` twin. Horizontally `width`
+           IS specified, so `left` + `width` + `right` is the
+           over-constrained case and CSS drops `right` on its own -- a
+           `right: auto` here would be a line no test could fail. */
+        this._domElement.style.bottom = 'auto';
+        this._domElement.style.top = px;
+    }
+
     _contain() {
         // Ensure the toolbox is visible in the current window
         if (!this.isMounted()) {
@@ -422,7 +443,7 @@ ContentTools.ToolboxUI = class ToolboxUI extends ContentTools.WidgetUI {
         }
 
         if ((rect.top + rect.height) > rootContext().viewportSize()[1]) {
-            this._domElement.style.top = `${ rootContext().viewportSize()[1] - rect.height }px`;
+            this._moveTop(`${ rootContext().viewportSize()[1] - rect.height }px`);
         }
 
         if (rect.left < 0) {
@@ -430,7 +451,7 @@ ContentTools.ToolboxUI = class ToolboxUI extends ContentTools.WidgetUI {
         }
 
         if (rect.top < 0) {
-            this._domElement.style.top = '0px';
+            this._moveTop('0px');
         }
 
         // Save the new position to local storage so we can restore it on
@@ -470,7 +491,7 @@ ContentTools.ToolboxUI = class ToolboxUI extends ContentTools.WidgetUI {
 
         // Reposition the toolbox
         this._domElement.style.left = `${ ev.clientX - this._draggingOffset.x }px`;
-        return this._domElement.style.top = `${ ev.clientY - this._draggingOffset.y }px`;
+        return this._moveTop(`${ ev.clientY - this._draggingOffset.y }px`);
     }
 
     _onStartDragging(ev) {
