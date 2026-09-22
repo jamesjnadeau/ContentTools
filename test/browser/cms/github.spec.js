@@ -173,6 +173,22 @@ describe('requests', function() {
         expect(error.method).toBe('GET');
         return expect(error.message).toContain('Not Found');
     });
+
+    it('carries the reason from a proxy that spells it `msg`', async function() {
+        /* Netlify's Git Gateway answers a token it cannot verify -- an
+           expired Identity JWT, most often -- with a 400 of its own shape,
+           not GitHub's. Reading only `message` reported that as a bare
+           "failed: 400", with nothing to say it was the token. */
+        const client = new GitHub({
+            repo: 'owner/site',
+            fetch: () => Promise.resolve(new Response(
+                JSON.stringify({code: 400, msg: 'Operator microservice headers missing'}),
+                {status: 400, headers: {'Content-Type': 'application/json'}}))
+        });
+        const error = await client.findPull('cms/pages/about').catch(e => e);
+        expect(error.status).toBe(400);
+        return expect(error.message).toContain('-- Operator microservice headers missing');
+    });
 });
 
 describe('reading', function() {

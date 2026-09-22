@@ -56,9 +56,19 @@ export class ConflictError extends GitHubError {
     }
 }
 
+/* `message` is GitHub's; `msg` is Netlify's Git Gateway, which refuses a
+   token it cannot verify -- an expired Identity JWT -- with a 400 of its
+   own before GitHub is ever asked. Without it that reads as a bare
+   "failed: 400", with nothing pointing at the token. */
 function messageFrom(body: unknown): string {
-    if (body && typeof body === 'object' && typeof (body as {message?: unknown}).message === 'string') {
-        return (body as {message: string}).message;
+    if (body && typeof body === 'object') {
+        const {message, msg} = body as {message?: unknown; msg?: unknown};
+        if (typeof message === 'string') {
+            return message;
+        }
+        if (typeof msg === 'string') {
+            return msg;
+        }
     }
     return '';
 }
