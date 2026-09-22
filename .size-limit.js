@@ -251,10 +251,23 @@ export default [
            closure grows 1.5 kB because five files gzipped apart do not
            compress as well as two, and what this budget measures is the
            bytes a page downloads. The published total is what it was;
-           only the boundaries moved. */
+           only the boundaries moved.
+
+           224 kB -> 145 kB, which is a RATCHET DOWN and the only one in
+           this file. /admin stopped being an editor in M6-3: the words
+           of an entry are written on the site's own page, so the editor
+           element, the whole ContentEdit library behind it and the
+           markdown parser that turns a region back into bytes are none
+           of them reached from here any more. What is left is the
+           management screens and the frontmatter form -- and `yaml`,
+           because a frontmatter block still has to be read and written.
+           The budget is lowered rather than left slack on purpose: a
+           slack budget is not a budget, and the failure it now guards
+           is a static import of the editor creeping back in, which
+           would show up here as +80 kB and nowhere else. */
         name: 'shell entry + its chunks',
         path: closureOf('dist/shell.js'),
-        limit: '224 kB',
+        limit: '145 kB',
         gzip: true
     },
     {
@@ -306,10 +319,19 @@ export default [
            one a reader pays, and it did not move. This one is paid once
            by the person who pressed Edit, and a jump HERE is only ever
            news about the editor; a jump THERE would mean the decision
-           had stopped being a decision. */
+           had stopped being a decision.
+
+           207 kB -> 209 kB for the same reason the shell's number fell
+           by eighty: M6-3 took the editor out of /admin, so the editor,
+           the library and the markdown parser are reached by ONE entry
+           now instead of two. Rollup stops splitting them out and
+           inlines them here, and a few large files gzipped together do
+           not weigh quite what the same code weighed split across
+           chunks. No code arrived; the boundary moved, and this side of
+           it is where it moved to. */
         name: 'edit lazy surface',
         path: lazyClosureOf('dist/edit.js'),
-        limit: '207 kB',
+        limit: '209 kB',
         gzip: true
     },
     {

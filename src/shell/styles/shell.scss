@@ -13,12 +13,18 @@
 //   `font-family: 'icon'` and render tofu that no DOM assertion can see.
 //   The shell's affordances are words.
 //
-//   NO transform, filter, perspective, contain or will-change on anything
-//   that can be an ancestor of the editor slot. Any of those makes a
-//   descendant's `position: fixed` resolve against THIS element instead of
-//   the viewport, and the editor's toolbox is fixed -- so it would follow
-//   the shell around the page with nothing thrown anywhere.
-//   test/browser/shell/layout.spec.js is the standing check.
+// A third constraint stood here until M6-3, with a spec of its own
+// (`layout.spec.js`) walking every ancestor to enforce it: no transform,
+// filter, perspective, contain or will-change above the editor slot,
+// because any of them makes a descendant's `position: fixed` resolve
+// against this element rather than the viewport -- and the editor's
+// toolbox is fixed, so it would have followed the shell around the page
+// with nothing thrown anywhere. Both are gone, and it is the hazard that
+// went rather than the rule being relaxed: there is no editor under
+// `/admin` and no slot for one, and where the editor runs now its element
+// is a direct child of the site's own <body>. Nothing this project writes
+// is above it. A site whose own <body> carries a transform can still
+// unpin that toolbox, and that is the site's page to decide about.
 //
 // Only the variable- and mixin-only partials are used, so this emits no
 // rule the three sheets in test/golden/styles.spec.mjs partition.
@@ -337,6 +343,25 @@ $panel-background: #f7f7f7;
 .ct-cms__entry-back {
     color: $edit-action-color;
     display: inline-block;
+    margin: 0 0 12px;
+    @include type-text($font-size: 12px, $line-height: 16px);
+}
+
+// The way out to the page, and an <a> rather than a button, so it needs
+// the box an anchor does not bring. It is hidden for a collection with no
+// `page` -- the global `[hidden][hidden]` at the foot of this file is what
+// makes that stick against this `display`, which is the M5-2 lesson and
+// the reason that rule is written once rather than per selector.
+.ct-cms__entry-edit {
+    display: inline-block;
+}
+
+// Why the link above may be the wrong page. Not one of the bordered
+// panels below: those interrupt, because each is a question about work
+// somebody is about to lose, and this is a caption on a link that is
+// still perfectly usable for a published entry.
+.ct-cms__entry-stale {
+    color: $cancel-action-color;
     margin: 0 0 12px;
     @include type-text($font-size: 12px, $line-height: 16px);
 }
@@ -670,8 +695,8 @@ textarea.ct-field__input {
 
 // A fixed box with the image contained inside it, so a portrait and a
 // landscape picture produce the same tile. `object-fit: contain` rather
-// than `cover`: a cropped thumbnail is a different picture from the one
-// that will be inserted, which is the one thing a preview must not be.
+// than `cover`: a cropped thumbnail is a different picture from the file
+// it stands for, which is the one thing a preview must not be.
 .ct-cms__media-thumb {
     background: $panel-background;
     height: 90px;

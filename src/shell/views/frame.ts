@@ -1,15 +1,15 @@
 /* The shell's chrome: a header, a nav of collections, and a main pane.
  *
- * Built once and updated in place. That is not an optimisation, it is the
- * invariant the whole sub-phase rests on: `<slot name="editor">` lives in
- * here, and an editor element slotted into a slot that a re-render
- * replaced is INVISIBLE but still connected -- so it still holds the
- * process-wide `EditorApp` lease, and every entry opened afterwards
- * refuses to open with nothing in any stack trace. The slot is created
- * here, exposed, and never touched again.
+ * Built once and updated in place. The reason used to be an invariant
+ * this frame carried alone -- `<slot name="editor">` lived here, and an
+ * editor slotted into a slot that a re-render replaced is INVISIBLE but
+ * still connected, so it kept the process-wide `EditorApp` lease and every
+ * entry opened afterwards refused to open with nothing in any stack trace.
+ * The slot went with the editor in M6-3 and so did that hazard.
  *
- * For the same reason the view pane and the slot are siblings: `update()`
- * rebuilds the pane's contents freely and can never reach the slot.
+ * What is left is the ordinary reason a view is built once: the open
+ * entry's frontmatter form is inside this pane, and a rebuild per render
+ * eats the keystrokes of whoever is typing into it.
  */
 import {h, list} from '../../core/render.js';
 import {alertRegion, showAlert} from './alert.js';
@@ -30,9 +30,6 @@ import type {Described} from '../../entry/errors.js';
 import type {ListedEntry} from '../merge.js';
 import type {CmsConfig} from '../../cms/config.js';
 
-/** Where the editor element is slotted. Its light-DOM home is the host. */
-export const EDITOR_SLOT = 'editor';
-
 export interface FrameHandlers
         extends EntryHandlers, CreateHandlers, MediaHandlers, ReviewHandlers {
     signOut(): void;
@@ -46,11 +43,11 @@ export interface FrameState {
     entries: readonly ListedEntry[] | null;
     /** The listing was cut short by the API's one-page cap. */
     truncated: boolean;
-    /** The open entry, and everything the editor's chrome shows about it. */
+    /** The open entry, and everything the management screen shows of it. */
     entry: EntryState;
     /** A create is in flight, so the Create button is held. */
     creating: boolean;
-    /** The media folder: its own route, and the panel under an open entry. */
+    /** The media folder, for its own route. */
     media: MediaState;
     /** Everything in flight, for `#/review`. */
     review: {
@@ -75,31 +72,7 @@ export interface Frame {
     /** The open entry's chrome, including the frontmatter form. */
     readonly entry: EntryView;
     readonly node: HTMLElement;
-    /** The slot the editor is rendered through. Never re-created. */
-    readonly slot: HTMLSlotElement;
     update(state: FrameState): void;
-}
-
-/**
- * The open entry, with the media folder under it when it is open.
- *
- * The grid is a SIBLING of the entry's own node rather than a child of
- * it, and it sits between the frontmatter form and `<slot name="editor">`
- * -- directly above the editor it inserts into. One `MediaView` serves
- * this and the `#/media` route, so a tile that has already paid for an
- * authenticated thumbnail keeps it across the two.
- */
-function withMedia(
-        state: FrameState,
-        media: MediaView,
-        entry: EntryView
-        ): HTMLElement[] {
-    entry.update(state.entry);
-    if (!state.entry.mediaOpen) {
-        return [entry.node];
-    }
-    media.update(state.media);
-    return [entry.node, media.node];
 }
 
 /**
@@ -160,11 +133,11 @@ function createView(
         state: FrameState,
         create: CreateView,
         entry: EntryView,
-        media: MediaView,
         name: string
         ): HTMLElement[] {
     if (state.entry.entry) {
-        return withMedia(state, media, entry);
+        entry.update(state.entry);
+        return [entry.node];
     }
     const collection = state.config.collections.find(c => c.name === name);
     if (!collection) {
@@ -205,13 +178,14 @@ function mainView(
     case 'collection':
         return collectionView(doc, state, entries, state.route.collection);
     case 'new':
-        return createView(doc, state, create, entry, media, state.route.collection);
+        return createView(doc, state, create, entry, state.route.collection);
     case 'entry':
         /* Built once and merely re-shown, for the same reason the list
-           is -- and with a second reason of its own from M5-4, when the
-           frontmatter fields land inside it and a rebuild per render
-           starts eating keystrokes. */
-        return withMedia(state, media, entry);
+           is -- and with a second reason of its own from M5-4: the
+           frontmatter fields are inside it, and a rebuild per render
+           eats keystrokes. */
+        entry.update(state.entry);
+        return [entry.node];
     case 'media':
         media.update(state.media);
         return [media.node];
@@ -284,9 +258,6 @@ export function buildFrame(
     const review = buildReview(doc, handlers);
     const alert = alertRegion(doc);
 
-    const slot = doc.createElement('slot');
-    slot.name = EDITOR_SLOT;
-
     const node = h(doc, 'div', {class: 'ct-cms'}, [
         h(doc, 'header', {class: 'ct-cms__header'}, [
             h(doc, 'h1', {class: 'ct-cms__title'}, ['Content']),
@@ -316,13 +287,12 @@ export function buildFrame(
                     h(doc, 'li', {}, [reviewLink])
                 ])
             ]),
-            h(doc, 'main', {class: 'ct-cms__main'}, [alert, view, slot])
+            h(doc, 'main', {class: 'ct-cms__main'}, [alert, view])
         ])
     ]);
 
     return {
         node,
-        slot,
         entry,
 
         update(state: FrameState): void {

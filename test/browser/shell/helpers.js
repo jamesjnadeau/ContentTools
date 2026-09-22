@@ -31,6 +31,11 @@ export const CONFIG_YAML = `
 backend:
   repo: owner/site
   branch: main
+site:
+  # No base: this fake site is served at the root, which is spelled by
+  # OMITTING the key. An explicit empty string is refused -- see
+  # config.spec.js.
+  preview: https://deploy-preview-{{pr}}--site.test
 media:
   folder: static/images
   publicPath: /images
@@ -39,16 +44,20 @@ collections:
     label: Blog
     folder: content/blog
     create: true
+    page: /blog/{{slug}}/
+    body: article .content
     fields:
       - {name: title, label: Title}
       - {name: draft, label: Draft, widget: boolean}
       - {name: tags, label: Tags, widget: list}
   - name: pages
     label: Pages
+    body: article .content
     files:
       - name: about
         label: About
         file: content/about.md
+        page: /about/
         fields:
           - {name: heading, label: Heading}
 `;
@@ -158,26 +167,58 @@ export async function openAt(hash, options = {}) {
     return mounted;
 }
 
-/** The editor element the shell put in its own light DOM, or null. */
-export function editorOf(el) {
-    return el.querySelector('content-tools-editor');
+/**
+ * The open entry's panel once it has actually loaded, or null.
+ *
+ * The panel itself is built once and only RENDERED on an entry route, so
+ * its presence answers "is this the entry screen"; the heading answers
+ * "has the file arrived", which is the question every caller here is
+ * really asking. Both, because a spec that waited only for the panel
+ * would go on to read a form that is still empty.
+ *
+ * This replaced `editorOf`, which looked for the editor element the shell
+ * used to append to its own light DOM. There is none: since M6-3 the body
+ * is edited on the site's own page and `/admin` shows no editor at all.
+ */
+export function entryOf(el) {
+    const view = el.shadowRoot.querySelector('.ct-cms__entry-view');
+    return view && view.querySelector('.ct-cms__heading').textContent !== ''
+        ? view
+        : null;
+}
+
+/** One of the open entry's frontmatter controls, by field name. */
+export function fieldOf(el, name) {
+    return el.shadowRoot.querySelector(`#ct-field-${name}`);
 }
 
 /**
- * Rewrite one block of the open entry, as typing into it would.
+ * Change a frontmatter field, as typing into it would.
  *
- * Through the ContentEdit element rather than by assigning textContent:
- * the editor keeps its own tree, and a DOM poke behind its back leaves
- * `lastModified()` untouched -- so `save()` would report nothing changed
- * and every assertion afterwards would be about an edit that never
- * happened. The idiom is test/browser/content-tools/editor.spec.js's.
+ * This replaced `retype`, which rewrote a block of the body through
+ * ContentEdit. The body is not here any more, so the only edit `/admin`
+ * can make -- and therefore the only way a spec can make this screen
+ * dirty -- is through the form.
+ *
+ * No event is dispatched, and none is needed: the widgets ARE the state
+ * of the form, so the session asks the controls what they hold at the
+ * moment it compares, which is what makes an `onChange` per keystroke
+ * unnecessary in the first place. Assigning `value` is exactly what a
+ * keystroke leaves behind.
  */
-export function retype(el, text, index = 1) {
-    const block = editorOf(el).editorApp.regions().body.children[index];
-    block.content = new HTMLString.String(text);
-    block.updateInnerHTML();
-    block.taint();
-    return block;
+export function setField(el, name, value) {
+    const control = fieldOf(el, name);
+    if (control.type === 'checkbox') {
+        control.checked = value;
+    } else {
+        control.value = value;
+    }
+    return control;
+}
+
+/** Wait until the open entry has loaded. */
+export function openedEntry(el, describe = 'the entry to open') {
+    return until(() => entryOf(el) !== null, describe);
 }
 
 /** The text of whatever the alert region is currently saying. */

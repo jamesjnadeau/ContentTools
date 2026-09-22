@@ -213,19 +213,23 @@ test('opening an entry, editing it, and submitting one reviewable line',
     await shell(page).locator('.ct-cms__nav-link').first().click();
     await shell(page).locator('.ct-cms__entry-link').first().click();
 
-    /* The editor is a LIGHT-DOM child of the shell, assigned to the
-       frame's named slot. Only this file can see whether the built
-       shell.js registers `<content-tools-editor>` at all: it imports
-       the class module rather than `./element`, and the tag is defined
-       from `src/shell/index.ts`. An unregistered tag is not an error --
-       `createElement` hands back an inert unknown element -- so the
-       entry would open to an empty pane with a clean console. */
-    const editor = page.locator('content-tools-cms > content-tools-editor');
-    await expect(editor).toHaveAttribute('state', 'editing');
-    await expect(editor).toHaveAttribute('slot', 'editor');
-    await expect(editor.locator('[data-editable] h1')).toHaveText('Hello');
+    /* NO editor, and this is the one place that can prove it of the
+       built artifact. `dist/shell.js` no longer reaches
+       `src/element/` at all since M6-3 -- the words of an entry are
+       written on the site's own page -- and an editor mounted here
+       would take the one-per-page `EditorApp` lease with it, so the
+       in-page surface would refuse to boot on the site with nothing in
+       any stack trace. A source spec cannot see this: every browser
+       spec loads the whole library through `setup-globals.js`, so the
+       tag is registered there whatever the shell imports. */
+    await expect(page.locator('content-tools-cms content-tools-editor'))
+        .toHaveCount(0);
+    await expect(shell(page).locator('.ct-cms__entry-edit'))
+        .toHaveAttribute('href', '/blog/hello/');
+    await expect(shell(page).locator('.ct-cms__entry-edit'))
+        .toHaveAttribute('target', '_blank');
 
-    /* And the frontmatter form is above it, holding what the file says.
+    /* What IS here is the frontmatter form, holding what the file says.
        `date` is declared by app/cms-config.yml and absent from the seed,
        so it is also the case that decides the assertion below: a widget
        reporting an untouched optional field as `''` would add a key to
@@ -233,11 +237,8 @@ test('opening an entry, editing it, and submitting one reviewable line',
     await expect(shell(page).locator('#ct-field-title')).toHaveValue('Hello');
     await expect(shell(page).locator('#ct-field-date')).toHaveValue('');
 
-    // Type into the body, the way a person does.
-    const paragraph = editor.locator('[data-editable] p').first();
-    await paragraph.click();
-    await page.keyboard.press('End');
-    await page.keyboard.type(' Again.');
+    // Change a field, which is the whole of what this screen can change.
+    await shell(page).locator('#ct-field-title').fill('Goodbye');
 
     /* Named, not positional. `.ct-cms__entry-view .ct-cms__button` used
        to mean Submit and stopped meaning it the moment Delete arrived
@@ -246,20 +247,25 @@ test('opening an entry, editing it, and submitting one reviewable line',
     await shell(page).locator('.ct-cms__entry-submit').click();
     await expect(shell(page).locator('.ct-cms__entry-pull')).toContainText('Pull request');
 
-    /* One branch, one pull request, one commit -- and the file still
-       starts with the frontmatter block it started with, byte for byte.
-       A serializer that renormalised the file would produce a diff
-       covering all of it, and a diff covering all of it cannot be
-       reviewed, which is the premise of the whole workflow. */
+    /* One branch, one pull request, one commit -- and the BODY comes
+       back byte for byte. That is the mirror of the claim this test
+       used to make: /admin never reads the body, so the file it writes
+       is the file it read with the block at the top swapped, not the
+       result of taking the body apart and putting it back. A
+       serializer round trip would renormalise the whole file, and a
+       diff covering the whole file cannot be reviewed, which is the
+       premise of the workflow. */
     expect(fake.branches()).toEqual(['cms/blog/hello', 'main']);
     expect(fake.pulls().length).toBe(1);
     expect(fake.history('cms/blog/hello').length).toBe(2);
 
     const saved = fake.read('content/blog/hello.md', 'cms/blog/hello');
-    expect(saved.startsWith('---\ntitle: Hello\n---\n')).toBe(true);
+    expect(saved.startsWith('---\ntitle: Goodbye\n---\n')).toBe(true);
+    const bodyOf = text => text.slice(text.indexOf('---', 3) + 3);
+    expect(bodyOf(saved)).toBe(bodyOf(SEED));
     const added = saved.split('\n').filter(
         line => line && !SEED.split('\n').includes(line));
-    expect(added).toEqual(['Body. Again.']);
+    expect(added).toEqual(['title: Goodbye']);
 
     expect(errors).toEqual([]);
     expect(logged).toEqual([]);
@@ -290,23 +296,31 @@ test('naming a new entry, writing it, and opening one pull request',
         .toHaveText('Saved as content/blog/hello-world.md');
     await shell(page).locator('.ct-cms__create-form .ct-cms__button').click();
 
-    const editor = page.locator('content-tools-cms > content-tools-editor');
-    await expect(editor).toHaveAttribute('state', 'editing');
+    /* What Create produces since M6-3 is a STUB: the name, the
+       collection's fields, and no words. The words are written on the
+       site's own page, which is a deploy preview, which is built for a
+       pull request -- so the file has to exist before it can hold
+       anything. */
+    await expect(shell(page).locator('#ct-field-title')).toHaveValue('');
     // Nothing is committed by naming it.
     expect(fake.branches()).toEqual(['main']);
 
-    await editor.locator('[data-editable] p').first().click();
-    await page.keyboard.type('First post.');
+    await shell(page).locator('#ct-field-title').fill('First post.');
     await shell(page).locator('.ct-cms__entry-submit').click();
     await expect(shell(page).locator('.ct-cms__entry-pull')).toContainText('Pull request');
 
     expect(fake.branches()).toEqual(['cms/blog/hello-world', 'main']);
     expect(fake.pulls().length).toBe(1);
     expect(fake.read('content/blog/hello-world.md', 'cms/blog/hello-world'))
-        .toBe('First post.\n');
-    /* The address bar caught up with the entry, in place -- the editor
+        .toBe('---\ntitle: First post.\n---\n');
+    /* The address bar caught up with the entry, in place -- the form
        the person is still looking at was not torn down to do it. */
     expect(new URL(page.url()).hash).toBe('#/c/blog/e/hello-world');
+    /* And the link to write the words in is live now, on the entry's
+       own preview rather than the published page: the post does not
+       exist on the live site until somebody merges. */
+    await expect(shell(page).locator('.ct-cms__entry-edit'))
+        .toHaveAttribute('href', /deploy-preview-1--.*\/blog\/hello-world\/$/);
 
     expect(errors).toEqual([]);
     expect(logged).toEqual([]);
@@ -326,8 +340,8 @@ test('deleting an entry opens a pull request and says the page is still up',
 
     await shell(page).locator('.ct-cms__nav-link').first().click();
     await shell(page).locator('.ct-cms__entry-link').first().click();
-    await expect(page.locator('content-tools-cms > content-tools-editor'))
-        .toHaveAttribute('state', 'editing');
+    // The entry has arrived when its form is holding the file's values.
+    await expect(shell(page).locator('#ct-field-title')).toHaveValue('Hello');
 
     await shell(page).locator('.ct-cms__entry-delete').click();
     await shell(page).locator('.ct-cms__confirm .ct-cms__button--cancel').click();
@@ -348,30 +362,22 @@ test('deleting an entry opens a pull request and says the page is still up',
     expect(logged).toEqual([]);
 });
 
-test('the media folder falls back to an authenticated read, and inserts',
-     async ({page}) => {
+test('the media folder falls back to an authenticated read', async ({page}) => {
     /* The one path in the media library that no source test can check
        end to end: the PUBLIC URL is tried first, and here it genuinely
        404s -- `/images/cat.png` is not on the dev server -- so the tile
-       falls back to a blob read over the real `fetch`, decodes real PNG
-       bytes into an object URL, and only then offers Insert. A source
-       test serves both from data URLs and so proves nothing about the
-       bytes surviving the wire. */
+       falls back to a blob read over the real `fetch` and decodes real
+       PNG bytes into an object URL. A source test serves both from data
+       URLs and so proves nothing about the bytes surviving the wire.
+
+       Insert went with the editor in M6-3, so what this asserts is the
+       tile rather than the button: a picture goes into an entry where
+       the entry's words are, which is the site's own page. */
     const errors = [];
     page.on('pageerror', error => errors.push(`${error.name}: ${error.message}`));
     const logged = collectConsoleErrors(page);
 
     const fake = await serveGitHub(page);
-    /* NOTHING is seeded into `ct-toolbox-position` here, and that is the
-       point. This test used to have to put the toolbox somewhere by hand,
-       because the default landed at 128,128 -- the top-left of this
-       shell's main pane, over the first column of the media grid and the
-       first frontmatter field with it. The default is now the bottom
-       right corner, which covers none of them.
-
-       So the Insert click below is a genuine hit-tested click against the
-       shipped default, and if that default ever moves back over the grid
-       this test fails rather than quietly passing on a fixture. */
     await page.goto(PAGE);
     await shell(page).locator('.ct-cms__input').fill(TOKEN);
     await shell(page).locator('.ct-cms__gate-form button').click();
@@ -383,34 +389,19 @@ test('the media folder falls back to an authenticated read, and inserts',
        reads as if nothing changed while clicking somewhere else. */
     await shell(page).locator('.ct-cms__nav-link', {hasText: 'Media'}).click();
     await expect(shell(page).locator('.ct-cms__media-name')).toHaveText(['cat.png']);
-    /* Nothing to insert into from here, and the grid says so rather
-       than offering a button that would report success and do nothing. */
-    await expect(shell(page).locator('.ct-cms__media-insert')).toBeHidden();
+    // Read-only: there is no Insert button anywhere on this screen.
+    await expect(shell(page).locator('.ct-cms__media-insert')).toHaveCount(0);
 
-    // Now the same grid, under an open entry, where it can insert.
-    await shell(page).locator('.ct-cms__nav-link').first().click();
-    await shell(page).locator('.ct-cms__entry-link').first().click();
-    await shell(page).locator('.ct-cms__entry-media').click();
-
-    const insert = shell(page).locator('.ct-cms__media-insert');
-    /* Enabled only once something decoded. The wait is the assertion:
-       the button starts disabled, the public URL fails, the blob read
-       answers, and the tile becomes insertable -- in that order. */
-    await expect(insert).toBeEnabled();
+    /* The wait IS the assertion: the public URL fails, the blob read
+       answers, the bytes decode, and only then does the tile have a
+       natural size -- in that order, over the real network stack. */
+    const thumb = shell(page).locator('.ct-cms__media-thumb').first();
+    await expect.poll(
+        () => thumb.evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
     expect(fake.requests.some(([method, path]) =>
         method === 'GET' && path.includes('/git/blobs/'))).toBe(true);
-
-    await insert.click();
-    await shell(page).locator('.ct-cms__entry-submit').click();
-    await expect(shell(page).locator('.ct-cms__entry-pull')).toContainText('Pull request');
-
-    /* The URL the tile previewed is the URL the entry references, and
-       one commit carries it: the picture is already in the repository,
-       so nothing is staged and nothing is uploaded again. */
-    const saved = fake.read('content/blog/hello.md', 'cms/blog/hello');
-    expect(saved).toContain('![cat.png](/images/cat.png)');
-    expect(saved.startsWith('---\ntitle: Hello\n---\n')).toBe(true);
-    expect(fake.history('cms/blog/hello').length).toBe(2);
+    // And the failure note stayed down, because nothing failed in the end.
+    await expect(shell(page).locator('.ct-cms__media-note')).toBeHidden();
 
     expect(errors).toEqual([]);
     expect(logged).toEqual([]);
@@ -439,35 +430,53 @@ test('a refused token is reported on the page, not the console', async ({page}) 
     expect(logged).toEqual([]);
 });
 
-test('the shadow root is open and holds the editor slot', async ({page}) => {
+test('the shadow root is open, and holds no editor of any kind',
+     async ({page}) => {
     await page.goto(PAGE);
 
-    /* Mode A, one level up: the editor element goes in the shell's LIGHT
-       DOM and renders through this slot. Without it an editor that booted
-       correctly would still be invisible, which is indistinguishable from
-       one that failed to boot. */
-    const slots = await page.evaluate(() => {
-        const shell = document.querySelector('content-tools-cms');
-        return [...shell.shadowRoot.querySelectorAll('slot')].map(slot => slot.name);
+    /* The M6-3 claim, asserted of the BUILT artifact, which is the only
+       place it can be asserted at all: every source browser spec loads
+       the whole library through `setup-globals.js`, so
+       `<content-tools-editor>` is a registered custom element there
+       whatever the shell imports.
+
+       Three ways of being wrong, three checks. The tag must not be
+       REGISTERED from this bundle -- registering it is how a shell that
+       still reached `src/element/` would present. There must be no
+       `<slot>`, because the frame used to carry one for the editor and
+       a slot with nothing to land in is dead markup. And the host's
+       light DOM must be empty, because that is where an editor would
+       have gone. Any of the three coming back means the editor has
+       found its way back into /admin, where it would hold the
+       one-per-page `EditorApp` lease and stop the site's own pages
+       booting one. */
+    const found = await page.evaluate(() => {
+        const cms = document.querySelector('content-tools-cms');
+        return {
+            editorTag: Boolean(customElements.get('content-tools-editor')),
+            slots: [...cms.shadowRoot.querySelectorAll('slot')].map(s => s.name),
+            lightChildren: cms.childNodes.length
+        };
     });
-    expect(slots).toEqual(['editor']);
+    expect(found).toEqual({editorTag: false, slots: [], lightChildren: 0});
 });
 
-test('the content stylesheet reaches the document', async ({page}) => {
+test('the content stylesheet is NOT linked, because nothing here is editable',
+     async ({page}) => {
     await page.goto(PAGE);
 
-    /* The one thing about the deployable page that can be wrong while
-       everything still LOOKS fine. In Mode A the editable content stays in
-       the document, so the content sheet has to be linked there; drop the
-       <link> and the page renders, the shell boots, and none of the
-       editing affordances ever appear.
+    /* The inverse of an assertion this file carried from M5-0 to M6-3,
+       and it is worth keeping rather than deleting. `/admin` had the
+       editable content in its own document, so the content sheet had to
+       be linked there; it does not any more, and a `<link>` left behind
+       is a request every author pays for rules that style nothing.
 
-       `.ce-element--empty:after` is asserted rather than the <link> tag
-       because the tag being present is not the claim -- the rules being in
-       effect is, and a renamed or 404ing artifact passes the first and
-       fails the second. The exact value is asserted rather than merely
-       "not none", so that a document which happened to carry SOME sheet
-       defining that pseudo-element could not stand in for ours. */
+       `.ce-element--empty::after` rather than the tag, for the same
+       reason the positive version used it: the tag being absent is not
+       the claim, the rules not being in effect is, and a renamed
+       artifact would pass one and fail the other. The rules DO still
+       ship and are still linked -- by `src/edit/index.ts`, on the
+       site's own pages, which is the only place they can work. */
     const placeholder = await page.evaluate(() => {
         const probe = document.createElement('div');
         probe.className = 'ce-element ce-element--empty';
@@ -476,7 +485,7 @@ test('the content stylesheet reaches the document', async ({page}) => {
         probe.remove();
         return content;
     });
-    expect(placeholder).toBe('"..."');
+    expect(placeholder).not.toBe('"..."');
 });
 
 test('the review list moves an entry between statuses', async ({page}) => {
@@ -714,159 +723,4 @@ test('a proxy that is not deployed says so on the page, naming itself',
         .toHaveAttribute('state', 'signed-out');
     expect(new URL(page.url()).search).toBe('');
     expect(logged).toEqual([]);
-});
-
-test('the toolbox default clears the shell rather than landing on it',
-     async ({page}) => {
-    /* The editor's toolbox is `position: fixed` chrome, 138px wide and
-       ~320px tall, floating over whatever the host page put underneath
-       it -- and the host page here is the shell. Its DEFAULT position
-       is therefore a product decision about somebody else's layout,
-       and it is the one thing about the toolbox that no unit test can
-       see: the source browser specs load no stylesheet at all, so
-       `getComputedStyle` there reports the UA's `auto` for every edge
-       whatever the rule says.
-
-       So this asserts the requirement rather than the rule: with
-       NOTHING in `ct-toolbox-position`, the shipped default must not
-       cover a control. It used to land at 128,128 -- over the first
-       frontmatter field -- and top-right was measured too and is worse,
-       covering Sign out and Submit. An overlap assertion states what
-       actually matters and survives a deliberate move to some other
-       free corner; a pixel assertion would fail on the move and pass
-       on a regression into a different control. */
-    const errors = [];
-    page.on('pageerror', error => errors.push(`${error.name}: ${error.message}`));
-
-    await serveGitHub(page);
-    await page.goto(PAGE);
-    await shell(page).locator('.ct-cms__input').fill(TOKEN);
-    await shell(page).locator('.ct-cms__gate-form button').click();
-    await shell(page).locator('.ct-cms__nav-link').first().click();
-    await shell(page).locator('.ct-cms__entry-link').first().click();
-    await expect(page.locator('content-tools-cms > content-tools-editor'))
-        .toHaveAttribute('state', 'editing');
-
-    /* Every widget transitions itself in behind a 100ms timer, so an
-       immediate read measures a toolbox mid-animation rather than where
-       it comes to rest -- the same race Phase 7e met from the other
-       side. */
-    await expect(page.locator('content-tools-cms > content-tools-editor')
-        .locator('.ct-toolbox.ct-widget--active')).toBeVisible();
-
-    const boxes = await page.evaluate(() => {
-        const rect = el => {
-            const r = el.getBoundingClientRect();
-            return {left: r.left, top: r.top, right: r.right, bottom: r.bottom};
-        };
-        const root = document.querySelector('content-tools-cms').shadowRoot;
-        const toolbox = document.querySelector('content-tools-editor')
-            .shadowRoot.querySelector('.ct-toolbox');
-        const named = {};
-        /* The controls an author reaches for while an entry is open.
-           `.ct-fields` rather than each input, because the fields
-           pane is the box that must stay clickable all the way across
-           -- a widget covering only its right half is still covering
-           a `select` or a wide text field somebody else configured. */
-        for (const [name, selector] of [
-            ['header', '.ct-cms__header'],
-            ['the action row', '.ct-cms__entry-head'],
-            ['fields', '.ct-fields']
-        ]) {
-            const el = root.querySelector(selector);
-            /* A missing selector would make this test pass by having
-               nothing to overlap, which is the failure shape an
-               overlap assertion is most prone to. */
-            if (!el) throw new Error(`no ${name} (${selector}) to measure`);
-            named[name] = rect(el);
-        }
-        return {toolbox: rect(toolbox), ...named};
-    });
-
-    const {toolbox, ...controls} = boxes;
-    for (const [name, box] of Object.entries(controls)) {
-        const overlaps = toolbox.left < box.right && toolbox.right > box.left
-            && toolbox.top < box.bottom && toolbox.bottom > box.top;
-        expect(overlaps, `the toolbox covers ${name}`).toBe(false);
-    }
-
-    // And it is on screen: "clears everything" must not mean "is elsewhere".
-    const size = page.viewportSize();
-    expect(toolbox.left).toBeGreaterThanOrEqual(0);
-    expect(toolbox.top).toBeGreaterThanOrEqual(0);
-    expect(toolbox.right).toBeLessThanOrEqual(size.width);
-    expect(toolbox.bottom).toBeLessThanOrEqual(size.height);
-
-    expect(errors).toEqual([]);
-});
-
-test('dragging the toolbox moves it rather than stretching it',
-     async ({page}) => {
-    /* The default position is anchored with `bottom`, and the toolbox has
-       no `height`. A `position: fixed` box with `top` AND `bottom` set and
-       `height: auto` is STRETCHED to span both edges -- only the
-       all-three-specified case is over-constrained and drops one -- so an
-       inline `top` written on its own does not move the toolbox, it makes
-       it as tall as the gap. `ToolboxUI._moveTop()` clears `bottom`
-       first, and this is the only place that can tell: the source browser
-       specs load no stylesheet, so there is no `bottom` there to fail to
-       clear, and the visual suite drives the FROZEN v1.6.16 bundle, which
-       has no `_moveTop` in it to test.
-
-       Every drag would be affected, not an edge case -- the grip is the
-       advertised way out of the toolbox's way, and the first drag would
-       have turned it into a column of tools down the side of the page. */
-    const errors = [];
-    page.on('pageerror', error => errors.push(`${error.name}: ${error.message}`));
-
-    await serveGitHub(page);
-    await page.goto(PAGE);
-    await shell(page).locator('.ct-cms__input').fill(TOKEN);
-    await shell(page).locator('.ct-cms__gate-form button').click();
-    await shell(page).locator('.ct-cms__nav-link').first().click();
-    await shell(page).locator('.ct-cms__entry-link').first().click();
-    await expect(page.locator('content-tools-cms > content-tools-editor'))
-        .toHaveAttribute('state', 'editing');
-
-    const toolbox = page.locator('content-tools-cms > content-tools-editor')
-        .locator('.ct-toolbox');
-    await expect(toolbox).toHaveClass(/ct-widget--active/);
-
-    const before = await toolbox.boundingBox();
-
-    /* Dragged by the grip, which is what `_onStartDragging` binds --
-       a drag from anywhere else on the toolbox moves nothing. */
-    const grip = page.locator('content-tools-cms > content-tools-editor')
-        .locator('.ct-toolbox__grip');
-    const from = await grip.boundingBox();
-    /* Rounded, because Chromium delivers integer `clientX`/`clientY` to
-       the page: grabbing at a half-pixel makes the offset the handler
-       computes differ from the one asserted here by half a pixel. */
-    const grab = {x: Math.round(from.x + from.width / 2),
-                  y: Math.round(from.y + from.height / 2)};
-    const to = {x: 400, y: 300};
-    await page.mouse.move(grab.x, grab.y);
-    await page.mouse.down();
-    await page.mouse.move(to.x, to.y, {steps: 8});
-    await page.mouse.up();
-
-    const after = await toolbox.boundingBox();
-
-    /* It ended up WHERE IT WAS DRAGGED, which is a different claim from
-       "it moved" and the difference is the whole test. `_onDrag` sets
-       `top` to the cursor minus the grab offset, so the point of the
-       toolbox under the cursor is the same point it was grabbed by.
-
-       Asserting only that y changed passes when `top` is never written
-       at all: clearing `bottom` on its own drops the toolbox to its
-       static position, which is a vertical move of several hundred
-       pixels that has nothing to do with the drag. */
-    expect(after.x).toBeCloseTo(to.x - (grab.x - before.x), 0);
-    expect(after.y).toBeCloseTo(to.y - (grab.y - before.y), 0);
-
-    // And it is the same toolbox, not a column: same height, same width.
-    expect(Math.round(after.height)).toBe(Math.round(before.height));
-    expect(Math.round(after.width)).toBe(Math.round(before.width));
-
-    expect(errors).toEqual([]);
 });

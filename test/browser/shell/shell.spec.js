@@ -279,34 +279,20 @@ describe('content-tools-cms', function() {
     });
 
     it('writes nothing into its own light DOM', async function() {
-        /* The host's light DOM belongs to the editor element, and only to
-           it: `<content-tools-editor>` is a light-DOM CHILD of this host
-           rendered through a slot, because nesting it in a second shadow
-           root retargets `document.getSelection()` and puts the caret in
-           the wrong place with nothing thrown. A shell that renders chrome
-           into its own children would collide with that. */
+        /* It used to belong to the editor element, which `/admin` hung
+           there as a light-DOM child and rendered through a slot, because
+           nesting it in a second shadow root retargets
+           `document.getSelection()` and puts the caret in the wrong
+           place with nothing thrown. Since M6-3 the claim is the whole
+           of it rather than half: there is NO editor here, the words of
+           an entry are written on the site's own page, and anything in
+           this host's children is something nobody put there on
+           purpose. `entry.spec.js` makes the same assertion on the one
+           route that used to hold one. */
         const {el} = await mount();
         expect(el.childNodes).toHaveLength(0);
         await signIn(el);
         expect(el.childNodes).toHaveLength(0);
-    });
-
-    it('keeps the editor slot across every render', async function() {
-        /* The failure this prevents has no stack trace: an editor slotted
-           into a slot a re-render replaced is invisible but still
-           connected, so it holds the one-per-page EditorApp lease forever
-           and every entry opened afterwards refuses to open. */
-        const {el, shadow} = await mount();
-        const slot = shadow.querySelector('slot[name="editor"]');
-        expect(slot).not.toBe(null);
-
-        await signIn(el);
-        el.ownerDocument.defaultView.location.hash = '#/c/blog';
-        await until(() => shadow.querySelector('.ct-cms__heading').textContent === 'Blog',
-                    'the collection view');
-
-        expect(shadow.querySelector('slot[name="editor"]')).toBe(slot);
-        expect(slot.isConnected).toBe(true);
     });
 
     it('follows the hash to a collection, and marks it current', async function() {

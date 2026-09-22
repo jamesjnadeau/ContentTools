@@ -363,3 +363,138 @@ test('the write half says nothing in the console either', async ({page}) => {
 
     expect(complaints).toEqual([]);
 });
+
+/* The editor's toolbox, which arrived here in M6-3 with the editor.
+ *
+ * Both of these used to run against `/admin`, because that is where an
+ * editor mounted. It does not any more, and the toolbox is the same
+ * `position: fixed` chrome wherever it floats -- so this is now the
+ * only suite that can see it at all. The source browser specs load no
+ * stylesheet, so `getComputedStyle` there reports the UA's `auto` for
+ * every edge whatever the rule says, and the visual suite drives the
+ * FROZEN v1.6.16 bundle, which has neither the default nor `_moveTop`
+ * in it.
+ */
+
+/** The toolbox, once it has finished transitioning itself in. */
+async function settledToolbox(page) {
+    const toolbox = page.locator('body > content-tools-editor')
+        .locator('.ct-toolbox');
+    /* Every widget adds `ct-widget--active` behind a 100ms timer, so an
+       immediate read measures a toolbox mid-animation rather than where
+       it comes to rest -- the same race Phase 7e met from the other
+       side. */
+    await expect(toolbox).toHaveClass(/ct-widget--active/);
+    return toolbox;
+}
+
+test('the toolbox default clears the bar rather than landing on it',
+     async ({page}) => {
+    /* 138px wide and ~320px tall, floating over whatever the host page
+       put underneath it -- and here the host page is somebody's site.
+       Its DEFAULT position is therefore a product decision about
+       somebody else's layout, and the only controls this software owns
+       on that page are the bar's.
+
+       So this asserts the requirement rather than the rule, with
+       NOTHING in `ct-toolbox-position`: the shipped default must not
+       cover a control. It landed at 128,128 until M5-6 -- over the
+       opening lines of an article -- and top-right was measured too and
+       is worse, because that is exactly where the bar is. An overlap
+       assertion states what matters and survives a deliberate move to
+       some other free corner; a pixel assertion would fail on the move
+       and pass on a regression into a different control. */
+    await editing(page);
+    const toolbox = await settledToolbox(page);
+
+    const boxes = await page.evaluate(() => {
+        const rect = el => {
+            const r = el.getBoundingClientRect();
+            return {left: r.left, top: r.top, right: r.right, bottom: r.bottom};
+        };
+        const root = document.querySelector('content-tools-edit-bar').shadowRoot;
+        const box = document.querySelector('content-tools-editor')
+            .shadowRoot.querySelector('.ct-toolbox');
+        const named = {};
+        for (const [name, selector] of [
+            ['the bar', '.ct-edit'],
+            ['Submit', '.ct-edit__submit'],
+            ['Details', '.ct-edit__details']
+        ]) {
+            const el = root.querySelector(selector);
+            /* A missing selector would make this pass by having nothing
+               to overlap, which is the failure shape an overlap
+               assertion is most prone to. */
+            if (!el) throw new Error(`no ${name} (${selector}) to measure`);
+            named[name] = rect(el);
+        }
+        return {toolbox: rect(box), ...named};
+    });
+
+    const {toolbox: box, ...controls} = boxes;
+    for (const [name, other] of Object.entries(controls)) {
+        const overlaps = box.left < other.right && box.right > other.left
+            && box.top < other.bottom && box.bottom > other.top;
+        expect(overlaps, `the toolbox covers ${name}`).toBe(false);
+    }
+
+    // And it is on screen: "clears everything" must not mean "is elsewhere".
+    const size = page.viewportSize();
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.top).toBeGreaterThanOrEqual(0);
+    expect(box.right).toBeLessThanOrEqual(size.width);
+    expect(box.bottom).toBeLessThanOrEqual(size.height);
+    await expect(toolbox).toBeVisible();
+});
+
+test('dragging the toolbox moves it rather than stretching it',
+     async ({page}) => {
+    /* The default position is anchored with `bottom`, and the toolbox has
+       no `height`. A `position: fixed` box with `top` AND `bottom` set and
+       `height: auto` is STRETCHED to span both edges -- only the
+       all-three-specified case is over-constrained and drops one -- so an
+       inline `top` written on its own does not move the toolbox, it makes
+       it as tall as the gap. `ToolboxUI._moveTop()` clears `bottom`
+       first, and this is the only place that can tell.
+
+       Every drag would be affected, not an edge case -- the grip is the
+       advertised way out of the toolbox's way, and the first drag would
+       have turned it into a column of tools down the side of the page. */
+    await editing(page);
+    const toolbox = await settledToolbox(page);
+    const before = await toolbox.boundingBox();
+
+    /* Dragged by the grip, which is what `_onStartDragging` binds --
+       a drag from anywhere else on the toolbox moves nothing. */
+    const grip = page.locator('body > content-tools-editor')
+        .locator('.ct-toolbox__grip');
+    const from = await grip.boundingBox();
+    /* Rounded, because Chromium delivers integer `clientX`/`clientY` to
+       the page: grabbing at a half-pixel makes the offset the handler
+       computes differ from the one asserted here by half a pixel. */
+    const grab = {x: Math.round(from.x + from.width / 2),
+                  y: Math.round(from.y + from.height / 2)};
+    const to = {x: 400, y: 300};
+    await page.mouse.move(grab.x, grab.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, {steps: 8});
+    await page.mouse.up();
+
+    const after = await toolbox.boundingBox();
+
+    /* It ended up WHERE IT WAS DRAGGED, which is a different claim from
+       "it moved" and the difference is the whole test. `_onDrag` sets
+       `top` to the cursor minus the grab offset, so the point of the
+       toolbox under the cursor is the same point it was grabbed by.
+
+       Asserting only that y changed passes when `top` is never written
+       at all: clearing `bottom` on its own drops the toolbox to its
+       static position, which is a vertical move of several hundred
+       pixels that has nothing to do with the drag. */
+    expect(after.x).toBeCloseTo(to.x - (grab.x - before.x), 0);
+    expect(after.y).toBeCloseTo(to.y - (grab.y - before.y), 0);
+
+    // And it is the same toolbox, not a column: same height, same width.
+    expect(Math.round(after.height)).toBe(Math.round(before.height));
+    expect(Math.round(after.width)).toBe(Math.round(before.width));
+});

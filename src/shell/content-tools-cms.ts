@@ -1,31 +1,25 @@
-/* `<content-tools-cms>` -- the shell, and the thing a site's authors open.
+/* `<content-tools-cms>` -- the management screens, served at `/admin`.
  *
- * The editor element is the editing surface and `../cms` is the repository;
- * neither knows the other exists. This is what joins them: it loads the
- * config for the one repository this deployment serves, signs the user in,
- * lists what they can edit, and turns a save into a pull request.
+ * MANAGEMENT ONLY, since M6-3. This is where the drafts and the pull
+ * requests are: what exists, what is in review, what an entry is called
+ * and when it is dated, and what happens to it -- created, submitted,
+ * deleted. It shows NO EDITOR and has no light-DOM children at all.
  *
- * MODE A, ONE LEVEL UP. The shell's own chrome lives in its shadow root,
- * and the `<content-tools-editor>` is appended as a LIGHT-DOM child of this
- * host, rendered through `<slot name="editor">`. That is not a style
- * preference, it is the only arrangement that works:
+ * The body of an entry is edited on the site's own page, by `src/edit/`,
+ * with the real template around it. That is the whole point of the split
+ * and it is not a packaging decision: an author editing a post should see
+ * the post, in the typography and the layout a reader will see it in, not
+ * a rectangle in an admin panel that resembles it. `editUrl` is the link
+ * between the two screens and `src/cms/preview.ts` decides where it goes
+ * -- an entry with an open pull request is edited on that request's deploy
+ * preview, and one without on the live site.
  *
- *   `ShadowRootContext.getRange()` is a three-branch chain, and in Mode A
- *   the editable content is in the light DOM -- so Chromium's
- *   `ShadowRoot.getSelection()` and `getComposedRanges({shadowRoots:[...]})`
- *   both decline on containment and it falls through to
- *   `document.getSelection()`, whose range it returns EVEN THOUGH the nodes
- *   are outside the editor's own root, because in Mode A that is the
- *   content. Nest the editor inside a second shadow root and
- *   `document.getSelection()` retargets in Chromium and WebKit: the range
- *   comes back pointing at this host, the caret is in the wrong place, and
- *   nothing throws. The document-level `content.css` would not reach the
- *   content either.
- *
- * Slotting does not move nodes -- the region stays in the document tree --
- * so both problems simply do not arise. `test/browser/shell/selection.spec.js`
- * asserts on the resolved range rather than on where the element sits, so a
- * later refactor that nests it under some OTHER shadow root fails too.
+ * The frontmatter form stays HERE rather than following the body out.
+ * A date and a list of tags are not things the site's template shows; they
+ * decide where the page goes and what it is filed under, so the place to
+ * edit them is the screen that manages the file. Both surfaces write the
+ * same file through the same `EntrySession`, so neither can invent its own
+ * idea of what a save would produce.
  *
  * STATE IS A FIELD, NOT A STORE. One owner and one subscriber, so a
  * subscribe/unsubscribe Set would be machinery whose unsubscribe path no
@@ -41,25 +35,22 @@ import {CmsRepo, EntryExistsError} from '../cms/repo.js';
 import {DIRECTORY_LIMIT} from '../cms/github.js';
 import type {EditorialStatus} from '../cms/status.js';
 import type {Entry, InFlightEntry} from '../cms/repo.js';
-import {MediaStore} from '../cms/media.js';
 import {adapterFor} from '../auth/adapter.js';
 import {PatAuthAdapter} from '../auth/pat.js';
 import {sessionStorageOrMemory} from '../auth/storage.js';
 import type {TokenStorage} from '../auth/storage.js';
 import type {AuthAdapter} from '../auth/types.js';
-/* The CLASS module, never `../element/index.js`, and never
-   `../markdown/index.js`. Both of those are build ENTRIES of the same Vite
+/* NOT `../markdown/index.js`: that is a build ENTRY of the same Vite
    invocation as this one, and Rollup turns an entry another entry imports
    into a facade whose body it hoists into a shared chunk -- taking
    `customElements.define` out of the file `package.json` names in
-   `sideEffects`. test/browser/shell/imports.spec.js fails on either.
+   `sideEffects`. test/browser/shell/imports.spec.js fails on it.
 
-   Static, not `await import()`. The tag has to be registered before the
-   shell creates one, and a lazy chunk that 404s from a static host fails
-   nowhere until somebody opens an entry -- by which time the person who
-   deployed it has gone. The budget rise is the price. */
-import {ContentToolsEditor, TAG_NAME as EDITOR_TAG}
-    from '../element/content-tools-editor.js';
+   The EDITOR is not imported at all any more, by anything under
+   `src/shell/`, and there is a rule in that same spec saying so. These
+   screens show no editor since M6-3: importing the element would pull
+   `src/element/`, and `src/element/` pulls the whole library, into
+   `dist/shell.js` for a surface that never mounts one. */
 import {MarkdownDocument} from '../markdown/document.js';
 
 import {mergeEntries} from './merge.js';
@@ -71,10 +62,9 @@ import type {Described} from '../entry/errors.js';
 import {formatRoute, HOME, parseRoute} from './routes.js';
 import type {Route} from './routes.js';
 import {shellStyleSheet} from './styles.js';
-import {buildFrame, EDITOR_SLOT} from './views/frame.js';
+import {buildFrame} from './views/frame.js';
 import {mediaItem} from './views/media.js';
 import type {MediaItem, MediaState} from './views/media.js';
-import {insertImage} from './insert.js';
 import type {Frame} from './views/frame.js';
 import {buildGate} from './views/gate.js';
 import type {Gate} from './views/gate.js';
@@ -88,12 +78,10 @@ import {fieldDefaults} from '../entry/frontmatter.js';
    and the commit -- lives outside the shell, because the in-page editing
    surface opens the same entry on the site's own page and has to reach
    exactly the same answers. See src/entry/session.ts. */
-import {EntrySession, REGION} from '../entry/session.js';
+import {EntrySession} from '../entry/session.js';
 import type {Pending} from '../entry/session.js';
 import {DEFAULT_WIDGETS} from '../entry/widgets.js';
 import type {WidgetFactory} from '../entry/widgets.js';
-
-export {EDITOR_SLOT, EDITOR_TAG, ContentToolsEditor};
 
 /* What a frontmatter block has to be before a form may write over it is
    `formState`'s to decide now, for both surfaces at once -- see
@@ -146,26 +134,24 @@ export class ContentToolsCms extends HTMLElement {
     /**
      * The open entry, or null when none is.
      *
-     * ONE field where there were five -- the entry, its document, its
-     * media store, the editor element and the last HTML that element
-     * reported. All five were written together in `_mount` and cleared
-     * together in `_closeEntry`, which is the definition of one object,
-     * and the shell is not the only thing that needs them: the in-page
-     * surface opens the same entry on the site's own page. Two
-     * implementations of "what would a save write" are two that can
-     * disagree, and the way they disagree is a leave panel over work a
-     * save reports as nothing.
+     * ONE field where there were three -- the entry, its document and
+     * the commit it was read at -- written together in `_mount` and
+     * cleared together in `_closeEntry`, which is the definition of one
+     * object. And the shell is not the only thing that needs them: the
+     * in-page surface opens the same entry on the site's own page and
+     * subclasses this session to do it. Two implementations of "what
+     * would a save write" are two that can disagree, and the way they
+     * disagree is a leave panel over work a save reports as nothing.
      *
-     * Written by `_setSession` and nowhere else. Two failures live in
-     * that and neither says anything: an editor left connected holds
-     * the one-per-page `EditorApp` lease, so every later entry refuses
-     * to open; and an editor removed by re-rendering the shadow root
-     * instead would be unslotted rather than disconnected, which is the
-     * same thing with the element still on the page.
+     * The base class, never `EditingSession`. This screen has no editor
+     * and stages no media, so what it holds is the frontmatter form's
+     * answers over a body it has not looked at -- see
+     * `MarkdownDocument.updateFrontmatter` for why that body is never
+     * put through the walker on the way back out.
      */
     declare private _session: EntrySession | null;
     /**
-     * The media folder, for the `#/media` route and the entry panel.
+     * The media folder, for its own route.
      *
      * The files and whether the listing was cut short are ONE field, not
      * two: they are set together and cleared together, and two fields
@@ -174,7 +160,6 @@ export class ContentToolsCms extends HTMLElement {
      * than it is, and nothing on screen contradicts it.
      */
     declare private _media: {files: MediaItem[]; truncated: boolean} | null;
-    declare private _mediaOpen: boolean;
     /**
      * Object URLs handed to thumbnails whose public URL did not answer.
      *
@@ -262,11 +247,9 @@ export class ContentToolsCms extends HTMLElement {
            the ability to look inside. */
         this._shadow = this.attachShadow({mode: 'open'});
 
-        /* Built in the CONSTRUCTOR, and never rebuilt. The frame owns
-           `<slot name="editor">`, and an editor slotted into a slot a
-           re-render replaced is invisible but still connected -- so it
-           holds the one-per-page EditorApp lease forever and every entry
-           opened afterwards refuses to open, silently. */
+        /* Built in the CONSTRUCTOR, and never rebuilt: the frontmatter
+           fields are inside it, and a rebuild per render eats the
+           keystrokes of whoever is typing into them. */
         this._frame = buildFrame(this.ownerDocument, {
             signOut: () => this._signOut(),
             submit: () => this._submit(),
@@ -276,9 +259,7 @@ export class ContentToolsCms extends HTMLElement {
             askDelete: asking => this._askDelete(asking),
             confirmDelete: () => this._delete(),
             create: title => this._create(title),
-            showMedia: open => this._showMedia(open),
             thumbnail: item => this._thumbnail(item),
-            insert: (item, size) => this._insert(item, size),
             moveStatus: (entry, status) => this._moveStatus(entry, status)
         /* A GETTER, not a snapshot. The frame is built here, in the
            constructor, and a host page sets `el.widgets` afterwards --
@@ -299,7 +280,6 @@ export class ContentToolsCms extends HTMLElement {
         this._deleting = false;
         this._session = null;
         this._media = null;
-        this._mediaOpen = false;
         this._thumbnails = new Set();
         this._review = null;
         this._moving = [];
@@ -524,7 +504,6 @@ export class ContentToolsCms extends HTMLElement {
         creating?: boolean;
         deleting?: boolean;
         media?: {files: MediaItem[]; truncated: boolean} | null;
-        mediaOpen?: boolean;
         review?: InFlightEntry[] | null;
         moving?: readonly number[];
     }): void {
@@ -560,9 +539,6 @@ export class ContentToolsCms extends HTMLElement {
         }
         if ('media' in patch) {
             this._media = patch.media ?? null;
-        }
-        if ('mediaOpen' in patch) {
-            this._mediaOpen = patch.mediaOpen ?? false;
         }
         if ('review' in patch) {
             this._review = patch.review ?? null;
@@ -828,74 +804,48 @@ export class ContentToolsCms extends HTMLElement {
     // --- the open entry ---------------------------------------------------
 
     /**
-     * Read an entry and put an editor on the page for it.
+     * Read an entry and open its management screen.
      *
-     * The media folder is listed in the SAME round trip, because the
-     * names it already holds decide what an upload is staged as -- and a
-     * collision has to be resolved at the moment the image is inserted,
-     * not at commit time, since the URL the editor shows has to be the
-     * URL that ends up in the file.
+     * ONE request now. Until M6-3 this listed the media folder in the
+     * same round trip, because the names it held decided what an upload
+     * was staged as -- and uploads happen where the editor is, which is
+     * the site's own page. A screen that cannot insert a picture has no
+     * reason to ask what pictures there are.
      */
     private async _openEntry(at: number, collection: string, slug: string): Promise<void> {
         const repo = this._repo as CmsRepo;
-        const config = this._config as CmsConfig;
-
-        const [entry, folder] = await Promise.all([
-            repo.readEntry(collection, slug),
-            repo.github.listDirectory(config.media.folder, repo.base)
-        ]);
+        const entry = await repo.readEntry(collection, slug);
         if (at !== this._nav) {
             return;
         }
 
-        this._mount(entry, MarkdownDocument.parse(entry.content ?? ''), folder);
+        this._mount(entry, MarkdownDocument.parse(entry.content ?? ''));
     }
 
     /**
-     * Put an editor on the page for an entry, however it was arrived at.
+     * Open an entry's management screen, however it was arrived at.
      *
      * Shared by opening an existing entry and creating a new one, and it
      * is the same code on purpose: the only thing a new entry does
      * differently is where its `MarkdownDocument` came from. Everything
-     * after that -- the form, the media store, the editor, the dirty
-     * check, the save -- must not be able to tell the two apart, or a
-     * created entry becomes a second set of rules nobody exercises until
-     * somebody writes one.
+     * after that -- the form, the dirty check, the save -- must not be
+     * able to tell the two apart, or a created entry becomes a second
+     * set of rules nobody exercises until somebody writes one.
      */
-    private _mount(entry: Entry, doc: MarkdownDocument, folder: Listing): void {
-        const config = this._config as CmsConfig;
-        /* ONE listing, two uses, derived here rather than by each
-           caller: the names an upload is staged against and the files
-           the media panel offers have to be the same set. Reading it
-           twice is two answers that can differ -- and a create route
-           that listed for the store and not for the panel is exactly
-           the bug this shape prevents, found by the test that opens the
-           panel over an entry that does not exist yet. */
-        this._media = this._listing(folder);
+    private _mount(entry: Entry, doc: MarkdownDocument): void {
         this._openForm(doc, entry.collection, entry.slug);
 
-        const session = new EntrySession({
-            document: this.ownerDocument,
+        this._session = new EntrySession({
             entry,
             doc,
-            store: new MediaStore({config, taken: folder.map(file => file.name)}),
             /* Asked of the live form, not snapshotted: the session wants
                the answers at the moment of the comparison, and the form
                is a set of controls somebody is still typing into. */
             values: () => this._frame.entry.values()
         });
-        /* Without this the element is an unassigned light child. The
-           frame's only slot is a NAMED one, so an editor with no `slot`
-           attribute renders nowhere at all -- while being perfectly
-           connected, perfectly functional, and holding the lease. Set
-           here rather than in the session, because a slot is this
-           shell's arrangement and the in-page surface has none. */
-        session.editor.setAttribute('slot', EDITOR_SLOT);
-        this._setSession(session);
-        session.start();
-        /* `_render` rather than `_setState`: the state this changed is the
-           session, which `_setSession` wrote, and a patch with nothing in
-           it reads as though it did something. */
+        /* `_render` rather than `_setState`: what changed is the session
+           and the form, both written directly, and a patch with nothing
+           in it reads as though it did something. */
         this._render();
     }
 
@@ -942,18 +892,13 @@ export class ContentToolsCms extends HTMLElement {
 
         void this._guard(async () => {
             let entry: Entry;
-            let folder: Listing;
             try {
                 /* `readEntry` answers both halves of the collision in one
                    round trip -- is the file on the base branch, is a pull
                    request open for this slug -- and pins the commit this
                    entry will be written against. Asking the two questions
                    separately would ask them at two different moments. */
-                [entry, folder] = await Promise.all([
-                    repo.readEntry(route.collection, slug),
-                    repo.github.listDirectory(
-                        (this._config as CmsConfig).media.folder, repo.base)
-                ]);
+                entry = await repo.readEntry(route.collection, slug);
             } finally {
                 /* Whatever happened, the check is over. Leaving it set
                    disables Create for good, and the person who most needs
@@ -967,7 +912,7 @@ export class ContentToolsCms extends HTMLElement {
             if (entry.content !== null || entry.pull) {
                 throw new EntryExistsError(route.collection, slug, entry.path);
             }
-            this._mount(entry, this._blankDocument(fieldsFor(collection, slug)), folder);
+            this._mount(entry, this._blankDocument(fieldsFor(collection, slug)));
         });
     }
 
@@ -1074,46 +1019,27 @@ export class ContentToolsCms extends HTMLElement {
     }
 
     /**
-     * This host's only light-DOM child, and the only place it is written.
-     *
-     * Not `replaceChildren`: a host page's own children are none of the
-     * shell's business, and the M5-1 invariant that the shell writes
-     * nothing into its light DOM holds for everything except this one
-     * element.
-     *
-     * There is no editor-to-editor case, and there is deliberately no
-     * code for one. `_navigate` closes the open entry BEFORE it awaits
-     * the next, so the lease is genuinely free across the read rather
-     * than handed over in a single tick -- the one-tick `replaceWith`
-     * swap the plan called for was written, found to be unreachable, and
-     * removed. Adding it back means removing the `_closeEntry` above.
-     */
-    private _setSession(next: EntrySession | null): void {
-        const current = this._session;
-        this._session = next;
-        if (next) {
-            this.appendChild(next.editor);
-        } else if (current) {
-            current.close();
-        }
-    }
-
-    /**
      * Forget the open entry. Does NOT render; every caller sets state
      * immediately afterwards and a second render would only flicker.
+     *
+     * A plain assignment, and this used to be a method. Closing an entry
+     * meant disconnecting an editor element from this host's light DOM,
+     * and two failures lived in that and neither said anything: an editor
+     * left connected holds the one-per-page `EditorApp` lease, so every
+     * later entry refuses to open; and one removed by re-rendering the
+     * shadow root instead is unslotted rather than disconnected, which is
+     * the same thing with the element still on the page. Since M6-3 this
+     * host has no light-DOM children at all -- the lease belongs to the
+     * site's page now -- so there is nothing to get wrong.
      */
     private _closeEntry(): void {
-        this._setSession(null);
+        this._session = null;
         this._form = null;
         /* A confirmation belongs to the entry it was asked about. Left
            standing, the next entry opens with "Delete it" already on
            screen -- and the person who presses it is answering a
            question about a file they have closed. */
         this._deleting = false;
-        /* The panel belongs to the entry it was opened over. Left open,
-           the next entry arrives with a grid of Insert buttons already
-           on screen, wired to an entry nobody has read yet. */
-        this._mediaOpen = false;
         this._saving = false;
         this._saved = null;
         this._conflict = null;
@@ -1138,7 +1064,12 @@ export class ContentToolsCms extends HTMLElement {
                decide whether to offer a New entry link. */
             deletable: collection?.kind === 'folder' && collection.delete,
             deleting: this._deleting,
-            mediaOpen: this._mediaOpen
+            /* Handed down whole rather than resolved to a URL here. The
+               view needs the config to say whether this entry has a page
+               at all, which is three different reasons for the same
+               answer, and a URL computed up here would have thrown two
+               of them away. */
+            config: this._config
         };
     }
 
@@ -1164,11 +1095,6 @@ export class ContentToolsCms extends HTMLElement {
                 .map(file => mediaItem(config, file)),
             truncated: folder.length >= DIRECTORY_LIMIT
         };
-    }
-
-    /** Open or close the media panel under the entry. */
-    private _showMedia(open: boolean): void {
-        this._setState({mediaOpen: open});
     }
 
     /**
@@ -1215,37 +1141,18 @@ export class ContentToolsCms extends HTMLElement {
     }
 
     /**
-     * Put a file that is already in the repository into the open entry.
+     * The media folder, for its own route.
      *
-     * Nothing is staged and nothing is committed: the file is in the
-     * repository already, so the entry references it by the same public
-     * URL a tile just proved renders, and the save that follows writes
-     * one changed line.
-     *
-     * The panel stays open. Inserting one picture is rarely the whole
-     * job, and a panel that closes itself makes the second insert a
-     * hunt for the button again.
-     */
-    private _insert(item: MediaItem, size: [number, number]): void {
-        insertImage(REGION, {url: item.url, size, alt: item.name});
-    }
-
-    /**
-     * The media folder, for the route and for the panel alike.
-     *
-     * `insertable` is derived from there being an open entry, never
-     * remembered: the panel's Insert buttons must go dead the instant the
-     * entry does. A boolean set when the panel opened would survive an
-     * entry closing under it -- a save that navigated, a conflict that
-     * reloaded -- and every press after that would report success and
-     * insert into nothing.
+     * Read-only since M6-3, and the Insert button went with the editor.
+     * A picture is put into an entry where the entry's words are, which
+     * is the site's own page; a management screen that could insert one
+     * would be inserting it into a body nothing here can see.
      */
     private _mediaState(config: CmsConfig): MediaState {
         return {
             folder: config.media.folder,
             files: this._media?.files ?? null,
-            truncated: this._media?.truncated ?? false,
-            insertable: this._session !== null
+            truncated: this._media?.truncated ?? false
         };
     }
 
@@ -1592,11 +1499,10 @@ export class ContentToolsCms extends HTMLElement {
     /**
      * Give up the token, and everything that needed one.
      *
-     * The editor goes with it. It is a child of THIS host, and the frame
-     * that slots it is merely hidden when the gate comes back -- so an
-     * editor left behind is invisible, still connected, and still holding
-     * the one-per-page `EditorApp` lease. Signing back in and opening an
-     * entry would then refuse, with nothing in any stack trace.
+     * The open entry goes with it. Every question the management screen
+     * can ask about an entry needs the token that is being given up, so
+     * one left open would be a heading and a form over an entry nothing
+     * can read, save or delete.
      */
     private async _dropToken(): Promise<void> {
         await this.auth.logout();
@@ -1715,11 +1621,13 @@ export class ContentToolsCms extends HTMLElement {
     /**
      * Exactly one of the three screens, and the reflected `state`.
      *
-     * The frame is HIDDEN rather than removed. It holds the editor slot,
-     * and a slot detached from the shadow root unslots whatever was in it
-     * -- leaving an editor that is invisible, still connected, and still
-     * holding the one-per-page lease. One attribute is a far cheaper
-     * invariant than remembering never to detach it.
+     * The frame is HIDDEN rather than removed, and that is now a
+     * preference rather than an invariant: it held `<slot name="editor">`
+     * until M6-3, and a slot detached from the shadow root unslots
+     * whatever was in it -- leaving an editor invisible, still connected,
+     * and still holding the one-per-page lease. What is left is the
+     * ordinary reason, which is that rebuilding the whole frame to come
+     * back from a gate throws away scroll position and focus.
      *
      * `state` is reflected OUT and never read back in: it is how a host
      * page and a test wait for the shell without polling a property.

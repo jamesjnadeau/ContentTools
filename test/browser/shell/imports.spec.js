@@ -35,6 +35,13 @@
  * 4. A bare package in either. "Vanilla, no new runtime dependency" is a
  *    decision, and a decision nobody checks is a preference.
  *
+ * 5. `src/shell/` reaching `src/element/` at all. The management screens
+ *    have shown no editor since M6-3 -- the body of an entry is edited on
+ *    the site's own page -- and `src/element/` pulls in the whole
+ *    library, so one import puts ~80 kB of editor into `dist/shell.js`
+ *    for a surface that never mounts one. Nothing throws, nothing looks
+ *    wrong, and the shell's size budget is the only thing that notices.
+ *
  * The technique is test/browser/cms/leaf.spec.js's, including its
  * file-count assertion -- a glob that matches nothing looks exactly like a
  * codebase with no violations.
@@ -180,6 +187,30 @@ describe('the editing surfaces import one way only', () => {
             for (const specifier of specifiersOf(source)) {
                 if (!specifier.startsWith('.')) { continue; }
                 if (resolveFrom(path, specifier).includes(other)) {
+                    violations.push(`${path} -> ${specifier}`);
+                }
+            }
+        }
+        expect(violations).toEqual([]);
+    });
+
+    it('keeps the editor out of the management screens', () => {
+        /* Rule 1 already forbids `src/element/index.js` -- the entry --
+           and this forbids the whole directory, which is a different
+           claim: the shell imported the CLASS module quite legally until
+           M6-3, and what changed is not the packaging hazard but the
+           product. /admin manages drafts and pull requests; the words
+           are edited where they are read.
+
+           Only the shell. `src/edit/` imports the element on purpose,
+           and `src/entry/` must not -- it is shared, so an editor
+           imported there arrives in both surfaces -- which is rule 2's
+           job, since `src/element/` is in BELOW. */
+        const violations = [];
+        for (const [path, source] of Object.entries(SHELL)) {
+            for (const specifier of specifiersOf(source)) {
+                if (!specifier.startsWith('.')) { continue; }
+                if (resolveFrom(path, specifier).includes('/src/element/')) {
                     violations.push(`${path} -> ${specifier}`);
                 }
             }

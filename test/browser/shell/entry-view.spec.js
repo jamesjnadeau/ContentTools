@@ -13,6 +13,24 @@
  * a shell test cannot make.
  */
 import {buildEntry} from '../../../src/shell/views/entry.js';
+import {parseConfig} from '../../../src/cms/config.js';
+
+/* A deployment that publishes `blog` as pages and `notes` as nothing.
+   Two collections, because the link is built from the one the OPEN
+   ENTRY names -- and a view holding one entry and one collection that
+   disagree is exactly what sends an author to another post's page. */
+const CONFIG = parseConfig({
+    backend: {repo: 'owner/site'},
+    /* No `base`: served at the root, which is spelled by omitting the
+       key rather than writing it empty. */
+    site: {preview: 'https://preview-{{pr}}.test'},
+    media: {folder: 'static/images', publicPath: '/images'},
+    collections: [
+        {name: 'blog', label: 'Blog', folder: 'content/blog',
+         page: '/blog/{{slug}}/', body: 'article'},
+        {name: 'notes', label: 'Notes', folder: 'content/notes'}
+    ]
+});
 
 const PULL = {
     number: 12,
@@ -40,7 +58,7 @@ const ENTRY = {
 /** The state the shell holds for an entry that has only just been asked for. */
 const LOADING = {
     entry: null, saving: false, saved: null, conflict: null, leaving: false,
-    deletable: false, deleting: false, mediaOpen: false,
+    deletable: false, deleting: false, config: CONFIG,
     /* No form. The fields are their own view with their own spec, and
        every assertion here is about the chrome around them. */
     fields: null
@@ -49,7 +67,7 @@ const LOADING = {
 function view(state = {}, handlers = {}) {
     const built = buildEntry(document, {
         submit() {}, reload() {}, stay() {}, discard() {},
-        askDelete() {}, confirmDelete() {}, showMedia() {},
+        askDelete() {}, confirmDelete() {},
         ...handlers
     });
     built.update({...LOADING, ...state});
@@ -179,6 +197,62 @@ describe('the entry view', () => {
         });
     });
 
+    describe('the link to the site’s own page', () => {
+        /* Three different reasons for there to be no link, and the shell
+           can only be put into one of them -- a collection that declares
+           no `page`, which `entry.spec.js` covers. The other two are
+           here because they are exactly where a live link to nowhere
+           hides: an `<a>` whose `href` was never set resolves to the
+           page it is already on, so a broken link and a link back to
+           `/admin` look identical in the DOM and differ only when
+           somebody clicks. */
+
+        it('offers nothing while the config is still null', () => {
+            /* A state the shell passes through and never renders: it
+               shows the status screen until the config has loaded, so
+               the view is only ever handed one. The branch stays
+               because the alternative is a view that throws if that
+               order ever changes, and a screen that throws during
+               render is a blank page. */
+            const {find} = view({entry: ENTRY, config: null});
+            const link = find('.ct-cms__entry-edit');
+            expect(link.hidden).toBe(true);
+            expect(link.textContent).toBe('');
+            expect(link.hasAttribute('href')).toBe(false);
+            return expect(find('.ct-cms__entry-stale').hidden).toBe(true);
+        });
+
+        it('offers nothing for a collection the config no longer has', () => {
+            /* Unreachable from the shell for a reason worth stating:
+               `readEntry` resolves the collection first and throws a
+               `ConfigError`, so a bookmark naming a renamed collection
+               never reaches this view at all. What it guards is the
+               order changing -- an entry held across a config reload,
+               or a read that resolves its collection later than it does
+               now -- where the difference between "no page" and "a link
+               to the wrong post's page" is one `findCollection`. */
+            const {find} = view({
+                entry: {...ENTRY, collection: 'gone'},
+                config: CONFIG
+            });
+            const link = find('.ct-cms__entry-edit');
+            expect(link.hidden).toBe(true);
+            expect(link.textContent).toBe('');
+            return expect(link.hasAttribute('href')).toBe(false);
+        });
+
+        it('links a published entry to its page, with no warning', () => {
+            /* The positive case, here as well as in `entry.spec.js`,
+               because the two above assert an absence and an absence
+               that is always absent proves nothing. */
+            const {find} = view({entry: ENTRY, config: CONFIG});
+            const link = find('.ct-cms__entry-edit');
+            expect(link.hidden).toBe(false);
+            expect(link.getAttribute('href')).toBe('/blog/hello/');
+            return expect(find('.ct-cms__entry-stale').hidden).toBe(true);
+        });
+    });
+
     describe('the conflict panel', () => {
         it('cannot be typed into', () => {
             /* It is a copy source, and nothing reads it back. Without
@@ -188,44 +262,5 @@ describe('the entry view', () => {
             const {find} = view({entry: ENTRY, conflict: '# Mine\n'});
             return expect(find('.ct-cms__conflict-text').readOnly).toBe(true);
         });
-    });
-});
-
-describe('the media toggle', function() {
-
-    it('is dead until there is an entry to insert into', function() {
-        /* Same reason Submit is: an entry that has not loaded has
-           nothing to put a picture in, and a button that answers a press
-           by doing nothing reads as a broken page. */
-        expect(view().find('.ct-cms__entry-media').disabled).toBe(true);
-        return expect(view({entry: ENTRY}).find('.ct-cms__entry-media').disabled)
-            .toBe(false);
-    });
-
-    it('says whether the panel is open, where a screen reader can hear it',
-       function() {
-        /* The panel it controls is further down the page, past the
-           frontmatter form, so the state on the control itself is the
-           only thing telling somebody the press did anything. */
-        expect(view({entry: ENTRY}).find('.ct-cms__entry-media')
-               .getAttribute('aria-expanded')).toBe('false');
-        return expect(view({entry: ENTRY, mediaOpen: true})
-                      .find('.ct-cms__entry-media')
-                      .getAttribute('aria-expanded')).toBe('true');
-    });
-
-    it('asks for the opposite of what is showing', function() {
-        /* The state it reports is kept beside the attribute rather than
-           read back off it. Reading it back is the same answer spelled
-           as a string comparison, and a typo there makes every press
-           ask to OPEN -- so the panel can be opened and never closed. */
-        const asked = [];
-        const {built} = view({entry: ENTRY, mediaOpen: true},
-                             {showMedia: open => asked.push(open)});
-        built.node.querySelector('.ct-cms__entry-media').click();
-
-        built.update({...LOADING, entry: ENTRY, mediaOpen: false});
-        built.node.querySelector('.ct-cms__entry-media').click();
-        return expect(asked).toEqual([false, true]);
     });
 });

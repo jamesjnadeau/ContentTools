@@ -1,9 +1,14 @@
 # The shell
 
-`@jamesjnadeau/content-tools/shell` is the application a site's authors
-open. It is the only place the two halves of this package meet: the editor
-element is the editing surface, [`./cms`](cms.md) is the repository, neither
-knows the other exists, and this joins them.
+`@jamesjnadeau/content-tools/shell` is the management application a site's
+authors open at `/admin`. It lists what is published and what is in review,
+opens and closes pull requests, edits an entry's frontmatter, and creates
+and deletes entries.
+
+It does **not** edit the words. Those are written on the site's own page,
+with the real template around them, by
+[the in-page surface](in-page.md) — so what you are editing looks like what
+a reader will see. Each entry screen here offers a link to that page.
 
 ```html
 <content-tools-cms config="./cms-config.yml"></content-tools-cms>
@@ -20,11 +25,17 @@ From a bundler it is the same tag behind an import, which registers it:
 import '@jamesjnadeau/content-tools/shell';
 ```
 
-The shell registers `<content-tools-editor>` too, so a page that loads both
-`./shell` and `./element` gets whichever won the race and no error. It also
-brings the whole editor with it — the tag has to be registered before the
-shell can create one, and a lazy chunk that 404s from a static host would
-fail nowhere until somebody opened an entry.
+The shell carries **no editor at all**. It does not import `./element`, it
+does not register `<content-tools-editor>`, and none of the ContentEdit
+library or the markdown parser's HTML walkers reach it — which is most of
+why `dist/shell.js` and its chunks come to ~143 kB gzipped rather than the
+~215 kB they were when an editor lived here. `./shell` and `./element` on
+one page no longer interact at all.
+
+That is an invariant rather than an accident. `EditorApp` is a process-wide
+singleton, so an editor mounted here would hold the one-per-page lease and
+the in-page surface — on the site's own pages, which is where the words are
+written — would refuse to boot with nothing in any stack trace.
 
 ## Deploying it
 
@@ -44,7 +55,7 @@ browser can reach.
 your-host/
   index.html          <- app/index.html, paths adjusted if you move dist/
   cms-config.yml      <- yours: the repository, the collections, the fields
-  dist/               <- shell.js, content-tools-content.css, and the rest
+  dist/               <- shell.js and its chunks
 ```
 
 One build, many deployments, one config file each. `app/` ships in the npm
@@ -81,9 +92,10 @@ working while the other passes.
 without polling.
 
 There are no custom events. The shell is the top of the application rather
-than a component inside one, so there is nothing above it to notify; a host
-that wants to observe a save has the editor's own `ct-saved` on the child
-element.
+than a component inside one, so there is nothing above it to notify — and
+there is no child element to listen to either, since the editor is on the
+site's own pages. A host that wants to observe a save watches `state` and
+the repository it was handed.
 
 ## Signing in
 
@@ -100,8 +112,8 @@ field that produced it and the list of permissions that fixes it.
 
 That check also catches the worst-shaped failure available here — a token
 that can read but not push. Everything works until the first save, which
-fails with somebody's afternoon in the editor. GitHub answers that case with
-a 200 whose body says no, so the gate reads the body.
+fails with somebody's work already in it. GitHub answers that case with a
+200 whose body says no, so the gate reads the body.
 
 **The gate has a second shape.** When `backend.auth` asks for a GitHub
 App — or a host page assigns an adapter that offers one — the field and
@@ -114,11 +126,12 @@ so a returning author never sees the gate flash past. See
 
 **A refused save leaves its markdown on the gate.** The 401 that brings
 the gate back is usually a save — that is the request that re-throws so
-the token can be dropped — and the editor goes with the token. The gate
-shows what the save was carrying in a box you can copy out of, and it
-survives the trip to GitHub, because the App flow signs somebody in by
-leaving the page. It lasts exactly as long as the gate does, and the
-panel says so: nothing puts it back into an editor on the way home.
+the token can be dropped — and the open entry goes with the token. The
+gate shows the whole file the save was carrying, frontmatter and body
+together, in a box you can copy out of; it survives the trip to GitHub,
+because the App flow signs somebody in by leaving the page. It lasts
+exactly as long as the gate does, and the panel says so: nothing puts it
+back into the form on the way home.
 
 ## Where you are
 
@@ -129,7 +142,7 @@ of the host but a static file.
 |---|---|
 | `#/` | the collection list |
 | `#/c/<collection>` | one collection's entries |
-| `#/c/<collection>/e/<slug>` | an entry, open in the editor |
+| `#/c/<collection>/e/<slug>` | one entry: its fields, its pull request, its link to the page |
 | `#/c/<collection>/new` | name and create an entry |
 | `#/media` | the media library |
 | `#/review` | everything in flight, across every collection |
@@ -155,17 +168,30 @@ it is partial does not.
 File collections — a fixed list of paths named in the config — issue no
 directory listing at all. Their entries are configuration, not discovery.
 
-## Editing an entry
+## Opening an entry
 
 Opening an entry reads it (from its own branch if a pull request is already
-open for it), parses the markdown, and mounts a `<content-tools-editor>` in
-markdown mode. Saving walks back the same way: the region's HTML, the staged
-media rewritten to the paths they will have, the markdown spliced so that
-**untouched blocks keep their original bytes**, and one commit on
-`cms/<collection>/<slug>` carrying the entry and its images together.
+open for it) and shows three things: the frontmatter form, the pull request
+it belongs to, and **Edit on the site** — a link to the page this entry is
+published on, in a new tab, where its words are written.
 
-The result is the property the whole project rests on: editing one paragraph
-produces a one-line diff, and a reviewer can read it.
+Which page that link goes to depends on whether the entry has a draft:
+
+- No pull request → the **live** page, built from the base branch.
+- A pull request → that pull request's **deploy preview**, because a new
+  post and a post under review are both absent from the live site and the
+  preview renders the branch an edit would be committing to.
+- A pull request and no `site.preview` configured → the live page, **with a
+  warning**, because editing it would write over the draft.
+
+A collection that declares no `page` gets no link, and the link is removed
+rather than emptied — a hidden `<a href="">` is a link to the current page,
+and a screen reader in links mode still offers it.
+
+Saving from here writes the frontmatter block and **nothing else**: the body
+is never read, never rendered and never put back through a walker, so it
+comes back byte for byte. That is a property of the code path rather than of
+any serializer's fidelity, which is the strongest form it can take.
 
 **Submit for review** opens the pull request, or adds a commit to the one
 already open — never a second one, because a review is a conversation and
@@ -189,7 +215,9 @@ Three things the entry screen does that are worth knowing about:
 
 ## Frontmatter
 
-A collection's `fields` become a form above the editor. Nine widgets ship:
+A collection's `fields` become the entry screen's form — which, since the
+body moved to the site's own page, is the whole of what this screen edits.
+Nine widgets ship:
 
 | `widget` | |
 |---|---|
@@ -253,6 +281,15 @@ type, expanded from the collection's `slug` template. A name already taken —
 on the base branch or by an open pull request — is refused before anything
 is written.
 
+Then it opens the same entry screen as anything else: the frontmatter form,
+and Submit. **The first Submit commits a stub**, and that ordering is
+load-bearing rather than tidy. The words are written on the site's own page,
+that page is a deploy preview, a preview is built for a pull request, and a
+pull request needs a commit — so the file has to exist before there is
+anything in it. A collection whose fields declare no defaults gets a file
+with nothing in it at all, which is a file, which is a pull request, which
+is a page to write on.
+
 **Delete entry** asks once, then opens a pull request whose commit removes
 the file. The entry stays on the site, and in its collection's list, until a
 human merges it. Both `create` and `delete` are per-collection permissions
@@ -261,11 +298,16 @@ letting them take pages down.
 
 ## Media
 
-A read-only grid of the repository's media folder, in two places that are
-one view: `#/media`, where it browses, and a panel under an open entry,
-where each tile can also be inserted — after the caret if it is in the
-entry, at the end of the entry if it is not, which is somewhere the author
-can see it and move it rather than nowhere.
+`#/media` is a read-only grid of the repository's media folder: what is in
+it, what each file is called, and whether it can be read at all. It is a
+browser, and that is the whole of it.
+
+**It inserts nothing**, and it used to. Until `/admin` became management
+only there was a second copy of this grid under an open entry with an Insert
+button on every tile. A picture belongs in an entry's words, and this screen
+no longer has any — inserting one here would be inserting it into a body
+nothing on this page can see. Pictures go in from the in-page surface, where
+the words are.
 
 Thumbnails come from the **published site first** — that URL needs no token,
 it is the cheapest source, and it is the URL the entry will actually
@@ -273,12 +315,13 @@ reference, so a thumbnail that renders is also a check that the reference
 will. A file the site does not serve yet is read from the API instead and
 shown from the bytes.
 
-**There is no upload here.** Images still arrive through the editor's own
-image dialog, which stages them in the browser so the picture and the entry
-referencing it land in one commit. A standalone upload is exactly the orphan
-blob that design exists to prevent: every abandoned edit would leave a file
-behind, and a reviewer opening the first of two commits sees a post pointing
-at something that is not there yet.
+**There is no upload here either**, and that was true before the insert
+went. Images arrive through the image dialog on the site's own page, which
+stages them in the browser so the picture and the entry referencing it land
+in one commit. A standalone upload is exactly the orphan blob that design
+exists to prevent: every abandoned edit would leave a file behind, and a
+reviewer opening the first of two commits sees a post pointing at something
+that is not there yet.
 
 ## In review
 
@@ -309,23 +352,19 @@ to the gate rather than failing every later request the same way.
 ## What it deliberately does not do
 
 - **Merge.** See above.
-- **Preview.** The editor is already WYSIWYG; a real preview needs the
-  site's own templates and CSS, which is a config key and a piece of work of
-  its own.
-- **Two editors at once.** `ContentTools.EditorApp` is a singleton and one
-  `<content-tools-editor>` per page is a rule, not a bug being worked
-  around. The shell opens one entry at a time and tears it down repeatably,
-  which is what Milestone 2 bought instead of trying to lift the rule.
+- **Edit the words.** Deliberately, and it is the reason this document
+  describes a management application rather than an editor. An entry's body
+  is written on the site's own page with the site's own template around it,
+  which is a preview that costs nothing because it is the real thing.
+- **Preview.** For the same reason: there is nothing here to preview. The
+  page the Edit link opens *is* the preview.
+- **Mount an editor at all.** Not a limitation being worked around — an
+  invariant. `ContentTools.EditorApp` is process-wide, so an editor here
+  would hold the one-per-page lease and the surface on the site's own pages
+  would refuse to boot, silently. A test asserts that nothing under
+  `src/shell/` imports `src/element/`.
 - **Rotate and crop.** Both need something that can re-encode an image, and
   this deployment is a repository and a browser with nothing in between.
-
-One thing worth knowing about the layout: the editor's toolbox is
-`position: fixed` chrome, so it floats over the pane rather than sitting in
-it. It defaults to the bottom-right corner, which clears the header, the
-action row and the frontmatter form — a dist test asserts exactly that — but
-a long entry's text still runs underneath it. It is draggable by the grip at
-its top and the position is remembered in `localStorage`, so moving it costs
-an author one drag, once.
 
 ## Trying it
 

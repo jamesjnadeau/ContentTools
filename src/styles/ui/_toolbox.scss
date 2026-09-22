@@ -48,18 +48,21 @@
         // It replaces `left: 128px; top: 128px`, which is fine on a
         // centred-column site -- it lands in the left gutter -- and wrong
         // everywhere else, because it is the one corner every layout puts
-        // something in. In the CMS shell 128,128 covers the first
-        // frontmatter field and the opening lines of the body; on a
-        // full-width site it covers the start of the article.
+        // something in: on a full-width site it covers the start of the
+        // article. (It was measured against the CMS shell too, where it
+        // covered the first frontmatter field and the opening lines of
+        // the body. Since M6-3 the shell mounts no editor at all, so the
+        // layout this has to clear is a SITE's -- one this software does
+        // not own and cannot see.)
         //
-        // Top right was measured too, and is worse than either: it covers
-        // the shell's Sign out link and its Submit button, which are the
-        // two controls somebody is most likely to want next.
+        // Top right was measured too, and is worse than either: it is
+        // where the in-page edit bar sits, so it would cover Submit and
+        // Details, the two controls somebody is most likely to want next.
         //
-        // Bottom right covers nothing in the shell, and on an ordinary page
-        // it is the corner least likely to hold a masthead, a nav or the
-        // first paragraph. Text is also ragged-right, so the right end of a
-        // line is the emptiest part of a column at any width.
+        // Bottom right is the corner least likely to hold a masthead, a
+        // nav or the first paragraph. Text is also ragged-right, so the
+        // right end of a line is the emptiest part of a column at any
+        // width.
         //
         // Anchored to two viewport EDGES rather than offset from the
         // top-left, because a constant 128px is the same 128px in a

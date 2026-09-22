@@ -16,8 +16,8 @@
  * route.
  */
 import {
-    createFakeGitHub, editorOf, forgetToken, mountShell, openAt, retype,
-    settled, shellFetch, signIn, until, CONFIG_URL
+    createFakeGitHub, entryOf, forgetToken, mountShell, openAt, openedEntry,
+    setField, settled, shellFetch, signIn, until, CONFIG_URL
 } from './helpers.js';
 import {RESCUE_KEY} from '../../../src/shell/content-tools-cms.js';
 import {TOKEN_KEY} from '../../../src/auth/pat.js';
@@ -60,7 +60,7 @@ describe('rescuing a draft from a refused save', function() {
      * Reads are left alone on purpose: the sign-in check and the entry
      * read both have to succeed, or the test never reaches a save.
      */
-    async function revokeMidSave(text = 'Goodbye.', drafts = null) {
+    async function revokeMidSave(title = 'Goodbye', drafts = null) {
         const fake = createFakeGitHub({files: {[ENTRY]: SEED}});
         const real = shellFetch(fake);
         let revoked = false;
@@ -74,8 +74,7 @@ describe('rescuing a draft from a refused save', function() {
                 return real(input, init);
             }
         });
-        await until(() => editorOf(mounted.el)?.state === 'editing',
-                    'the editor to start');
+        await openedEntry(mounted.el);
 
         /* Reaching past `private` on purpose, and only here: the field
            is a `TokenStorage` with no setter, because nothing in the
@@ -86,7 +85,7 @@ describe('rescuing a draft from a refused save', function() {
             mounted.el._drafts = drafts;
         }
 
-        retype(mounted.el, text);
+        setField(mounted.el, 'title', title);
         revoked = true;
         mounted.el.shadowRoot.querySelector('.ct-cms__entry-submit').click();
         await until(() => mounted.el.getAttribute('state') === 'signed-out',
@@ -101,11 +100,14 @@ describe('rescuing a draft from a refused save', function() {
         /* The whole file, which is what a save writes -- not the body
            and not the region's HTML. Somebody copying this out has the
            thing they can paste back. */
-        expect(draft).toContain('Goodbye.');
-        expect(draft).toContain('title: Hello');
-        /* And the editor really is gone, so this pane is the only copy
-           left anywhere on the page. */
-        return expect(editorOf(el)).toBe(null);
+        expect(draft).toContain('title: Goodbye');
+        /* The WHOLE file, body included -- a save writes the file, and
+           a pane holding only the part that changed is a pane nobody
+           can paste back. */
+        expect(draft).toContain('World.');
+        /* And the entry really is gone with the token, so this pane is
+           the only copy left anywhere on the page. */
+        return expect(entryOf(el)).toBe(null);
     });
 
     it('is hidden when there is nothing to rescue, and hidden means invisible',

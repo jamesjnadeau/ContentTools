@@ -1,22 +1,29 @@
-/* The chrome around an open entry.
+/* The chrome around an open entry, under `/admin`.
  *
- * The EDITOR is not here, and that separation is the point. It is a
- * light-DOM child of the shell host rendered through `<slot name="editor">`
- * (see the header of content-tools-cms.ts for why it cannot be anywhere
- * else), so this view owns only what sits above it: what the entry is,
- * where its pull request is, the button that submits, and the two panels
- * that appear when a save is refused or a navigation is held back.
+ * There is no editor here, and since M6-3 there is none anywhere under
+ * `/admin`: the body of an entry is edited on the site's own page, with
+ * the real template around it, and this screen is what is left -- what the
+ * entry is, where its pull request is, the frontmatter form, the link that
+ * sends an author to the page, the button that submits the form, and the
+ * panels that appear when a save is refused or a navigation is held back.
  *
- * Built once and updated in place, like the entry list. Rebuilding it per
- * render would be harmless today -- there is no input in it yet -- and
- * actively wrong from M5-4, when the frontmatter fields land in this same
- * panel and a rebuild starts eating keystrokes.
+ * The frontmatter stays HERE rather than following the body out to the
+ * page. It is the part of a file the site's own template has no place to
+ * show -- a date and a list of tags are not on the page, they decide where
+ * the page goes -- so editing them in the management screen is editing
+ * them where they are visible.
+ *
+ * Built once and updated in place, like the entry list: the frontmatter
+ * fields are in this panel, and a rebuild per render eats keystrokes.
  */
 import {h} from '../../core/render.js';
 import {formatRoute} from '../routes.js';
 import {buildFields} from '../../entry/fields.js';
 import type {FieldsState, FieldsView, WidgetSource} from '../../entry/fields.js';
 import {statusOf} from '../../cms/status.js';
+import {editUrl, editUrlIsStale} from '../../cms/preview.js';
+import {findCollection} from '../../cms/config.js';
+import type {CmsConfig} from '../../cms/config.js';
 import type {Entry} from '../../cms/repo.js';
 import type {EditorialStatus} from '../../cms/status.js';
 import type {FieldValues} from '../../entry/frontmatter.js';
@@ -40,9 +47,6 @@ export interface EntryHandlers {
     askDelete(asking: boolean): void;
     /** Delete it, as a pull request. */
     confirmDelete(): void;
-    /** Show or hide the media folder, for inserting a picture that is
-        already in the repository. */
-    showMedia(open: boolean): void;
 }
 
 export interface EntryState {
@@ -70,8 +74,17 @@ export interface EntryState {
     deletable: boolean;
     /** The delete confirmation is showing. */
     deleting: boolean;
-    /** The media folder is open below the form. */
-    mediaOpen: boolean;
+    /**
+     * The deployment's config, for working out where this entry is
+     * published. Null until it has loaded.
+     *
+     * The collection is resolved FROM it rather than passed beside it:
+     * two fields describing one entry are two fields that can name
+     * different collections, and the one that would be wrong is the one
+     * the Edit link is built from -- which is an author sent to another
+     * post's page to edit this one.
+     */
+    config: CmsConfig | null;
 }
 
 export interface EntryView {
@@ -116,23 +129,33 @@ export function buildEntry(
     }, ['Submit for review']);
     const note = h(doc, 'p', {class: 'ct-cms__note'});
 
-    /* A toggle rather than a link, because the media folder is not a
-       PLACE while an entry is open: navigating to `#/media` closes the
-       entry -- `_navigate` releases the editor's lease before it fetches
-       anything -- so a link would throw away the unsaved work somebody
-       opened the picker to add a picture to.
+    /* Where the body is edited, and the only way to reach it from here.
+       A NEW TAB, deliberately: the two surfaces write the same file and
+       an author moves between them, so closing this one to reach the
+       other would mean re-opening the entry on every trip back. It also
+       sidesteps a guard this shell cannot write -- a cross-origin
+       navigation is not something `_navigate` can hold back with a panel
+       of its own, only `beforeunload` can, and that dialog belongs to the
+       browser rather than to us.
 
-       `aria-expanded` rather than a class alone: the panel it controls is
-       further down the page, so the only thing telling a screen-reader
-       user whether pressing this did anything is the state on the
-       control itself. */
-    let mediaOpen = false;
-    const media = h(doc, 'button', {
-        class: 'ct-cms__button ct-cms__button--muted ct-cms__entry-media',
-        type: 'button',
-        'aria-expanded': 'false',
-        onclick: () => handlers.showMedia(!mediaOpen)
-    }, ['Media']);
+       An `<a>` with a real href rather than a button, so it can be opened
+       in a background tab, copied, and read by a screen reader as what it
+       is: somewhere else. */
+    const edit = h(doc, 'a', {
+        class: 'ct-cms__button ct-cms__button--muted ct-cms__entry-edit',
+        target: '_blank',
+        rel: 'noopener noreferrer'
+    }, ['Edit on the site']);
+
+    /* Said out loud rather than left to be discovered. With a pull
+       request open and no `site.preview` configured, the link goes to the
+       LIVE page, which is built from the base branch and shows the
+       published text -- so what opens is the old version of an entry that
+       has a draft, and editing it would commit the draft away. */
+    const stale = h(doc, 'p', {class: 'ct-cms__entry-stale'},
+        ['This entry has a draft, but this deployment builds no previews '
+         + 'for pull requests, so the link opens the published page. '
+         + 'Editing it would write over the draft.']);
 
     /* Beside Submit rather than tucked away, and deliberately not behind a
        menu: it is one of two things a person does to an entry, and hiding
@@ -205,18 +228,19 @@ export function buildEntry(
         h(doc, 'div', {class: 'ct-cms__entry-head'}, [
             heading, badge, pull,
             h(doc, 'span', {class: 'ct-cms__spacer'}),
-            media,
+            edit,
             remove,
             submit
         ]),
         back,
+        stale,
         note,
         leaving,
         deleting,
         conflict,
-        /* Above the slot the editor lands in, because the frontmatter is
-           the top of the file and reading the screen in file order is
-           one less thing to explain. */
+        /* Last in the panel, and the only thing in it an author types
+           into: everything above says what this entry is and what can be
+           done with it. */
         fields.node
     ]);
 
@@ -275,16 +299,38 @@ export function buildEntry(
             (remove as HTMLButtonElement).disabled = state.saving || entry === null;
             deleting.hidden = !state.deleting;
 
-            /* Kept beside the attribute rather than read back off it: the
-               click handler needs to know what pressing it means NOW, and
-               `getAttribute('aria-expanded') === 'true'` is the same
-               answer spelled as a string comparison that a typo makes
-               silently always-open. */
-            mediaOpen = state.mediaOpen;
-            media.setAttribute('aria-expanded', String(state.mediaOpen));
-            /* Nothing to insert into until the entry has loaded, for the
-               same reason Submit is disabled then. */
-            (media as HTMLButtonElement).disabled = entry === null;
+            /* Null for three different reasons -- nothing has loaded
+               yet, a bookmark names a collection that was renamed, or
+               this collection is not published as pages at all -- and the
+               screen says the same thing for all three, because there is
+               one thing to say: there is no page to go to. */
+            const config = state.config;
+            const collection = config && entry
+                ? findCollection(config, entry.collection)
+                : null;
+            const href = config && entry && collection
+                ? editUrl(config, collection, entry.slug, open?.number ?? null)
+                : null;
+            /* Emptied rather than left behind `hidden`, for the reason
+               the badge above is: a hidden node's text is still in
+               `textContent`, so a stale label makes a test pass that
+               should not. */
+            edit.textContent = href === null ? '' : 'Edit on the site';
+            if (href === null) {
+                edit.removeAttribute('href');
+            } else {
+                edit.setAttribute('href', href);
+            }
+            edit.hidden = href === null;
+
+            /* No `config === null` term, and there was one until
+               mutation testing asked what it caught. Nothing: `href` is
+               null whenever `config` is, so the first test subsumes it
+               -- and TypeScript narrows `config` through it, so it was
+               not even carrying the compiler. It comes back if `href`
+               ever gets a spelling that survives a missing config. */
+            stale.hidden = href === null
+                || !editUrlIsStale(config, open?.number ?? null);
 
             note.textContent = entry === null
                 ? 'Loading…'

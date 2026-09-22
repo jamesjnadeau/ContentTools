@@ -28,12 +28,12 @@ import type {CmsRepo} from '../cms/repo.js';
 import {describeError, fieldsNeeded, NOTHING_TO_SAVE} from '../entry/errors.js';
 import type {Described} from '../entry/errors.js';
 import type {FieldsState} from '../entry/fields.js';
-import type {EntrySession} from '../entry/session.js';
+import type {EditingSession} from './session.js';
 import type {Bar, Located, SaveState} from './chrome.js';
 
 export interface PageEditOptions {
     readonly bar: Bar;
-    readonly session: EntrySession;
+    readonly session: EditingSession;
     readonly repo: CmsRepo;
     /** The three things the bar says about the page in every state. */
     readonly seen: Located;
@@ -44,7 +44,7 @@ export interface PageEditOptions {
 /** An entry being edited in the page it is published on. */
 export class PageEdit {
 
-    readonly session: EntrySession;
+    readonly session: EditingSession;
 
     private readonly _bar: Bar;
     private readonly _repo: CmsRepo;

@@ -1,17 +1,24 @@
-/* One open entry: the bytes that were read, the editor over them, and the
- * bytes a save would write.
+/* One open entry: the bytes that were read, and the bytes a save would
+ * write.
  *
- * This is everything about editing an entry that is NOT about where the
- * editing happens. The shell opens an entry inside `/admin`; the in-page
- * surface opens the same entry on the site's own published page, with the
- * real template around it. Both need the same six answers -- what the
- * editor element should be, what the body says right now, whether the
- * frontmatter form has changed anything, what a save would write, whether
+ * This is everything about having an entry open that is NOT about editing
+ * its body. The management screens under `/admin` open an entry to change
+ * its frontmatter, see its pull request and delete it; the in-page surface
+ * opens the same entry on the site's own published page, with the real
+ * template around it, and edits the words. Both need the same answers --
+ * what the frontmatter form has changed, what a save would write, whether
  * that differs from the file, and how to commit it -- and two
  * implementations of those answers are two implementations that can
  * disagree about what "unchanged" means. One of them would then hold a
  * navigation over work a save reports as nothing, or let one go that a
  * save would have written.
+ *
+ * THE EDITOR IS NOT HERE. It belongs to the surface that has one, which is
+ * `src/edit/session.ts` and only that -- /admin has no editor at all since
+ * M6-3, and an editor import in this file would put the whole library back
+ * inside `dist/shell.js` for a screen that never shows one. `EditingSession`
+ * extends this class rather than replacing it, so the frontmatter merge,
+ * the dirty check and the commit are written once.
  *
  * A session exists only while an entry is open. There is no "no entry"
  * state inside it: the caller holds `EntrySession | null` and every
@@ -22,15 +29,6 @@
  */
 
 import type {CmsRepo, Entry, MediaFile, SaveResult} from '../cms/repo.js';
-import type {MediaStore} from '../cms/media.js';
-import {mediaUploader} from '../cms/media.js';
-/* The CLASS module, never `../element/index.js`: that is a build ENTRY of
-   the same Vite invocation, and Rollup turns an entry another entry
-   imports into a facade whose body it hoists into a shared chunk -- taking
-   `customElements.define` out of the file `package.json` names in
-   `sideEffects`. Same rule the shell follows, same test enforcing it. */
-import {ContentToolsEditor, TAG_NAME as EDITOR_TAG}
-    from '../element/content-tools-editor.js';
 import type {MarkdownDocument} from '../markdown/document.js';
 import {frontmatterChanged, mergeFrontmatter} from './frontmatter.js';
 import type {FieldValues} from './frontmatter.js';
@@ -44,9 +42,6 @@ import type {FieldValues} from './frontmatter.js';
  */
 export const REGION = 'body';
 
-/** The markup the editor is handed, around the body it is editing. */
-const EDITOR_REGIONS = '[data-editable]';
-
 /** Exactly what a save would write, and what has to travel with it. */
 export interface Pending {
     readonly content: string;
@@ -54,14 +49,10 @@ export interface Pending {
 }
 
 export interface SessionOptions {
-    /** The document the editor element is created in. */
-    readonly document: Document;
     /** The entry as it was read, pinned to the commit it was read at. */
     readonly entry: Entry;
     /** Its parsed source. NEVER re-parsed afterwards -- see `commit`. */
     readonly doc: MarkdownDocument;
-    /** Where an uploaded image waits until the commit that carries it. */
-    readonly store: MediaStore;
     /**
      * What the frontmatter form currently says, or null when there is no
      * usable form -- no fields declared, or a block the form refused.
@@ -73,37 +64,11 @@ export interface SessionOptions {
      * answers nobody had given yet.
      */
     readonly values: () => FieldValues | null;
-    /**
-     * The element on the page whose children ARE the body, when there is
-     * one already.
-     *
-     * The shell has none: it builds a region of its own inside the editor,
-     * because under /admin there is no page and the editor owns everything
-     * around the words. The in-page surface has exactly one -- the site's
-     * own `<article class="post">`, found by the `body` selector -- and it
-     * must stay where it is, with its classes and its ancestry intact, or
-     * the site's own CSS stops matching it and the page reflows the moment
-     * somebody presses Edit.
-     *
-     * Its CHILDREN are replaced either way. What the site's template
-     * rendered is HTML built from the base branch by a static site
-     * generator; what the editor must hold is our render of the markdown
-     * on the branch being edited, with the `data-ct-md` indices the splice
-     * reads back. Those are different documents even when they look
-     * identical, and editing the former would serialize to bytes that
-     * splice against the wrong blocks.
-     */
-    readonly region?: HTMLElement;
 }
 
 export class EntrySession {
 
-    /** The editor element, fully built and not yet connected. */
-    readonly editor: ContentToolsEditor;
-
     readonly doc: MarkdownDocument;
-
-    readonly store: MediaStore;
 
     /**
      * The entry as the repository holds it, re-pinned by `commit`.
@@ -118,34 +83,10 @@ export class EntrySession {
 
     private readonly _values: () => FieldValues | null;
 
-    /** What the editor last reported for the body. See `_remember`. */
-    private _edited: string | null;
-
     constructor(options: SessionOptions) {
         this.entry = options.entry;
         this.doc = options.doc;
-        this.store = options.store;
         this._values = options.values;
-        this._edited = null;
-        this.editor = this._build(options);
-    }
-
-    /**
-     * Begin editing.
-     *
-     * Started by the caller, not by an ignition button: opening an entry
-     * in a CMS IS the decision to edit it, and an editor sitting inert
-     * behind a second press is a screen that looks broken. It also has
-     * to be started for `save(true)` to have any regions to report --
-     * `_regions` is populated by `start()`.
-     */
-    start(): void {
-        this.editor.start();
-    }
-
-    /** Take the editor back off the page. */
-    close(): void {
-        this.editor.remove();
     }
 
     /**
@@ -156,58 +97,67 @@ export class EntrySession {
      * answer and two spellings of it can disagree -- which they would do
      * by holding a navigation over work that a save then reports as
      * unchanged, or worse by letting one go that a save would have
-     * written. The media rewrite belongs here for the same reason: it
-     * happens on the way to the commit, so it has to happen on the way
-     * to the comparison.
+     * written.
+     *
+     * Nothing to write means the SOURCE, unchanged: a screen with no
+     * editor cannot have touched the body, so the file it would save is
+     * the file it read. `updateFrontmatter` keeps that true on the other
+     * branch too -- see its own header for why the body is not put
+     * through the walker to get there.
+     *
+     * No media travels from here. Staging an upload needs an image
+     * dialog, which needs an editor; `EditingSession` is where that
+     * happens and where this is overridden.
      */
     pending(): Pending {
-        /* One pass giving both answers. Rewriting the HTML and asking
-           separately what to commit can disagree, and the way they
-           disagree is an entry referencing an image nobody uploaded. */
-        const {html, media} = this.store.rewrite(this.html());
-        return {content: this.doc.update(html, this._frontmatterOption()), media};
+        const merged = this.merged();
+        return {
+            content: merged === null
+                ? this.doc.source()
+                : this.doc.updateFrontmatter(merged),
+            media: []
+        };
     }
 
     /**
      * Whether there is work that a save would write.
      *
-     * The MARKDOWN decides, not the HTML. The editor normalises what it
-     * is handed -- attribute order, whitespace, the placeholder
-     * paragraph an empty region needs to hold a caret -- so an HTML
-     * comparison reports edits nobody made, and a leave panel that
-     * appears every time is a leave panel people click through.
+     * The MARKDOWN decides, not the form's own idea of having been
+     * typed into. Somebody who clears a field and types it back has
+     * touched the form without changing the file, and a leave panel
+     * that appears every time is a leave panel people click through.
+     *
+     * Compared against `content` RAW, null and all, which is what
+     * makes a FRESH entry read as work from the moment it is named:
+     * there is no file at its path, and no string equals null. The old
+     * spelling read `?? ''` here, so a just-named entry nobody had
+     * typed into was nothing to lose -- and it is the one thing on that
+     * screen that is. The filename is what a create route exists to
+     * decide, it is the one thing about an entry nobody can change
+     * afterwards without breaking its URL, and leaving without
+     * submitting throws it away.
+     *
+     * Only the LEAVE question turns on this, and that is worth knowing
+     * before changing it: `_submit` never asks, it hands the pending
+     * bytes to the repository and lets a create be a create. So the
+     * test that can tell the two spellings apart is a navigation away
+     * from an untouched new entry, and nothing else in the shell can.
+     *
+     * An explicit `content === null ||` was written beside this and
+     * deleted: it says the same thing the comparison already says, and
+     * no test could tell those two apart at all.
      */
     dirty(): boolean {
-        return this.pending().content !== (this.entry.content ?? '');
+        return this.pending().content !== this.entry.content;
     }
 
     /**
-     * The body HTML as it stands right now.
-     *
-     * `save(true)` is passive: it reports without unmounting the
-     * regions, so the caret stays where the person left it. It fills
-     * `_edited` synchronously through the handler below, and the cache
-     * is why this may be called twice -- the dirty check and the submit
-     * both want the answer, and the second caller would otherwise be
-     * told nothing had changed.
-     */
-    html(): string {
-        /* No `state === 'editing'` test beside this one. The editor is
-           built in the constructor and started one line after the
-           caller connects it, so an editor that is here and not editing
-           does not exist. If that stops being true, `save()` throws on
-           a disconnected editor, which is the loud failure rather than
-           the quiet one. */
-        this.editor.save(true);
-        return this._edited ?? this.doc.toHTML();
-    }
-
-    /**
-     * Commit what is in the editor, and open or update the pull request.
+     * Commit what this session holds, and open or update the pull
+     * request.
      *
      * The open `MarkdownDocument` is NEVER re-parsed afterwards, and that
      * is the subtlest rule here. Re-parsing the string just written would
-     * renumber the blocks while the live DOM still carries the old
+     * renumber the blocks while a live DOM still carries the old
      * `data-ct-md` indices, so the next save would splice against the
      * wrong originals -- content corruption inside a diff that looks
      * perfectly reviewable. It stays correct because `parent` pins the
@@ -235,7 +185,7 @@ export class EntrySession {
             media: pending.media,
             parent: entry.commit,
             /* Asked for, not inferred. The caller checked this before
-               opening the editor; this is the check that settles the
+               opening the entry; this is the check that settles the
                race the first one cannot -- two authors who both passed
                it and are both now pressing Submit. Without it the second
                one's post is committed onto the first one's pull
@@ -257,19 +207,19 @@ export class EntrySession {
     }
 
     /**
-     * The `frontmatter` option for `update`, or nothing at all.
+     * What the frontmatter should become, or null when it should be
+     * left exactly as it is.
      *
-     * Returning `undefined` is not the same as returning `{frontmatter:
-     * <unchanged>}`: `update` preserves the original block BYTE FOR BYTE
-     * only when it is given no data, and a YAML round trip loses key
-     * order, comments and quoting style. So a save that only touched the
-     * body has to reach `update` with no options object, and this is the
-     * line that decides it.
+     * Null is not "no frontmatter": it is the instruction to preserve the
+     * original block BYTE FOR BYTE, which a YAML round trip would not --
+     * key order, comments and quoting style all go. So a save that
+     * touched nothing in the form has to reach the document without any
+     * data at all, and this is the line that decides it.
      */
-    private _frontmatterOption(): {frontmatter: unknown} | undefined {
+    protected merged(): Record<string, unknown> | null {
         const values = this._values();
         if (values === null) {
-            return undefined;
+            return null;
         }
         /* Read from the DOCUMENT rather than remembered beside the form.
            The document is never re-parsed while a session is open, so
@@ -279,71 +229,6 @@ export class EntrySession {
            to be wrong about. */
         const data = this.doc.frontmatter()?.data ?? null;
         const merged = mergeFrontmatter(data, values);
-        return frontmatterChanged(data, merged) ? {frontmatter: merged} : undefined;
-    }
-
-    /**
-     * The editor element for this entry, built and not yet connected.
-     *
-     * Everything is in place before it enters the DOM, because
-     * `connectedCallback` boots immediately: an element connected first
-     * and configured afterwards boots against the defaults and then has
-     * to be rebooted, which tears down and re-claims the lease for
-     * nothing.
-     */
-    private _build(options: SessionOptions): ContentToolsEditor {
-        const document = options.document;
-        const editor = document.createElement(EDITOR_TAG) as ContentToolsEditor;
-        editor.setAttribute('regions', EDITOR_REGIONS);
-        /* The whole reason markdown mode exists: the editor must not be
-           able to produce something the serializer cannot express. */
-        editor.setAttribute('mode', 'markdown');
-        /* Staged in memory and committed by `saveEntry`, so an entry and
-           its images land in one commit. An uploader that commits on its
-           own leaves an orphan blob behind every abandoned edit. */
-        editor.imageUploader = mediaUploader({store: this.store});
-
-        const region = options.region ?? document.createElement('div');
-        /* The name the saved-regions map arrives under, and the only
-           attribute set on an element we did not make. `data-editable` is
-           NOT set beside it when the page supplied the element: with the
-           region named directly there is no selector to satisfy, and an
-           attribute written onto somebody's published markup for the
-           benefit of a query nobody runs is a change to their page for
-           nothing. */
-        region.setAttribute('data-name', REGION);
-        region.innerHTML = this.doc.toHTML();
-
-        if (options.region) {
-            /* Named rather than matched, and the editor stays empty. See
-               `regionElements`: moving this element under the editor to
-               make `[data-editable]` reach it would change its ancestry,
-               and the site's own CSS is written against the ancestry it
-               has. */
-            editor.regionElements = [region];
-        } else {
-            region.setAttribute('data-editable', '');
-            editor.appendChild(region);
-        }
-
-        editor.addEventListener('ct-saved', ev => this._remember(ev as CustomEvent));
-        return editor;
-    }
-
-    /**
-     * Remember what the editor last reported for the body.
-     *
-     * Only when the region is actually in the map. `save()` reports the
-     * regions whose content moved since the last save and then RESETS
-     * that baseline, so an unchanged save reports none -- and reading
-     * the absent key as "the body is empty now" would make the next
-     * submit write an empty file over somebody's post.
-     */
-    private _remember(ev: CustomEvent): void {
-        const regions = (ev.detail as {regions?: Record<string, string>} | null)?.regions;
-        const html = regions ? regions[REGION] : undefined;
-        if (typeof html === 'string') {
-            this._edited = html;
-        }
+        return frontmatterChanged(data, merged) ? merged : null;
     }
 }

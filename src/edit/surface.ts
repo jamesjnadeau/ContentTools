@@ -22,7 +22,7 @@
  *
  * Then two about the person: is anybody signed in, and does the entry
  * read? And then the editor goes up over the element from question 3, IN
- * PLACE. Nothing on the page moves -- see `EntrySession`'s `region` and
+ * PLACE. Nothing on the page moves -- see `EditingSession`'s `region` and
  * the element's `regionElements` for why that is worth the plumbing it
  * costs.
  */
@@ -35,7 +35,7 @@ import {CmsRepo} from '../cms/repo.js';
 import {MediaStore} from '../cms/media.js';
 import {adapterFor} from '../auth/adapter.js';
 import {MarkdownDocument} from '../markdown/document.js';
-import {EntrySession} from '../entry/session.js';
+import {EditingSession} from './session.js';
 /* The CLASS module, never `../element/index.js` -- that is a build ENTRY
    of the same Vite invocation, and no other module may import it. Same
    rule the shell follows, same test enforcing it. */
@@ -88,7 +88,7 @@ export interface Surface {
     readonly bar: Bar;
     /** What Submit and the form act on, or null when no editor went up. */
     readonly editing: PageEdit | null;
-    readonly session: EntrySession | null;
+    readonly session: EditingSession | null;
 }
 
 /**
@@ -221,7 +221,7 @@ async function start(
     defineEditor();
 
     const doc = MarkdownDocument.parse(entry.content ?? '');
-    const session = new EntrySession({
+    const session = new EditingSession({
         document: where.document,
         entry,
         doc,
@@ -262,7 +262,7 @@ async function start(
 /**
  * Register `<content-tools-editor>`, if nothing else has.
  *
- * `EntrySession` creates one, and on this path nothing else would ever
+ * `EditingSession` creates one, and on this path nothing else would ever
  * have registered it: `../element/index.js` is the element's own build
  * entry and is not importable from here, so the tag arrives through the
  * class module and a `define` of our own -- exactly as the shell does

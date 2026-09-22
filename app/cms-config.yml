@@ -17,6 +17,28 @@ backend:
   repo: owner/site
   branch: main
 
+# Where this deployment's content is PUBLISHED, which is where it is
+# EDITED: `/admin` manages drafts and pull requests, and the words of an
+# entry are changed on the site's own page with the real template around
+# them. Leave `site` out entirely and the admin screens still work -- they
+# simply offer no link to a page, and say so rather than showing a button
+# that goes nowhere.
+site:
+  # `base` is OMITTED here, which is how a site served at the root is
+  # spelled -- a `base:` with nothing after it means the same. Writing
+  # it out as `base: ''` is refused, for the reason every other optional
+  # string here is: a blank value is how a deleted one looks. Held apart
+  # from each collection's `page` because one build can be served at two
+  # prefixes, so a site under one would say:
+  #   base: /my-project
+  # A pull request's deploy preview, which is what makes an unpublished
+  # entry editable at all: a new post and a post under review are both
+  # absent from the live site, and the preview renders the branch the
+  # editor would be committing to. Netlify's spelling; Cloudflare Pages
+  # and Vercel have their own. Leave it out and the admin screen warns
+  # rather than linking a draft to its published page.
+  preview: https://deploy-preview-{{pr}}--example.netlify.app
+
 media:
   folder: static/images
   publicPath: /images
@@ -31,10 +53,20 @@ collections:
     # letting them take pages down.
     create: true
     delete: true
+    # Where a post of this collection is published, and which element on
+    # that page holds its body. `page` is what the Edit link is built
+    # from; `body` is what the in-page editor edits, and a page whose own
+    # markup carries `data-cms-body` overrides it.
+    page: /blog/{{slug}}/
+    body: article .content
     fields:
       - {name: title, widget: string}
       - {name: date, widget: datetime}
   - name: pages
     label: Pages
+    # On the collection, because every file in it is rendered by the same
+    # template. Each file names its own `page`, since a fixed set of
+    # entries has nothing for a template to vary over.
+    body: article .content
     files:
-      - {name: about, label: About, file: content/about.md}
+      - {name: about, label: About, file: content/about.md, page: /about/}

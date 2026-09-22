@@ -1,6 +1,7 @@
 import {
-    alertText, createFakeGitHub, editorOf, forgetToken, mountShell, openAt, retype,
-    settled, shellFetch, signIn, until, CONFIG_URL, CONFIG_YAML
+    alertText, createFakeGitHub, entryOf, forgetToken, mountShell, openAt,
+    openedEntry, setField, settled, shellFetch, signIn, until, CONFIG_URL,
+    CONFIG_YAML
 } from './helpers.js';
 
 /* Naming an entry into existence, and taking one away again.
@@ -13,6 +14,13 @@ import {
  * lands on somebody else's branch, a delete that writes nothing and says
  * nothing, a `new` route that lets a hand-typed URL past a `create:
  * false` a deployment set on purpose.
+ *
+ * What Create produces since M6-3 is a STUB: a name, whatever the
+ * collection's fields say, and no words. The words are written on the
+ * site's own page, which is a deploy preview, which is built for a pull
+ * request -- so the entry has to be committed before it can be written
+ * at all, and a stub with nothing in it is still a stub worth
+ * committing. The name is the work on this screen.
  *
  * The configs are per-test, through `files`, rather than edits to the
  * shared `CONFIG_YAML`: a third collection or a `delete: true` in there
@@ -215,19 +223,19 @@ describe('creating and deleting entries', function() {
                by hand, and that wiring is what this covers. */
             const {el} = await openNew();
             press(typeTitle(el, 'Hello'), 'Enter');
-            await until(() => editorOf(el) !== null, 'the editor');
-            return expect(editorOf(el)).not.toBe(null);
+            await openedEntry(el);
+            return expect(entryOf(el)).not.toBe(null);
         });
 
         it('creates nothing on any other key', async function() {
             /* The handler is on `keydown` over the whole field, so a
-               condition that let anything through would open an editor
+               condition that let anything through would open an entry
                on the first letter of the name somebody is still typing. */
             const {el} = await openNew();
             press(typeTitle(el, 'Hello'), 'o');
             press(titleField(el), 'Escape');
             await new Promise(resolve => setTimeout(resolve, 0));
-            return expect(editorOf(el)).toBe(null);
+            return expect(entryOf(el)).toBe(null);
         });
 
         it('ignores Enter while there is no usable name', async function() {
@@ -238,7 +246,7 @@ describe('creating and deleting entries', function() {
             const {el, fake} = await openNew();
             press(typeTitle(el, '!!!'), 'Enter');
             await new Promise(resolve => setTimeout(resolve, 0));
-            expect(editorOf(el)).toBe(null);
+            expect(entryOf(el)).toBe(null);
             return expect(fake.branches()).toEqual(['main']);
         });
 
@@ -246,7 +254,7 @@ describe('creating and deleting entries', function() {
            async function() {
             /* The check is a round trip, and a button that stays live
                through it invites a second press -- which is how somebody
-               ends up looking at a second editor for the same slug. */
+               ends up looking at a second screen for the same slug. */
             let release = null;
             const held = new Promise(resolve => {
                 release = resolve;
@@ -270,7 +278,7 @@ describe('creating and deleting entries', function() {
             createButton(el).click();
             await until(() => createButton(el).disabled, 'Create to be held');
             release();
-            return until(() => editorOf(el) !== null, 'the editor');
+            return openedEntry(el);
         });
     });
 
@@ -318,7 +326,7 @@ describe('creating and deleting entries', function() {
 
     describe('pressing Create', function() {
 
-        it('opens an editor and commits NOTHING', async function() {
+        it('opens the entry and commits NOTHING', async function() {
             /* An author who names a post, reads what they were about to
                write and closes the tab leaves nothing behind. The same
                rule staged media follows, and for the same reason: half
@@ -326,7 +334,7 @@ describe('creating and deleting entries', function() {
             const {el, fake} = await openNew();
             typeTitle(el, 'Hello World!');
             createButton(el).click();
-            await until(() => editorOf(el) !== null, 'the editor');
+            await openedEntry(el);
 
             expect(fake.branches()).toEqual(['main']);
             expect(fake.pulls()).toEqual([]);
@@ -348,13 +356,11 @@ describe('creating and deleting entries', function() {
             });
             typeTitle(el, 'Hello');
             createButton(el).click();
-            await until(() => editorOf(el) !== null, 'the editor');
+            await openedEntry(el);
 
             expect(shadow(el).querySelector('#ct-field-title').value).toBe('Untitled');
             expect(shadow(el).querySelector('#ct-field-draft').checked).toBe(true);
 
-            await until(() => editorOf(el).state === 'editing', 'the editor to start');
-            retype(el, 'First post.', 0);
             await submit(el);
             const saved = fake.read('content/blog/hello.md', 'cms/blog/hello');
             expect(saved).toContain('title: Untitled');
@@ -364,15 +370,18 @@ describe('creating and deleting entries', function() {
         it('gives a collection with no defaults no frontmatter block',
            async function() {
             /* An empty `---\n---` on every new entry is a line every
-               later diff carries for nothing. */
+               later diff carries for nothing. With nothing declared to
+               default and nothing filled in, the stub is an EMPTY FILE
+               -- which is what a stub is: the entry has to exist before
+               the site can build a preview of it, and the preview is
+               where its words get written. */
             const {el, fake} = await openNew();
             typeTitle(el, 'Hello');
             createButton(el).click();
-            await until(() => editorOf(el)?.state === 'editing', 'the editor');
-            retype(el, 'First post.', 0);
+            await openedEntry(el);
             await submit(el);
             return expect(fake.read('content/blog/hello.md', 'cms/blog/hello'))
-                .toBe('First post.\n');
+                .toBe('');
         });
 
         it('does not open an editor for a route the person has left',
@@ -380,8 +389,8 @@ describe('creating and deleting entries', function() {
             /* The collision check is a round trip, and somebody who
                changes their mind during it clicks back to the list.
                Without the navigation token the read arrives afterwards
-               and mounts an editor over whatever is on screen -- and
-               the next Submit writes the abandoned entry. */
+               and puts the entry over whatever is on screen -- and the
+               next Submit writes the abandoned entry. */
             let release = null;
             const held = new Promise(resolve => {
                 release = resolve;
@@ -420,7 +429,7 @@ describe('creating and deleting entries', function() {
             release();
             await new Promise(resolve => setTimeout(resolve, 0));
             await new Promise(resolve => setTimeout(resolve, 0));
-            return expect(editorOf(el)).toBe(null);
+            return expect(entryOf(el)).toBe(null);
         });
 
         it('refuses a name that is already taken, before opening anything',
@@ -428,7 +437,7 @@ describe('creating and deleting entries', function() {
             /* The check that saves the afternoon. `saveEntry` checks
                again at write time and that is the one that settles a
                race between two authors -- but only this one runs before
-               somebody has spent an hour in the editor. */
+               somebody has spent an hour on the entry. */
             const {el, fake} = await openNew({seed: {[HELLO]: SEED}});
             typeTitle(el, 'Hello');
             createButton(el).click();
@@ -436,7 +445,7 @@ describe('creating and deleting entries', function() {
 
             expect(alertText(el)).toContain('already an entry with that name');
             expect(alertText(el)).toContain(HELLO);
-            expect(editorOf(el)).toBe(null);
+            expect(entryOf(el)).toBe(null);
             return expect(fake.read(HELLO)).toBe(SEED);
         });
 
@@ -444,8 +453,8 @@ describe('creating and deleting entries', function() {
            async function() {
             /* The file is not on the base branch at all -- somebody
                else's unmerged pull request creates it. Checking the base
-               alone would open a second editor on the same slug, and the
-               second save would commit onto the first author's branch. */
+               alone would open the same slug twice, and the second save
+               would commit onto the first author's branch. */
             const fake = createFakeGitHub({files: {}});
             fake.openPull('blog', 'hello');
             const {el} = await openNew({fake});
@@ -454,7 +463,7 @@ describe('creating and deleting entries', function() {
             await until(() => alertText(el) !== '', 'the refusal');
 
             expect(alertText(el)).toContain('already an entry with that name');
-            return expect(editorOf(el)).toBe(null);
+            return expect(entryOf(el)).toBe(null);
         });
 
         it('lets Create be pressed again after a refusal', async function() {
@@ -469,8 +478,8 @@ describe('creating and deleting entries', function() {
 
             typeTitle(el, 'Hello Again');
             createButton(el).click();
-            await until(() => editorOf(el) !== null, 'the editor');
-            return expect(editorOf(el)).not.toBe(null);
+            await openedEntry(el);
+            return expect(entryOf(el)).not.toBe(null);
         });
     });
 
@@ -478,13 +487,20 @@ describe('creating and deleting entries', function() {
 
     describe('the first save', function() {
 
-        /** Name `title`, wait for the editor, and type `body` into it. */
-        async function start(title, body, options = {}) {
+        /**
+         * Name `title`, wait for the entry, and put `heading` in its form.
+         *
+         * A field rather than a body, which is the whole of what this
+         * screen can change since M6-3. The stub it commits is a
+         * frontmatter block and nothing else; the words come later, on
+         * the site's own page.
+         */
+        async function start(title, heading, options = {}) {
             const opened = await openNew(options);
             typeTitle(opened.el, title);
             createButton(opened.el).click();
-            await until(() => editorOf(opened.el)?.state === 'editing', 'the editor');
-            retype(opened.el, body, 0);
+            await openedEntry(opened.el);
+            setField(opened.el, 'title', heading);
             return opened;
         }
 
@@ -495,7 +511,7 @@ describe('creating and deleting entries', function() {
 
             expect(fake.branches()).toEqual(['cms/blog/hello-world', 'main']);
             expect(fake.read('content/blog/hello-world.md', 'cms/blog/hello-world'))
-                .toBe('First post.\n');
+                .toBe('---\ntitle: First post.\n---\n');
             /* And nothing on the base branch. The site does not change
                until somebody merges, which is the whole premise. */
             expect(fake.read('content/blog/hello-world.md')).toBe(null);
@@ -508,19 +524,81 @@ describe('creating and deleting entries', function() {
             return expect(fake.pulls()[0].head.ref).toBe('cms/blog/hello-world');
         });
 
-        it('moves the address bar to the entry without tearing the editor down',
+        it('asks before throwing away a name that was never committed',
+           async function() {
+            /* The other half of the raw `content` comparison, and the
+               only test that can see it. A just-named entry has no file
+               at its path, so `content` is null and nothing equals it:
+               the entry reads as work from the moment it is named. It
+               IS work -- the filename is the one thing about an entry
+               nobody can change afterwards without breaking its URL,
+               and it is the decision this whole route exists to take.
+               Leaving without submitting loses it.
+
+               The spelling that would not ask compares against `''`,
+               and there is nothing else in the shell that can tell the
+               two apart: `_submit` never consults `dirty()`, it lets
+               the repository decide, and a create is always a change
+               to the repository. */
+            const {el} = await openNew();
+            typeTitle(el, 'Hello World!');
+            createButton(el).click();
+            await openedEntry(el);
+
+            location.hash = '#/c/blog';
+            await until(() => !shadow(el).querySelector('.ct-cms__leave').hidden,
+                        'the leave panel');
+            return expect(location.hash).toBe('#/c/blog/new');
+        });
+
+        it('commits a stub with nothing filled in at all', async function() {
+            /* The case M6-3 turns from tidy into load-bearing. An
+               entry's words are written on the site's own page, the
+               page is a deploy preview, the preview is built for a
+               pull request, and the pull request needs a commit -- so
+               the file has to exist BEFORE there is anything in it,
+               and a collection whose fields nobody fills in is one
+               nobody could otherwise add to at all.
+
+               Nothing consults `dirty()` on the way: `_submit` hands
+               the pending bytes to the repository, and a create is a
+               change to the repository however empty it is. The claim
+               here is that the whole path holds for a form nobody
+               touched -- which is the only arrangement that exercises
+               `pending()` with `merged === null` on a fresh entry. */
+            const {el, fake} = await openNew();
+            typeTitle(el, 'Hello World!');
+            createButton(el).click();
+            await openedEntry(el);
+
+            await submit(el);
+
+            expect(alertText(el)).not.toContain('Nothing to save');
+            /* EMPTY, and deliberately so: a stub is a path, and what
+               goes in it is whatever the collection's `default`s say.
+               A collection that declares none gets a file with nothing
+               in it -- which is a file, which is a pull request, which
+               is a preview, which is a page to write the words on. */
+            expect(fake.read('content/blog/hello-world.md', 'cms/blog/hello-world'))
+                .toBe('');
+            expect(fake.branches()).toContain('cms/blog/hello-world');
+            return expect(fake.pulls().length).toBe(1);
+        });
+
+        it('moves the address bar to the entry without tearing the form down',
            async function() {
             /* The entry is real now, so the hash catches up with it --
-               in place. A navigation here would throw away the editor
-               the person is still looking at and fetch back the bytes it
-               just sent. */
+               in place. A navigation here would throw away the form the
+               person is still looking at and fetch back the bytes it
+               just sent, and the controls would be rebuilt under
+               whoever was typing into them. */
             const {el} = await start('Hello World!', 'First post.');
-            const before = editorOf(el);
+            const before = shadow(el).querySelector('#ct-field-title');
             await submit(el);
 
             expect(location.hash).toBe('#/c/blog/e/hello-world');
-            expect(editorOf(el)).toBe(before);
-            return expect(editorOf(el).state).toBe('editing');
+            expect(entryOf(el)).not.toBe(null);
+            return expect(shadow(el).querySelector('#ct-field-title')).toBe(before);
         });
 
         it('makes the SECOND save an ordinary update of the same branch',
@@ -532,13 +610,13 @@ describe('creating and deleting entries', function() {
                check, on the entry it had just written. */
             const {el, fake} = await start('Hello World!', 'First post.');
             await submit(el);
-            retype(el, 'Second thoughts.', 0);
+            setField(el, 'title', 'Second thoughts.');
             await submit(el);
 
             expect(fake.pulls().length).toBe(1);
             expect(fake.history('cms/blog/hello-world').length).toBe(3);
             expect(fake.read('content/blog/hello-world.md', 'cms/blog/hello-world'))
-                .toBe('Second thoughts.\n');
+                .toBe('---\ntitle: Second thoughts.\n---\n');
             return expect(alertText(el)).not.toContain('already an entry');
         });
 
@@ -564,11 +642,11 @@ describe('creating and deleting entries', function() {
 
         const DELETABLE = blogWith('delete: true');
 
-        /** Open `hello` with whatever config, and wait for the editor. */
+        /** Open `hello` with whatever config, and wait for the file. */
         async function openHello(yaml = DELETABLE, files = {[HELLO]: SEED}) {
             const fake = createFakeGitHub({files});
             const {el} = await open('#/c/blog/e/hello', {fake, files: filesFor(yaml)});
-            await until(() => editorOf(el)?.state === 'editing', 'the editor');
+            await openedEntry(el);
             return {el, fake};
         }
 
@@ -617,7 +695,7 @@ describe('creating and deleting entries', function() {
 
             expect(confirmPanel(el).hidden).toBe(true);
             expect(fake.pulls()).toEqual([]);
-            return expect(editorOf(el)).not.toBe(null);
+            return expect(entryOf(el)).not.toBe(null);
         });
 
         it('puts the question away when the entry is left unanswered',
@@ -632,18 +710,19 @@ describe('creating and deleting entries', function() {
             const {el} = await open('#/c/blog/e/hello', {
                 fake, files: filesFor(DELETABLE)
             });
-            await until(() => editorOf(el)?.state === 'editing', 'the editor');
+            await openedEntry(el);
             deleteButton(el).click();
             expect(confirmPanel(el).hidden).toBe(false);
 
-            const first = editorOf(el);
             location.hash = '#/c/blog/e/other';
-            /* A different element, not merely one that is editing: the
-               first editor is still on the page and still editing until
-               the second entry's read comes back, so waiting on the
-               state alone returns before anything has happened. */
-            await until(() => editorOf(el) !== null && editorOf(el) !== first,
-                        'the next editor');
+            /* The next entry's own heading, not merely "an entry is
+               open": the first one stays on screen until the second
+               entry's read comes back, so waiting on the panel alone
+               returns before anything has happened. */
+            await until(() => el.shadowRoot.querySelector('.ct-cms__entry-view '
+                                                          + '.ct-cms__heading')
+                                  .textContent.includes('other'),
+                        'the next entry');
             expect(confirmPanel(el).hidden).toBe(true);
             return expect(fake.pulls()).toEqual([]);
         });
@@ -675,21 +754,9 @@ describe('creating and deleting entries', function() {
             await until(() => alertText(el) !== '', 'the notice');
 
             expect(location.hash).toBe('#/c/blog');
-            expect(editorOf(el)).toBe(null);
+            expect(entryOf(el)).toBe(null);
             expect(alertText(el)).toContain('pull request #1');
             return expect(alertText(el)).toContain('stays on the site');
-        });
-
-        it('releases the editor lease on the way out', async function() {
-            /* An editor left behind is invisible, still connected, and
-               holding the one-per-page lease for the rest of the
-               session -- so every later entry refuses to open with
-               nothing in any stack trace. */
-            const {el, fake} = await openHello();
-            deleteButton(el).click();
-            confirmButton(el).click();
-            await until(() => fake.pulls().length === 1, 'the pull request');
-            return expect(ContentTools.EditorApp.current()).toBe(null);
         });
 
         it('simply abandons an entry that was never saved', async function() {
@@ -700,11 +767,11 @@ describe('creating and deleting entries', function() {
             const {el, fake} = await openNew({yaml: DELETABLE});
             typeTitle(el, 'Hello');
             createButton(el).click();
-            await until(() => editorOf(el)?.state === 'editing', 'the editor');
+            await openedEntry(el);
 
             deleteButton(el).click();
             confirmButton(el).click();
-            await until(() => editorOf(el) === null, 'the editor to go');
+            await until(() => entryOf(el) === null, 'the entry to go');
 
             expect(location.hash).toBe('#/c/blog');
             expect(fake.pulls()).toEqual([]);
@@ -734,7 +801,7 @@ describe('creating and deleting entries', function() {
                     return fake.fetch(input, init);
                 }
             });
-            await until(() => editorOf(el)?.state === 'editing', 'the editor');
+            await openedEntry(el);
 
             vanished = true;
             deleteButton(el).click();
@@ -764,7 +831,7 @@ describe('creating and deleting entries', function() {
             const {el} = await open('#/c/blog/e/hello', {
                 fake, files: filesFor(DELETABLE)
             });
-            await until(() => editorOf(el)?.state === 'editing', 'the editor');
+            await openedEntry(el);
 
             fake.pushOther('cms/blog/hello', {[HELLO]: `${SEED}Theirs.\n`});
             deleteButton(el).click();

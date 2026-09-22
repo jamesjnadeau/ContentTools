@@ -11,6 +11,11 @@ import {until} from './helpers.js';
  * that is not a picture. Each of those is a different tile in the same
  * grid at the same moment, which no whole-shell assertion can arrange.
  *
+ * READ-ONLY since M6-3. There is no Insert button, so what a tile shows
+ * is the whole of what it does, and the assertions here are on the two
+ * things a person can see: the picture, and the sentence that replaces
+ * it when there is no picture to be had.
+ *
  * Every image here is a `data:` URL, so nothing is requested and a load
  * and a failure are both deterministic. The point of the view is WHICH of
  * the two it reacts to, not where the bytes came from.
@@ -41,16 +46,13 @@ function item(name, url) {
 }
 
 function harness(overrides = {}) {
-    const calls = {thumbnail: [], insert: []};
+    const calls = {thumbnail: []};
     const view = buildMedia(document, {
         thumbnail(it) {
             calls.thumbnail.push(it.name);
             return overrides.thumbnail
                 ? overrides.thumbnail(it)
                 : Promise.resolve(null);
-        },
-        insert(it, size) {
-            calls.insert.push([it.name, size]);
         }
     });
     document.body.appendChild(view.node);
@@ -58,15 +60,14 @@ function harness(overrides = {}) {
 }
 
 const state = (files, extra = {}) => ({
-    folder: 'static/images', files, truncated: false, insertable: true, ...extra
+    folder: 'static/images', files, truncated: false, ...extra
 });
 
 const tiles = node => [...node.querySelectorAll('.ct-cms__media-item')];
 const partsOf = tile => ({
     image: tile.querySelector('.ct-cms__media-thumb'),
     name: tile.querySelector('.ct-cms__media-name'),
-    note: tile.querySelector('.ct-cms__media-note'),
-    button: tile.querySelector('.ct-cms__media-insert')
+    note: tile.querySelector('.ct-cms__media-note')
 });
 const noteText = node => node.querySelector('.ct-cms__note').textContent;
 
@@ -112,11 +113,6 @@ describe('the media grid', function() {
             expect(noteText(node)).toContain('image button');
         });
 
-        it('says what to do when there is nothing to insert into', function() {
-            const {node} = open([item('a.png', PNG)], {state: {insertable: false}});
-            expect(noteText(node)).toBe('Open an entry to insert one of these into it.');
-        });
-
         it('reports a folder the API would not list in one request', function() {
             const {node} = open([item('a.png', PNG)], {state: {truncated: true}});
             expect(noteText(node)).toContain('only the first part');
@@ -134,50 +130,32 @@ describe('the media grid', function() {
                 .toBe('/images/a.png');
         });
 
-        it('offers Insert once the picture has actually decoded',
+        it('shows the picture, and says nothing, while it is arriving',
            async function() {
+            /* A tile that is waiting must not read as a tile that
+               failed. The two are opposite answers -- one is a wait and
+               one is a problem -- and the failure sentence appearing
+               for the moment a picture takes to arrive is how somebody
+               concludes their upload is broken. */
             const {node} = open([item('a.png', PNG)]);
-            const {image, button} = partsOf(tiles(node)[0]);
-            /* Disabled first, alive after -- the ordering is the claim.
-               Disabled rather than hidden while it waits, because a
-               button that appears under the pointer a moment after the
-               grid draws is how somebody clicks the tile next to the one
-               they meant. */
-            expect(button.disabled).toBe(true);
-            expect(button.hidden).toBe(false);
+            const {image, note} = partsOf(tiles(node)[0]);
+            expect(note.hidden).toBe(true);
+            expect(image.hidden).toBe(false);
 
-            await until(() => !button.disabled, 'Insert to come alive');
-            /* `naturalWidth`, not the load event alone. A truncated file
-               can fire `load` with nothing decoded, and `ContentEdit.Image`
-               divides by the width to get an aspect ratio -- so a zero
-               becomes an Infinity that lands in the saved `height`. */
-            expect(image.naturalWidth).toBeGreaterThan(0);
+            await until(() => image.naturalWidth > 0, 'the picture to decode');
+            expect(note.hidden).toBe(true);
+            return expect(image.hidden).toBe(false);
         });
 
-        it('inserts at the size the browser measured', async function() {
-            const {node, calls} = open([item('a.png', PNG)]);
-            const {image, button} = partsOf(tiles(node)[0]);
-            await until(() => !button.disabled, 'Insert to come alive');
-            button.click();
-            expect(calls.insert).toEqual([['a.png', [1, 1]]]);
-            expect([image.naturalWidth, image.naturalHeight]).toEqual([1, 1]);
-        });
-
-        it('hides Insert when there is no entry open', function() {
-            const {node} = open([item('a.png', PNG)], {state: {insertable: false}});
-            expect(partsOf(tiles(node)[0]).button.hidden).toBe(true);
-        });
-
-        it('refuses to offer a file it cannot show', function() {
-            /* A PDF in the media folder is a real thing to have there.
-               Inserting one as an `<img>` produces a broken picture in
-               somebody's post, so it gets a tile and no Insert -- and no
-               `src` at all, because an `<img>` with no source makes no
-               request rather than a failing one. */
+        it('says so for a file it cannot show', function() {
+            /* A PDF in the media folder is a real thing to have there,
+               and it gets a tile with its name on it -- but no `src` at
+               all, because an `<img>` with no source makes no request
+               rather than a failing one. */
             const {node} = open([mediaItem(CONFIG, file('notes.pdf'))]);
-            const {image, button, note} = partsOf(tiles(node)[0]);
+            const {image, note} = partsOf(tiles(node)[0]);
             expect(image.hasAttribute('src')).toBe(false);
-            expect(button.hidden).toBe(true);
+            expect(image.hidden).toBe(true);
             expect(note.hidden).toBe(false);
         });
 
@@ -198,10 +176,11 @@ describe('the media grid', function() {
             const {node, calls} = open([item('a.png', BROKEN)], {
                 handlers: {thumbnail: () => Promise.resolve(PNG)}
             });
-            const {image, button} = partsOf(tiles(node)[0]);
-            await until(() => !button.disabled, 'the fallback to decode');
+            const {image} = partsOf(tiles(node)[0]);
+            await until(() => image.getAttribute('src') === PNG,
+                        'the fallback to be tried');
             expect(calls.thumbnail).toEqual(['a.png']);
-            expect(image.getAttribute('src')).toBe(PNG);
+            return until(() => image.naturalWidth > 0, 'the fallback to decode');
         });
 
         it('gives up rather than asking twice', async function() {
@@ -220,10 +199,10 @@ describe('the media grid', function() {
 
         it('says so when there are no bytes to be had either', async function() {
             const {node} = open([item('a.png', BROKEN)]);
-            const {image, note, button} = partsOf(tiles(node)[0]);
+            const {image, note} = partsOf(tiles(node)[0]);
             await until(() => !note.hidden, 'the tile to give up');
             expect(note.textContent).toBe('This file could not be read.');
-            expect(button.disabled).toBe(true);
+            expect(image.hidden).toBe(true);
             /* And nothing was requested to find that out. Assigning the
                null straight through would set `src` to the string
                "null", which the page then fetches relative to itself and
@@ -245,24 +224,13 @@ describe('the media grid', function() {
                 handlers: {thumbnail: () => Promise.resolve(PNG)}
             });
             const first = tiles(node)[0];
-            await until(() => !partsOf(first).button.disabled, 'the fallback');
+            await until(() => partsOf(first).image.getAttribute('src') === PNG,
+                        'the fallback');
 
             view.update(state([item('a.png', BROKEN), item('b.png', PNG)]));
             expect(tiles(node)[0]).toBe(first);
             expect(partsOf(first).image.getAttribute('src')).toBe(PNG);
             expect(calls.thumbnail).toEqual(['a.png']);
-        });
-
-        it('takes Insert away the moment the entry it would insert into goes',
-           async function() {
-            /* Derived from there being an open entry, never remembered.
-               A button left live over a closed entry reports success and
-               inserts into nothing. */
-            const {view, node} = open([item('a.png', PNG)]);
-            await until(() => !partsOf(tiles(node)[0]).button.disabled, 'Insert');
-
-            view.update(state([item('a.png', PNG)], {insertable: false}));
-            expect(partsOf(tiles(node)[0]).button.hidden).toBe(true);
         });
 
         it('drops a tile for a file that is no longer there', function() {

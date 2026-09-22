@@ -12,19 +12,20 @@
   one page that is both the deliverable and the fixture cannot drift from
   itself.
 
-  The content stylesheet link is load-bearing, not decoration. In Mode A the
-  editable content stays in the document, so its rules -- the drop
-  indicators, the hover outlines, the drag cursors -- have to reach the
-  document too. Without it everything still LOOKS fine and none of the
-  editing affordances appear. A computed-style assertion in the dist spec
-  guards it.
+  There is NO content stylesheet link here, and there was one until M6-3.
+  Its rules -- drop indicators, hover outlines, drag cursors -- exist for
+  editable content sitting in the document, and there is none on this page
+  any more: /admin manages drafts and pull requests, and the words of an
+  entry are written on the site's own page. The surface that DOES put an
+  editor over content injects the sheet itself (see `src/edit/index.ts`),
+  which is the only arrangement that works there anyway -- a page this
+  deployment does not own cannot be asked to carry a <link>.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Content</title>
-<link rel="stylesheet" href="../dist/content-tools-content.css">
 <style>
     /* The page's only job is to give the shell the viewport. Everything
        else it draws is inside its own shadow root. */

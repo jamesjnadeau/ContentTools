@@ -1,18 +1,25 @@
 import {
-    alertText, createFakeGitHub, editorOf, forgetToken, openAt, retype, shellFetch,
-    signIn, until, CONFIG_URL
+    alertText, createFakeGitHub, entryOf, fieldOf, forgetToken, openAt, openedEntry,
+    setField, shellFetch, signIn, until, CONFIG_URL
 } from './helpers.js';
 
-/* Opening an entry, editing it, and turning that into a pull request.
+/* Opening an entry under `/admin`, changing its frontmatter, and turning
+ * that into a pull request.
  *
- * This is the sub-phase where the three finished layers finally meet, so
- * most of what is asserted here is a JOIN going wrong rather than any one
- * layer being wrong -- and a join goes wrong quietly. An editor with no
- * `slot` attribute is connected, functional and invisible. An editor left
- * behind on sign-out holds the one-per-page lease for the rest of the
- * session. A document re-parsed after a save renumbers its blocks while
- * the live DOM still carries the old indices, and the NEXT save splices
- * the wrong originals -- corruption inside a diff that reads perfectly.
+ * `/admin` is MANAGEMENT since M6-3: no editor, no body, no light-DOM
+ * children at all. The words of an entry are edited on the site's own
+ * page, by `src/edit/`, and what this screen offers instead is a link to
+ * that page -- built by `editUrl`, which sends a draft to its pull
+ * request's deploy preview and a published entry to the live site.
+ *
+ * Most of what is asserted here is a JOIN going wrong rather than any one
+ * layer being wrong, and a join goes wrong quietly. A save that reaches
+ * `update` instead of `updateFrontmatter` puts a body nobody looked at
+ * through the walker, so an inline type nobody has thought about rewrites
+ * a block on a save that changed a date. A form that always reports its
+ * values puts every save through a YAML round trip -- comments gone, key
+ * order sorted -- and the pull request nobody can read is the whole
+ * premise of the project, lost.
  */
 
 const SEED = '---\ntitle: Hello\ndraft: false\n---\n\n# Hello\n\nWorld.\n';
@@ -23,12 +30,25 @@ function fakeWith(files = {[ENTRY]: SEED}) {
     return createFakeGitHub({files});
 }
 
-/** Open `#/c/blog/e/hello` and wait for the editor to be editing. */
+/** Open `#/c/blog/e/hello` and wait for the file to arrive. */
 async function openHello(options = {}) {
     const mounted = await openAt(
         '#/c/blog/e/hello', {fake: options.fake ?? fakeWith(), ...options});
-    await until(() => editorOf(mounted.el)?.state === 'editing', 'the editor to start');
+    await openedEntry(mounted.el);
     return mounted;
+}
+
+/**
+ * Everything after the frontmatter block, including the gap.
+ *
+ * The one assertion this screen exists to keep true. `/admin` never reads
+ * the body, so every save it makes has to leave it exactly as it was --
+ * not "semantically the same", the same bytes, because a diff that
+ * touches a paragraph nobody edited is a diff a reviewer stops reading.
+ */
+function bodyOf(source) {
+    const end = source.indexOf('\n---\n', 4);
+    return end === -1 ? source : source.slice(end + 5);
 }
 
 /** Press Submit and wait for the save to finish. */
@@ -45,7 +65,7 @@ function addedLines(before, after) {
     return after.split('\n').filter(line => line && !had.has(line));
 }
 
-describe('the entry editor', function() {
+describe('the entry management screen', function() {
 
     let mounted = null;
 
@@ -67,37 +87,97 @@ describe('the entry editor', function() {
         return mounted;
     }
 
-    // --- where the editor goes -------------------------------------------
+    // --- no editor, anywhere ---------------------------------------------
 
-    it('puts the editor in the shell LIGHT DOM, slotted', async function() {
-        /* Mode A one level up, and the only arrangement that works. In
-           the shell's shadow root `document.getSelection()` retargets in
-           Chromium and WebKit, so the editor's own selection chain hands
-           back a range pointing at the shell host -- a caret in the
-           wrong place with nothing thrown. `selection.spec.js` asserts
-           the consequence; this asserts the arrangement. */
-        const {el, shadow} = await open();
-        const editor = editorOf(el);
-        expect(editor.parentNode).toBe(el);
-        expect(shadow.contains(editor)).toBe(false);
+    it('mounts no editor and writes nothing into its own light DOM',
+       async function() {
+        /* The M6-3 invariant, and the one nothing else can see. An
+           editor here would work perfectly -- and would hold the
+           one-per-page `EditorApp` lease, so the in-page surface on the
+           site's own page, which is where the body is actually edited,
+           would refuse to boot with nothing in any stack trace.
 
-        /* And it is ASSIGNED. The frame's only slot is a named one, so
-           an editor without this attribute renders nowhere while being
-           perfectly connected -- and holding the lease. */
-        expect(editor.getAttribute('slot')).toBe('editor');
-        return expect(editor.assignedSlot)
-            .toBe(shadow.querySelector('slot[name="editor"]'));
+           `current()` rather than counting elements: a lease claimed by
+           something this test cannot name is the failure, not a tag. */
+        const {el} = await open();
+        expect(el.childNodes.length).toBe(0);
+        expect(el.querySelector('content-tools-editor')).toBe(null);
+        return expect(ContentTools.EditorApp.current()).toBe(null);
     });
 
-    it('opens in markdown mode, holding the body as HTML', async function() {
-        const {el} = await open();
-        const editor = editorOf(el);
-        expect(editor.mode).toBe('markdown');
-        const region = editor.querySelector('[data-editable][data-name="body"]');
-        expect(region.querySelector('h1').textContent).toBe('Hello');
-        // The frontmatter is NOT in the region: a YAML block edited as
-        // prose is a YAML block somebody will break.
-        return expect(region.textContent).not.toContain('title:');
+    it('offers the site\u2019s own page as the way to edit the words',
+       async function() {
+        /* The link is the whole replacement for the editor that used to
+           be here, and there is nothing else on this screen that can
+           change a word of the body. A new tab deliberately: the two
+           surfaces write the same file and an author moves between them,
+           so closing this one to reach the other would mean re-opening
+           the entry on every trip back. */
+        const {shadow} = await open();
+        const link = shadow.querySelector('.ct-cms__entry-edit');
+        expect(link.hidden).toBe(false);
+        expect(link.getAttribute('href')).toBe('/blog/hello/');
+        expect(link.getAttribute('target')).toBe('_blank');
+        expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+        // No warning: a published entry's live page IS the right page.
+        return expect(shadow.querySelector('.ct-cms__entry-stale').hidden).toBe(true);
+    });
+
+    it('sends a draft to its pull request\u2019s preview, not the live page',
+       async function() {
+        /* The live site is built from the base branch, so it shows the
+           published text and knows nothing about the branch the editor
+           would be committing to. An author sent there to work on a
+           draft edits the old version, and their pull request comes
+           back carrying the reviewer's changes reverted. */
+        const fake = fakeWith();
+        fake.openPull('blog', 'hello', ['cms/in-review']);
+        const {shadow} = await open({fake});
+
+        const link = shadow.querySelector('.ct-cms__entry-edit');
+        expect(link.getAttribute('href'))
+            .toBe('https://deploy-preview-1--site.test/blog/hello/');
+        return expect(shadow.querySelector('.ct-cms__entry-stale').hidden).toBe(true);
+    });
+
+    it('warns when a draft has no preview to be edited on', async function() {
+        /* `editUrl` falls back to the live page rather than refusing,
+           because refusing would take in-page editing away from every
+           site that builds no previews. The fallback is the wrong page
+           for the reason above, so it is said out loud rather than
+           linked silently. */
+        const {shadow} = await open({
+            fake: (() => {
+                const fake = fakeWith();
+                fake.openPull('blog', 'hello', ['cms/draft']);
+                return fake;
+            })(),
+            files: {[CONFIG_URL]: CONFIG_YAML_TEXT.replace(
+                /  preview: .*\n/, '')}
+        });
+
+        expect(shadow.querySelector('.ct-cms__entry-edit').getAttribute('href'))
+            .toBe('/blog/hello/');
+        const warning = shadow.querySelector('.ct-cms__entry-stale');
+        expect(warning.hidden).toBe(false);
+        return expect(warning.textContent).toContain('write over the draft');
+    });
+
+    it('offers no link at all for a collection that is not published as pages',
+       async function() {
+        /* Null is a real answer and not a failure: a collection of data
+           files has no page. Emptied rather than left behind `hidden`,
+           because a hidden node's text is still in `textContent`. */
+        const {el, shadow} = await open({
+            files: {[CONFIG_URL]: CONFIG_YAML_TEXT.replace(
+                /    page: .*\n/, '')}
+        });
+        const link = shadow.querySelector('.ct-cms__entry-edit');
+        expect(link.hidden).toBe(true);
+        expect(link.textContent).toBe('');
+        expect(link.hasAttribute('href')).toBe(false);
+        expect(getComputedStyle(link).display).toBe('none');
+        return expect(shadow.querySelector('.ct-cms__entry-stale').hidden).toBe(true);
     });
 
     it('names the entry and links back to its collection', async function() {
@@ -126,10 +206,10 @@ describe('the entry editor', function() {
         return expect(notice).not.toBe(null);
     });
 
-    it('turns one edited paragraph into one branch, one pull request and '
+    it('turns one edited field into one branch, one pull request and '
        + 'a one-line diff', async function() {
         const {el, fake} = await open();
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
         await submit(el);
 
         expect(fake.branches()).toEqual(['cms/blog/hello', 'main']);
@@ -141,8 +221,13 @@ describe('the entry editor', function() {
            and a diff covering all of it cannot be reviewed -- which is
            the point of routing every change through a pull request. */
         const saved = fake.read(ENTRY, BRANCH);
-        expect(addedLines(SEED, saved)).toEqual(['Goodbye.']);
-        expect(saved.startsWith('---\ntitle: Hello\ndraft: false\n---\n')).toBe(true);
+        expect(addedLines(SEED, saved)).toEqual(['title: Goodbye']);
+        /* And the BODY is byte-identical, which is the stronger claim
+           and the reason `updateFrontmatter` exists: this screen never
+           reads the body, so the file it writes must be the file it
+           read with one block swapped -- not the result of taking the
+           body apart and putting it back. */
+        expect(bodyOf(saved)).toBe(bodyOf(SEED));
 
         /* And it SAYS so, naming the commit. Without the receipt a save
            that committed and a save that did nothing look identical --
@@ -162,7 +247,7 @@ describe('the entry editor', function() {
            pressed the button. Both have to read the same, and only this
            one reaches the `result.changed` line. */
         const {el, shadow} = await open();
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
         await submit(el);
 
         // Pressed again with nothing touched in between.
@@ -178,17 +263,19 @@ describe('the entry editor', function() {
     it('still produces a one-line diff on the SECOND save', async function() {
         /* The open `MarkdownDocument` is never re-parsed after a save.
            Re-parsing the string just written renumbers the blocks while
-           the live DOM still carries the old `data-ct-md` indices, so
-           this second save would splice against the wrong originals --
-           content corruption inside a diff that looks reviewable. */
+           the live DOM still carries the old `data-ct-md` indices -- and
+           although THIS screen never splices a body, the document it
+           holds is the same one the in-page surface would, so the rule
+           is the same rule and it is asserted where a save happens. */
         const {el, fake} = await open();
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
         await submit(el);
-        retype(el, 'Farewell.');
+        setField(el, 'title', 'Farewell');
         await submit(el);
 
         const saved = fake.read(ENTRY, BRANCH);
-        expect(addedLines(SEED, saved)).toEqual(['Farewell.']);
+        expect(addedLines(SEED, saved)).toEqual(['title: Farewell']);
+        expect(bodyOf(saved)).toBe(bodyOf(SEED));
         expect(fake.history(BRANCH).length).toBe(3);
         // Still one pull request: a second save adds a commit to the
         // branch rather than opening a second review of the same entry.
@@ -199,7 +286,7 @@ describe('the entry editor', function() {
         const {el, shadow} = await open();
         expect(shadow.querySelector('.ct-cms__entry-pull').hidden).toBe(true);
 
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
         await submit(el);
 
         const link = shadow.querySelector('.ct-cms__entry-pull');
@@ -222,10 +309,17 @@ describe('the entry editor', function() {
         fake.openPull('blog', 'hello', ['cms/in-review']);
         fake.pushOther(BRANCH, {[ENTRY]: SEED.replace('World.', 'Reviewed.')});
 
-        const {el} = await open({fake});
-        const region = editorOf(el).querySelector('[data-editable]');
-        expect(region.textContent).toContain('Reviewed.');
-        return expect(region.textContent).not.toContain('World.');
+        const {el, fake: theirs} = await open({fake});
+        /* Read off the SAVE rather than off a rendered body: this screen
+           shows no body, so the only place the version it is holding is
+           visible is the file a save would write. Nothing was typed, so
+           what goes up is the bytes that came down. */
+        setField(el, 'title', 'Goodbye');
+        await submit(el);
+
+        const saved = theirs.read(ENTRY, BRANCH);
+        expect(saved).toContain('Reviewed.');
+        return expect(saved).not.toContain('World.');
     });
 
     // --- conflict ---------------------------------------------------------
@@ -233,12 +327,12 @@ describe('the entry editor', function() {
     it('keeps the unwritten markdown when somebody else got there first',
        async function() {
         const {el, fake, shadow} = await open();
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
         await submit(el);
 
-        // A reviewer pushes to the entry's branch while the editor is open.
+        // A reviewer pushes to the entry's branch while it is open here.
         fake.pushOther(BRANCH, {[ENTRY]: SEED.replace('World.', 'Theirs.')});
-        retype(el, 'Mine.');
+        setField(el, 'title', 'Mine');
         await submit(el);
 
         expect(alertText(el)).toContain('Somebody else changed this entry');
@@ -247,122 +341,74 @@ describe('the entry editor', function() {
         /* The text is the whole point of the panel: the only way
            forward throws the work away, and offering that without first
            showing what was written is data loss with a button on it. */
-        expect(shadow.querySelector('.ct-cms__conflict-text').value).toContain('Mine.');
+        expect(shadow.querySelector('.ct-cms__conflict-text').value)
+            .toContain('title: Mine');
         // And nothing of theirs was lost.
         return expect(fake.read(ENTRY, BRANCH)).toContain('Theirs.');
     });
 
     it('reloads the entry from the conflict panel', async function() {
         const {el, fake, shadow} = await open();
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
         await submit(el);
-        fake.pushOther(BRANCH, {[ENTRY]: SEED.replace('World.', 'Theirs.')});
-        retype(el, 'Mine.');
+        fake.pushOther(BRANCH, {[ENTRY]: SEED.replace('title: Hello', 'title: Theirs')});
+        setField(el, 'title', 'Mine');
         await submit(el);
 
         shadow.querySelector('.ct-cms__conflict .ct-cms__button--cancel').click();
-        await until(() => editorOf(el)?.state === 'editing', 'the editor to come back');
-
-        expect(editorOf(el).querySelector('[data-editable]').textContent)
-            .toContain('Theirs.');
+        await until(() => fieldOf(el, 'title')?.value === 'Theirs',
+                    'the reviewer\u2019s version to come back');
         return expect(shadow.querySelector('.ct-cms__conflict').hidden).toBe(true);
     });
 
-    // --- the lease --------------------------------------------------------
+    // --- the lease this screen must never take ----------------------------
 
-    it('frees the editor lease when the entry is left', async function() {
-        /* The failure this names has no symptom at the time: an editor
-           that is still connected holds the process-wide `EditorApp`,
-           and the NEXT entry opened refuses to boot with nothing in any
-           stack trace. */
-        const {el} = await open();
-        expect(ContentTools.EditorApp.current()).not.toBe(null);
-
-        location.hash = '#/c/blog';
-        await until(() => editorOf(el) === null, 'the editor to be removed');
-        return expect(ContentTools.EditorApp.current()).toBe(null);
-    });
-
-    it('frees it on sign-out too, where the frame is only hidden',
-       async function() {
-        /* Sign-out hides the frame rather than detaching it, so an
-           editor left behind is invisible AND connected -- the worst
-           version of the same bug, because the person cannot even see
-           what is holding it. */
-        const {el} = await open();
-        el.shadowRoot.querySelector('.ct-cms__button--muted').click();
-        await until(() => el.getAttribute('state') === 'signed-out', 'the gate');
-
-        expect(editorOf(el)).toBe(null);
-        return expect(ContentTools.EditorApp.current()).toBe(null);
-    });
-
-    it('holds exactly one editor across an entry-to-entry move',
-       async function() {
+    it('claims no editor lease across an entry-to-entry move', async function() {
+        /* The lease belongs to the in-page surface, and it is
+           process-wide: one claimed here is one the site's own page
+           cannot have, and the symptom there is an editor that refuses
+           to boot with nothing in any stack trace. Asserted across a
+           move because that is where a shell that DID mount one would
+           have had to hand it over. */
         const {el} = await open({
-            fake: fakeWith({[ENTRY]: SEED, 'content/blog/other.md': '# Other\n'})
+            fake: fakeWith({
+                [ENTRY]: SEED,
+                'content/blog/other.md': '---\ntitle: Other\n---\n\nText.\n'
+            })
         });
-        location.hash = '#/c/blog/e/other';
-        await until(
-            () => editorOf(el)?.querySelector('[data-editable]')
-                ?.textContent.includes('Other'),
-            'the second entry');
+        expect(ContentTools.EditorApp.current()).toBe(null);
 
-        /* One element, and one live app behind it. Two editors is the
-           failure the lease exists to make loud; ZERO is the quieter one
-           -- an entry that opened into an element whose boot was refused
-           because the previous one had not let go. */
-        expect(el.querySelectorAll('content-tools-editor').length).toBe(1);
-        expect(editorOf(el).state).toBe('editing');
-        return expect(ContentTools.EditorApp.current()).not.toBe(null);
+        location.hash = '#/c/blog/e/other';
+        await until(() => fieldOf(el, 'title')?.value === 'Other', 'the second entry');
+        expect(el.childNodes.length).toBe(0);
+        return expect(ContentTools.EditorApp.current()).toBe(null);
     });
 
-    it('survives being moved to another parent, editor and all',
+    it('survives being moved to another parent, unsaved work and all',
        async function() {
         /* A DOM move fires `disconnectedCallback` and then
            `connectedCallback`, synchronously, and a shell that took that
-           as a removal would detach the editor -- destroying the open
-           entry and the person's unsaved work every time a framework
-           reparented it. The editor's OWN teardown already survives this
-           (deferred a microtask, re-checking `isConnected`), so the
-           shell's job here is to do nothing. */
+           as a removal would close the open entry -- throwing away
+           whatever had been typed into the form every time a framework
+           reparented it. The shell's job here is to do nothing, and this
+           is what says so. */
         const {el} = await open();
-        retype(el, 'Goodbye.');
-        const editor = editorOf(el);
+        setField(el, 'title', 'Goodbye');
 
         const host = document.createElement('div');
         document.body.appendChild(host);
         try {
             host.appendChild(el);
 
-            expect(editorOf(el)).toBe(editor);
-            expect(editor.state).toBe('editing');
-            expect(ContentTools.EditorApp.current()).not.toBe(null);
-            /* And the edit is still there, which is the thing that was
-               actually at stake. */
-            return expect(editor.querySelector('[data-editable]').textContent)
-                .toContain('Goodbye.');
+            expect(entryOf(el)).not.toBe(null);
+            /* The same control, not a rebuilt one holding the same
+               string: a form rebuilt under whoever is typing loses the
+               caret even when it keeps the text. */
+            return expect(fieldOf(el, 'title').value).toBe('Goodbye');
         } finally {
             document.body.appendChild(el);
             host.remove();
         }
-    });
-
-    it('frees the lease when the shell itself is taken off the page',
-       async function() {
-        /* Not the shell's own doing -- the editor is its child, so the
-           DOM disconnects it in the same operation and it releases the
-           lease on its way out. Asserted because the arrangement that
-           makes it true is exactly what the test above forbids the shell
-           from tidying up by hand. */
-        const {el} = await open();
-        expect(ContentTools.EditorApp.current()).not.toBe(null);
-
-        el.remove();
-        mounted = null;
-        await until(() => ContentTools.EditorApp.current() === null,
-                    'the lease to be released');
-        return expect(ContentTools.EditorApp.current()).toBe(null);
     });
 
     // --- leaving with unsaved work ----------------------------------------
@@ -370,7 +416,7 @@ describe('the entry editor', function() {
     it('holds a navigation that would lose work, and puts the hash back',
        async function() {
         const {el, shadow} = await open();
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
 
         location.hash = '#/c/blog';
         await until(() => !shadow.querySelector('.ct-cms__leave').hidden,
@@ -381,17 +427,18 @@ describe('the entry editor', function() {
            put the shell and the URL out of step, and a reload would land
            somewhere the person never got to. */
         expect(location.hash).toBe('#/c/blog/e/hello');
-        return expect(editorOf(el)).not.toBe(null);
+        return expect(entryOf(el)).not.toBe(null);
     });
 
     it('does not hold a navigation when nothing was changed', async function() {
-        /* The predicate is the SERIALIZED MARKDOWN, not the HTML. The
-           editor normalises what it is handed, so an HTML comparison
-           reports edits nobody made -- and a panel that appears every
-           time is a panel people click through without reading. */
+        /* The predicate is the SERIALIZED MARKDOWN, not the form's own
+           idea of having been typed into: somebody who clears a field
+           and types it back has touched the form without changing the
+           file, and a panel that appears every time is a panel people
+           click through without reading. */
         const {el, shadow} = await open();
         location.hash = '#/c/blog';
-        await until(() => editorOf(el) === null, 'the entry to close');
+        await until(() => entryOf(el) === null, 'the entry to close');
 
         /* Nothing held it: the address bar was left where the click put
            it, and the entry view -- panel and all -- is gone from the
@@ -402,47 +449,75 @@ describe('the entry editor', function() {
 
     it('stays put when asked to', async function() {
         const {el, shadow} = await open();
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
         location.hash = '#/c/blog';
         await until(() => !shadow.querySelector('.ct-cms__leave').hidden, 'the panel');
 
         shadow.querySelectorAll('.ct-cms__leave .ct-cms__button')[0].click();
         expect(shadow.querySelector('.ct-cms__leave').hidden).toBe(true);
-        expect(editorOf(el)).not.toBe(null);
+        expect(entryOf(el)).not.toBe(null);
         return expect(location.hash).toBe('#/c/blog/e/hello');
+    });
+
+    it('keeps the form\u2019s own nodes across a render', async function() {
+        /* Why the frame and this view are built ONCE and updated in
+           place, rather than rebuilt per render. It used to be an
+           invariant about `<slot name="editor">` -- an editor slotted
+           into a slot a re-render replaced is invisible, still
+           connected, and still holding the one-per-page lease -- and
+           that hazard left with the editor in M6-3. What is left is the
+           ordinary one, and on this screen it is the only one: the
+           frontmatter form is the whole of what `/admin` can change, so
+           a rebuild under whoever is typing eats their keystrokes and
+           their caret with them.
+
+           Driven through the leave panel because it is the one render
+           this screen performs WITHOUT closing the entry -- a save
+           renders too, but it also finishes, and a node that survived
+           because nothing re-rendered proves nothing. Identity, not
+           value: a rebuilt control holding the same string reads
+           identically and has lost the caret. */
+        const {el, shadow} = await open();
+        const before = setField(el, 'title', 'Goodbye');
+
+        location.hash = '#/c/blog';
+        await until(() => !shadow.querySelector('.ct-cms__leave').hidden, 'the panel');
+        shadow.querySelectorAll('.ct-cms__leave .ct-cms__button')[0].click();
+
+        expect(fieldOf(el, 'title')).toBe(before);
+        return expect(fieldOf(el, 'title').value).toBe('Goodbye');
     });
 
     it('still saves the work after a leave was checked and abandoned',
        async function() {
-        /* Two reads of the editor in one edit, which is the case the
-           `_edited` cache exists for. `save()` reports the regions that
-           moved since the LAST save and then resets that baseline, so
-           the leave check consumes the report and the submit that
-           follows is told nothing changed -- and writes the file back
-           exactly as it was, silently, while saying it saved. */
+        /* Two reads of what a save would write, in one edit. They have
+           to agree, which is why `_dirty` and `_submit` share one
+           `pending()`: two spellings disagree by holding a navigation
+           over work the save then reports as nothing, or by letting one
+           go that the save would have written. */
         const {el, shadow, fake} = await open();
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
 
         location.hash = '#/c/blog';
         await until(() => !shadow.querySelector('.ct-cms__leave').hidden, 'the panel');
         shadow.querySelectorAll('.ct-cms__leave .ct-cms__button')[0].click();
 
         await submit(el);
-        return expect(addedLines(SEED, fake.read(ENTRY, BRANCH))).toEqual(['Goodbye.']);
+        return expect(addedLines(SEED, fake.read(ENTRY, BRANCH)))
+            .toEqual(['title: Goodbye']);
     });
 
     it('leaves, and moves the address bar with it, when told to discard',
        async function() {
         const {el, shadow} = await open();
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
         location.hash = '#/c/blog';
         await until(() => !shadow.querySelector('.ct-cms__leave').hidden, 'the panel');
 
         shadow.querySelector('.ct-cms__leave .ct-cms__button--cancel').click();
-        await until(() => editorOf(el) === null, 'the entry to close');
+        await until(() => entryOf(el) === null, 'the entry to close');
 
         expect(location.hash).toBe('#/c/blog');
-        expect(ContentTools.EditorApp.current()).toBe(null);
         /* And the collection it went to actually loaded, rather than the
            discard leaving the shell on a route it never fetched. */
         return until(() => el.shadowRoot.querySelectorAll('.ct-cms__entry-link').length > 0,
@@ -462,7 +537,7 @@ describe('the entry editor', function() {
             return ev.defaultPrevented;
         };
         expect(ask()).toBe(false);
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
         expect(ask()).toBe(true);
 
         // And it goes quiet again once the work is committed.
@@ -475,7 +550,7 @@ describe('the entry editor', function() {
            torn-down shell keeps blocking the tab from closing over an
            entry nobody can see. */
         const {el} = await open();
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
         el.remove();
         mounted = null;
 
@@ -491,7 +566,7 @@ describe('the entry editor', function() {
            instead: the shell stops responding to its own links, once,
            with nothing to see. */
         const {el, shadow} = await open();
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
 
         location.hash = '#/c/blog';
         await until(() => !shadow.querySelector('.ct-cms__leave').hidden, 'the panel');
@@ -515,18 +590,19 @@ describe('the entry editor', function() {
            swallowed. The equality guard is what stops that, and this is
            the only path that reaches it. */
         const {el, shadow} = await open();
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
 
         location.hash = '#/c/blog/e/hello/';
         await until(() => !shadow.querySelector('.ct-cms__leave').hidden, 'the panel');
         expect(location.hash).toBe('#/c/blog/e/hello');
 
         shadow.querySelectorAll('.ct-cms__leave .ct-cms__button')[1].click();
-        await until(() => editorOf(el)?.state === 'editing', 'the entry to reload');
+        await until(() => fieldOf(el, 'title')?.value === 'Hello',
+                    'the entry to reload');
 
         // Now a real navigation, which must not be eaten.
         location.hash = '#/c/blog';
-        return until(() => editorOf(el) === null, 'the shell to leave the entry');
+        return until(() => entryOf(el) === null, 'the shell to leave the entry');
     });
 
     it('takes the leave panel down when the conflict panel reloads the entry',
@@ -539,10 +615,10 @@ describe('the entry editor', function() {
            over a freshly reloaded entry, offering to discard work that
            no longer exists. */
         const {el, fake, shadow} = await open();
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
         await submit(el);
-        fake.pushOther(BRANCH, {[ENTRY]: SEED.replace('World.', 'Theirs.')});
-        retype(el, 'Mine.');
+        fake.pushOther(BRANCH, {[ENTRY]: SEED.replace('title: Hello', 'title: Theirs')});
+        setField(el, 'title', 'Mine');
         await submit(el);
         expect(shadow.querySelector('.ct-cms__conflict').hidden).toBe(false);
 
@@ -550,7 +626,8 @@ describe('the entry editor', function() {
         await until(() => !shadow.querySelector('.ct-cms__leave').hidden, 'the panel');
 
         shadow.querySelector('.ct-cms__conflict .ct-cms__button--cancel').click();
-        await until(() => editorOf(el)?.state === 'editing', 'the editor to come back');
+        await until(() => fieldOf(el, 'title')?.value === 'Theirs',
+                    'the entry to come back');
         return expect(shadow.querySelector('.ct-cms__leave').hidden).toBe(true);
     });
 
@@ -578,19 +655,18 @@ describe('the entry editor', function() {
                 return real(input, init);
             }
         });
-        retype(el, 'Goodbye.');
+        setField(el, 'title', 'Goodbye');
         revoked = true;
 
         el.shadowRoot.querySelector('.ct-cms__entry-submit').click();
         await until(() => el.getAttribute('state') === 'signed-out', 'the gate');
 
         expect(alertText(el)).toContain('GitHub rejected that token');
-        /* And the editor went with the token. The frame is only hidden
-           behind the gate, so one left behind would be invisible,
-           connected, and holding the lease for the rest of the
-           session. */
-        expect(editorOf(el)).toBe(null);
-        return expect(ContentTools.EditorApp.current()).toBe(null);
+        /* And the open entry went with the token. Every question this
+           screen can ask about an entry needs the token being given up,
+           so one left open is a heading and a form over a file nothing
+           can read, save or delete. */
+        return expect(entryOf(el)).toBe(null);
     });
 
 
@@ -627,25 +703,29 @@ describe('the entry editor', function() {
             return expect(control(el, 'tags').value).toBe('');
         });
 
-        it('leaves the frontmatter BYTE-identical on a body-only save',
+        it('leaves the BODY byte-identical when a field is edited',
            async function() {
-            /* The gate for the whole sub-phase. `update` preserves the
-               original block verbatim only when it is handed no data, so
-               a form that always reported its values would put every
-               save through a YAML round trip -- comments gone, key order
-               sorted, quoting normalised, and a whole-file diff in a
-               pull request whose only reason to exist is that somebody
-               can read it. */
-            const seed = '---\n# who wrote it\ntitle: "Hello"\ndraft: false\n---\n\n'
-                + '# Hello\n\nWorld.\n';
+            /* The mirror of the claim this screen used to make the other
+               way round, and the only half of it that survives M6-3.
+               `/admin` never reads the body, so the file it writes has to
+               be the file it read with the block at the top swapped --
+               not the result of taking the body apart and putting it
+               back. The seed is deliberately awkward about it: a setext
+               heading, a hard-wrapped paragraph and a fenced block are
+               each things no HTML round trip returns unchanged.
+               (The other half -- frontmatter byte-identical on a save
+               that only edited the body -- moved with the body, to
+               `test/browser/edit/surface.spec.js`.) */
+            const seed = '---\ntitle: Hello\n---\n\n'
+                + 'Hello\n=====\n\nA sentence that the author\nwrapped by hand.\n\n'
+                + '```js\nconst x = 1;\n```\n';
             const {el, fake} = await openWith(seed);
-            retype(el, 'Goodbye.');
+            setField(el, 'title', 'Goodbye');
             await submit(el);
 
             const saved = fake.read(ENTRY, BRANCH);
-            expect(saved.startsWith('---\n# who wrote it\ntitle: "Hello"\ndraft: false\n---\n'))
-                .toBe(true);
-            return expect(addedLines(seed, saved)).toEqual(['Goodbye.']);
+            expect(addedLines(seed, saved)).toEqual(['title: Goodbye']);
+            return expect(bodyOf(saved)).toBe(bodyOf(seed));
         });
 
         it('writes a field that was edited, and only that key', async function() {
@@ -686,7 +766,7 @@ describe('the entry editor', function() {
                 && !el.shadowRoot.querySelector('.ct-cms__leave').hidden,
                         'the leave panel');
             // And the entry is still open behind it, edit intact.
-            expect(editorOf(el)).not.toBe(null);
+            expect(entryOf(el)).not.toBe(null);
             return expect(control(el, 'title').value).toBe('Retitled');
         });
 
@@ -706,12 +786,17 @@ describe('the entry editor', function() {
         });
 
         it('does not add an empty block to a file that had none', async function() {
-            // Nothing was filled in, so nothing about the file's
-            // frontmatter has changed -- including that it has none.
+            /* Nothing was filled in, so nothing about the file's
+               frontmatter has changed -- including that it has none. A
+               form reporting its empty controls as answers would open a
+               pull request adding `---\n---` to a file nobody typed
+               into, which is the whole of what the diff would say. */
             const {el, fake} = await openWith('# Hello\n\nWorld.\n');
-            retype(el, 'Goodbye.');
-            await submit(el);
-            return expect(fake.read(ENTRY, BRANCH).startsWith('---')).toBe(false);
+            el.shadowRoot.querySelector('.ct-cms__entry-submit').click();
+            await until(() => alertText(el) !== '', 'the notice');
+
+            expect(alertText(el)).toContain('Nothing to save');
+            return expect(fake.branches()).toEqual(['main']);
         });
 
         it('refuses to edit a block the parser could not read', async function() {
@@ -725,12 +810,16 @@ describe('the entry editor', function() {
             expect(el.shadowRoot.querySelector('.ct-fields').textContent)
                 .toContain('could not be read');
 
-            retype(el, 'Goodbye.', 0);
-            await submit(el);
-            const saved = fake.read(ENTRY, BRANCH);
-            expect(saved.startsWith('---\ntitle: "unterminated\n  - nope\n---\n'))
-                .toBe(true);
-            return expect(saved).toContain('Goodbye.');
+            /* And there is no way to write over it from here. With no
+               form to answer, the only edit this screen can make is one
+               it has refused to offer -- so a save has nothing to change
+               and says so, rather than committing the merge of an empty
+               form over a block nobody read. */
+            el.shadowRoot.querySelector('.ct-cms__entry-submit').click();
+            await until(() => alertText(el) !== '', 'the notice');
+
+            expect(alertText(el)).toContain('Nothing to save');
+            return expect(fake.branches()).toEqual(['main']);
         });
 
         it('refuses to edit frontmatter that is not a set of keys',
@@ -762,7 +851,7 @@ describe('the entry editor', function() {
                 })
             });
             mounted = {el};
-            await until(() => editorOf(el)?.state === 'editing', 'the editor');
+            await openedEntry(el);
             expect(control(el, 'heading').value).toBe('Us');
             // And `blog`'s fields are not on it.
             return expect(control(el, 'tags')).toBe(null);
@@ -779,7 +868,6 @@ describe('the entry editor', function() {
                 '---\ntitle: Hello\n---\n\n# Hello\n\nWorld.\n',
                 ['{name: title, required: true}']);
             control(el, 'title').value = '';
-            retype(el, 'Goodbye.');
             el.shadowRoot.querySelector('.ct-cms__entry-submit').click();
             await until(() => alertText(el) !== '', 'the refusal');
 
@@ -824,7 +912,7 @@ describe('the entry editor', function() {
             const {el} = await openWith(
                 '---\ntitle: Hello\n---\n\n# Hello\n\nWorld.\n');
             const before = control(el, 'title');
-            retype(el, 'Goodbye.');
+            control(el, 'title').value = 'Goodbye';
             await submit(el);
             return expect(control(el, 'title')).toBe(before);
         });
@@ -872,7 +960,7 @@ describe('the entry editor', function() {
                 }
             });
             mounted = {el};
-            await until(() => editorOf(el)?.state === 'editing', 'the first entry');
+            await openedEntry(el, 'the first entry');
             expect(control(el, 'title').value).toBe('Hello');
 
             gate.hold = true;
@@ -901,7 +989,7 @@ describe('the entry editor', function() {
             // Set after boot, which is when a host page has the element
             // to set it on -- so the frame reads the registry late.
             location.hash = '#/c/blog';
-            await until(() => editorOf(el) === null, 'the listing');
+            await until(() => entryOf(el) === null, 'the listing');
             location.hash = '#/c/blog/e/hello';
             await until(() => el.shadowRoot.querySelector('.site-colour') !== null,
                         'the site’s own widget');
@@ -919,11 +1007,17 @@ describe('the entry editor', function() {
                 '---\ntitle: Hello\nmeta: {a: 1}\n---\n\n# Hello\n\nWorld.\n',
                 ['{name: title}', '{name: meta, widget: strng}']);
             expect(control(el, 'meta').readOnly).toBe(true);
-            retype(el, 'Goodbye.');
+            control(el, 'title').value = 'Edited';
             await submit(el);
-            // Untouched means the block was never rewritten at all.
-            return expect(fake.read(ENTRY, BRANCH))
-                .toContain('---\ntitle: Hello\nmeta: {a: 1}\n---');
+
+            const saved = fake.read(ENTRY, BRANCH);
+            expect(saved).toContain('title: Edited');
+            /* And `meta` kept its VALUE. A fallback to `string` would
+               have written back whatever a text box holds -- the string
+               `[object Object]` -- over a mapping the site's templates
+               read. */
+            expect(saved).toContain('a: 1');
+            return expect(saved).not.toContain('[object Object]');
         });
     });
 
@@ -952,21 +1046,21 @@ describe('the entry editor', function() {
             }
         });
         mounted = {el};
-        await until(() => editorOf(el)?.state === 'editing', 'the first entry');
+        await openedEntry(el, 'the first entry');
 
         gate.hold = true;
         location.hash = '#/c/blog/e/hello';
         await until(() => gate.release !== null, 'the read to be in flight');
 
         location.hash = '#/c/blog';
-        await until(() => editorOf(el) === null, 'the listing');
+        await until(() => entryOf(el) === null, 'the listing');
         gate.release();
 
-        /* The late answer must not put an editor back on a page that has
+        /* The late answer must not put an entry back on a page that has
            moved on. Silently: an entry's chrome over a listing, and a
            save that writes the wrong file. */
         await new Promise(resolve => setTimeout(resolve, 20));
-        return expect(editorOf(el)).toBe(null);
+        return expect(entryOf(el)).toBe(null);
     });
 });
 

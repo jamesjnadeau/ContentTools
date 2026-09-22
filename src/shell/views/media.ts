@@ -1,19 +1,19 @@
 /* What is in the repository's media folder.
  *
- * Two places show this and there is one of it: the `#/media` route, where
- * it is a browser, and a panel inside an open entry, where each tile can
- * also be inserted. The difference is one flag, because the alternative --
- * a browse view and an insert view -- is two grids that drift apart, and
- * the way they drift is the insert one quietly showing a different set of
- * files from the one somebody was just looking at.
+ * READ ONLY, and one place shows it: the `#/media` route. Until M6-3 the
+ * same grid appeared inside an open entry with an Insert button on every
+ * tile; the editor moved to the site's own pages and the button went with
+ * it, because a picture belongs in an entry's words and this screen no
+ * longer has any. What is left is a browser: what is in the folder, what
+ * each file is called, and whether it can be read at all.
  *
- * There is deliberately NO upload here. Media still arrives through the
- * editor's image dialog and `MediaStore`, so that a picture and the entry
- * referencing it land in one commit. An upload button on this screen would
- * commit a file with nothing pointing at it, which is precisely the orphan
- * blob the staging design exists to prevent -- and an author who abandons
- * the entry afterwards leaves it there for ever. Documented as a
- * limitation rather than hidden.
+ * There is deliberately NO upload here, and that was true before the
+ * insert went. Media arrives through the editor's image dialog and
+ * `MediaStore`, so that a picture and the entry referencing it land in one
+ * commit. An upload button on this screen would commit a file with nothing
+ * pointing at it, which is precisely the orphan blob the staging design
+ * exists to prevent -- and an author who abandons the entry afterwards
+ * leaves it there for ever. Documented as a limitation rather than hidden.
  *
  * Thumbnails are PUBLIC URL FIRST. The published site is the fastest and
  * cheapest source, it needs no token, and it is what the entry will
@@ -74,8 +74,6 @@ export interface MediaState {
     files: readonly MediaItem[] | null;
     /** The folder was longer than the API will list in one request. */
     truncated: boolean;
-    /** Whether there is an open entry for `insert` to put one into. */
-    insertable: boolean;
 }
 
 export interface MediaHandlers {
@@ -89,8 +87,6 @@ export interface MediaHandlers {
      * revokes.
      */
     thumbnail(item: MediaItem): Promise<string | null>;
-    /** Put it in the open entry, at its natural size. */
-    insert(item: MediaItem, size: [number, number]): void;
 }
 
 export interface MediaView {
@@ -101,14 +97,12 @@ export interface MediaView {
 /** The parts of a tile that have to be reached again after it is built. */
 interface Tile {
     image: HTMLImageElement;
-    button: HTMLButtonElement;
     note: HTMLElement;
 }
 
 function partsOf(el: HTMLElement): Tile {
     return {
         image: el.querySelector('.ct-cms__media-thumb') as HTMLImageElement,
-        button: el.querySelector('.ct-cms__media-insert') as HTMLButtonElement,
         note: el.querySelector('.ct-cms__media-note') as HTMLElement
     };
 }
@@ -124,34 +118,9 @@ export function buildMedia(doc: Document, handlers: MediaHandlers): MediaView {
         grid
     ]);
 
-    /* The state the tiles' own handlers read. A tile's load and error
-       events arrive long after `update()` returned, and what they have to
-       decide -- whether Insert is offered -- depends on the state as it
-       is THEN, not as it was when the request went out. An author who
-       opened the panel and navigated away while a thumbnail was in flight
-       would otherwise be handed a live Insert button on a closed entry. */
-    let current: MediaState = {folder: '', files: null, truncated: false, insertable: false};
-
-    /** Everything about a tile that depends on state or on loading. */
-    function paint(el: HTMLElement, item: MediaItem): void {
-        const {image, button, note: failed} = partsOf(el);
-        /* `naturalWidth` is the one honest answer to "did this render".
-           The `load` event alone is not: a zero-byte or truncated file
-           can fire `load` in some engines with nothing decoded, and
-           inserting that gives `ContentEdit.Image` a zero to divide by.
-           The height was checked here too and no test could fail without
-           it -- nothing decodes to a width without a height -- so the
-           width, which is the one the division needs, is the whole of
-           the question. */
-        const ready = image.naturalWidth > 0;
-
-        button.hidden = !current.insertable || item.type === null;
-        /* Disabled rather than hidden while the image is still loading:
-           a button that appears under the pointer a second after the
-           grid draws is how somebody clicks the tile next to the one
-           they meant. */
-        button.disabled = !ready;
-
+    /** Everything about a tile that depends on how its image loaded. */
+    function paint(el: HTMLElement): void {
+        const {image, note: failed} = partsOf(el);
         /* Said once the fallback has also failed, and not before -- a
            file being fetched is not a file that is missing. `hidden`
            until then, because the reasons are opposite: one is a wait
@@ -179,41 +148,42 @@ export function buildMedia(doc: Document, handlers: MediaHandlers): MediaView {
             image,
             h(doc, 'span', {class: 'ct-cms__media-name'}, [item.name]),
             h(doc, 'p', {class: 'ct-cms__media-note'},
-              ['This file could not be read.']),
-            h(doc, 'button', {
-                class: 'ct-cms__button ct-cms__media-insert',
-                type: 'button',
-                onclick: () => handlers.insert(
-                    item, [image.naturalWidth, image.naturalHeight])
-            }, ['Insert'])
+              ['This file could not be read.'])
         ]);
 
-        /* No state recorded for a picture that arrived: three states
-           are the whole machine. A fourth -- `shown` -- was written and
-           no test could fail without it, because the only thing it
-           changes is what an image that loaded and THEN failed does, and
-           the one way that happens here is the object URL being revoked
-           as the element goes away. Leaving the state alone spends one
-           retry on that; claiming it would spend a lie. */
-        image.addEventListener('load', () => paint(el, item));
-        /* One fallback, once. A second `error` -- the object URL failing
+        /* NO `load` listener, and there was one until M6-3. It called
+           `paint`, and `paint` is now what it computes from the state
+           alone -- a tile that has loaded is in the same state it was
+           in while loading, so the call answered identically before and
+           after and no test could fail without it. What it used to do
+           was take the hold off Insert once the picture had a natural
+           size, and Insert is what this screen lost: a picture goes
+           into an entry where the entry's words are, which is the
+           site's own page. If a tile ever again shows something it can
+           only know once the bytes have decoded, this comes back with
+           that. (Three states are the whole machine for the same
+           reason: a fourth, `shown`, was written in M5-6 and deleted
+           then, because the only thing it changes is what an image that
+           loaded and THEN failed does.)
+
+           One fallback, once. A second `error` -- the object URL failing
            too, or `thumbnail` answering null -- is the end of it: asking
            again would be the same request with the same answer, and a
            tile that retries for ever is a tab that never goes idle. */
         image.addEventListener('error', () => {
             if (el.dataset.ctState !== 'public') {
                 el.dataset.ctState = 'failed';
-                paint(el, item);
+                paint(el);
                 return;
             }
             el.dataset.ctState = 'fallback';
-            paint(el, item);
+            paint(el);
             void handlers.thumbnail(item).then(url => {
                 if (url) {
                     image.src = url;
                 } else {
                     el.dataset.ctState = 'failed';
-                    paint(el, item);
+                    paint(el);
                 }
             });
         });
@@ -223,10 +193,10 @@ export function buildMedia(doc: Document, handlers: MediaHandlers): MediaView {
            afterwards never hears it. The tile would sit disabled with a
            picture visibly in it. */
         if (item.type === null) {
-            /* Nothing to preview and nothing to insert. Left with no
-               `src` at all rather than pointed at a URL that will fail:
-               an `<img>` with no source makes no request, and the tile
-               says what it is by its name. */
+            /* Nothing this can preview. Left with no `src` at all rather
+               than pointed at a URL that will fail: an `<img>` with no
+               source makes no request, and the tile says what it is by
+               its name. */
             el.dataset.ctState = 'failed';
         } else {
             el.dataset.ctState = 'public';
@@ -244,7 +214,6 @@ export function buildMedia(doc: Document, handlers: MediaHandlers): MediaView {
         node,
 
         update(state: MediaState): void {
-            current = state;
             folder.textContent = state.folder;
 
             const files = state.files;
@@ -261,9 +230,7 @@ export function buildMedia(doc: Document, handlers: MediaHandlers): MediaView {
                     : (state.truncated
                         ? 'This folder is larger than GitHub will list in one'
                           + ' request, so what follows is only the first part of it.'
-                        : (state.insertable
-                            ? ''
-                            : 'Open an entry to insert one of these into it.')));
+                        : ''));
 
             list(
                 grid,
@@ -277,7 +244,7 @@ export function buildMedia(doc: Document, handlers: MediaHandlers): MediaView {
                    authenticated round trip to fetch. */
                 item => item.name,
                 item => tile(item),
-                (el, item) => paint(el, item)
+                el => paint(el)
             );
         }
     };
