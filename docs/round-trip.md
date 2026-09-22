@@ -31,8 +31,17 @@ Budget twenty minutes.
 Any repository with a markdown file in it will do. If you want one that also
 builds and deploys, so you can watch the merge appear on a real site,
 [`jamesjnadeau/ContentTools-test`](https://github.com/jamesjnadeau/ContentTools-test)
-is an Astro site with one post, a `cms-config.yml` already written, and GitHub
-Pages wired up. Fork it, or copy its `cms-config.yml` into your own.
+is an Astro site with one post, a `public/cms-config.yml` already written, and
+both GitHub Pages and Netlify wired up. Fork it, or copy its
+`public/cms-config.yml` into your own. It lives under `public/` because Astro
+copies only that directory into the build; at the repository root it is a 404
+on the deployed site.
+
+That repository also **deploys the shell with the site**, at
+[`/admin/`](https://genuine-cocada-82e6e2.netlify.app/admin/), vendored from
+this one by its `scripts/sync-cms.sh`. If you fork it you can skip sections 3
+and 4 entirely and sign in there instead — the rest of this guide reads the
+same.
 
 You need push access, and the repository must have at least one commit on its
 default branch.
@@ -79,9 +88,9 @@ drives, so there is no separate demo to drift out of step with the product.
 `app/cms-config.yml` ships with a placeholder repository (`owner/site`) that
 is *designed* to fail at the gate rather than quietly half-work. Replace it.
 
-If you forked `ContentTools-test`, its `cms-config.yml` is already correct for
-it — copy that file over `app/cms-config.yml`. Otherwise edit the one in
-place: `backend.repo` is `owner/name`, `backend.branch` is your default
+If you forked `ContentTools-test`, its `public/cms-config.yml` is already
+correct for it — copy that file over `app/cms-config.yml`. Otherwise edit the
+one in place: `backend.repo` is `owner/name`, `backend.branch` is your default
 branch, and each collection's `folder` is where its markdown lives.
 
 ```yaml
