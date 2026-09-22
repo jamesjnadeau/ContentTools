@@ -2,7 +2,7 @@
    somebody else, and eight answers it must not confuse. */
 
 import {
-    BAR_TAG, buildBar, describe as describeState
+    BAR_POSITION_KEY, BAR_TAG, buildBar, describe as describeState
 } from '../../../src/edit/chrome.js';
 
 /** What the two controls were asked to do. */
@@ -53,6 +53,7 @@ afterEach(function() {
     }
     document.body.style.textTransform = '';
     document.body.style.fontFamily = '';
+    localStorage.removeItem(BAR_POSITION_KEY);
 });
 
 describe('describeState', function() {
@@ -343,11 +344,16 @@ describe('buildBar', function() {
            the bottom of the screen: a nine-field form on a 320px bar
            puts its own Submit button somewhere nobody can reach, on a
            page whose scrollbar moves the SITE rather than the bar. */
-        const panel = onPage().node.shadowRoot.querySelector('.ct-edit');
-        const shown = getComputedStyle(panel);
+        const root = onPage().node.shadowRoot;
 
-        expect(shown.maxHeight).not.toBe('none');
-        expect(shown.overflowY).toBe('auto');
+        expect(getComputedStyle(root.querySelector('.ct-edit')).maxHeight)
+            .not.toBe('none');
+        /* The body, not the panel: the grip has to stay in reach while
+           the words scroll under it. */
+        expect(getComputedStyle(root.querySelector('.ct-edit__body')).overflowY)
+            .toBe('auto');
+        expect(getComputedStyle(root.querySelector('.ct-edit')).overflowY)
+            .toBe('visible');
     });
 
     it('inherits nothing from the site it is standing on', function() {
@@ -699,5 +705,120 @@ describe('the bar\u2019s editing controls', function() {
         bar.update({kind: 'not-an-entry', hint: 'no'});
 
         expect(part(bar, 'conflict').value).toBe('');
+    });
+});
+
+describe('dragging the bar', function() {
+
+    /** Press on the grip at (x, y), move to (toX, toY), and let go. */
+    function drag(bar, [x, y], [toX, toY]) {
+        const grip = bar.node.shadowRoot.querySelector('.ct-edit__grip');
+        const at = (type, clientX, clientY, target = document) =>
+            target.dispatchEvent(new PointerEvent(type, {
+                bubbles: true, composed: true, cancelable: true,
+                button: 0, clientX, clientY
+            }));
+        at('pointerdown', x, y, grip);
+        at('pointermove', toX, toY);
+        at('pointerup', toX, toY);
+    }
+
+    it('has the toolbox\u2019s grip, three bumps, hidden from a screen reader',
+       function() {
+        const grip = onPage().node.shadowRoot.querySelector('.ct-edit__grip');
+
+        expect(grip.querySelectorAll('.ct-grip__bump').length).toBe(3);
+        expect(grip.getAttribute('aria-hidden')).toBe('true');
+        expect(getComputedStyle(grip).cursor).toBe('move');
+    });
+
+    it('is styled as the toolbox is', function() {
+        const panel = onPage().node.shadowRoot.querySelector('.ct-edit');
+        const shown = getComputedStyle(panel);
+
+        // $in-page-background at 0.9, and the toolbox's shadow.
+        expect(shown.backgroundColor).toBe('rgba(233, 233, 233, 0.9)');
+        expect(shown.boxShadow).toBe('rgba(0, 0, 0, 0.35) 0px 3px 3px 0px');
+    });
+
+    it('moves with the pointer, by the point it was picked up at', function() {
+        const bar = onPage();
+        bar.update({kind: 'not-an-entry', hint: 'x'});
+        const before = bar.node.getBoundingClientRect();
+
+        drag(bar, [before.left + 20, before.top + 5], [120, 90]);
+
+        const after = bar.node.getBoundingClientRect();
+        expect(after.left).toBe(100);
+        expect(after.top).toBe(85);
+        // Not stretched between the dropped `left` and the sheet's `right`.
+        expect(after.width).toBe(before.width);
+    });
+
+    it('fades while it is held, and a state change does not undo that',
+       function() {
+        const bar = onPage();
+        const panel = bar.node.shadowRoot.querySelector('.ct-edit');
+        const grip = bar.node.shadowRoot.querySelector('.ct-edit__grip');
+
+        grip.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true, composed: true, cancelable: true, button: 0
+        }));
+        bar.update({kind: 'broken', hint: 'x'});
+        expect(getComputedStyle(panel).opacity).toBe('0.5');
+
+        document.dispatchEvent(new PointerEvent('pointerup', {bubbles: true}));
+        expect(getComputedStyle(panel).opacity).toBe('1');
+    });
+
+    it('is kept inside the window, wherever it is dropped', function() {
+        const bar = onPage();
+        bar.update({kind: 'not-an-entry', hint: 'x'});
+        const {width, height} = bar.node.getBoundingClientRect();
+
+        const start = bar.node.getBoundingClientRect();
+        drag(bar, [start.left + 5, start.top + 5], [100000, 100000]);
+        let rect = bar.node.getBoundingClientRect();
+        expect(rect.right).toBeLessThanOrEqual(document.documentElement.clientWidth);
+        expect(rect.bottom).toBeLessThanOrEqual(document.documentElement.clientHeight);
+        expect(rect.width).toBe(width);
+        expect(rect.height).toBe(height);
+
+        drag(bar, [rect.left + 5, rect.top + 5], [-500, -500]);
+        rect = bar.node.getBoundingClientRect();
+        expect(rect.left).toBe(0);
+        expect(rect.top).toBe(0);
+    });
+
+    it('stays where it was put, the next time the bar is built', function() {
+        const first = onPage();
+        first.update({kind: 'not-an-entry', hint: 'x'});
+        const start = first.node.getBoundingClientRect();
+        drag(first, [start.left + 5, start.top + 5], [65, 45]);
+        expect(localStorage.getItem(BAR_POSITION_KEY)).toBe('60,40');
+        first.node.remove();
+
+        const second = onPage();
+        const rect = second.node.getBoundingClientRect();
+        expect(rect.left).toBe(60);
+        expect(rect.top).toBe(40);
+    });
+
+    it('ignores a saved position it did not write', function() {
+        localStorage.setItem(BAR_POSITION_KEY, 'left,top');
+
+        expect(onPage().node.style.left).toBe('');
+    });
+
+    it('does not move for a button other than the first', function() {
+        const bar = onPage();
+        const grip = bar.node.shadowRoot.querySelector('.ct-edit__grip');
+
+        grip.dispatchEvent(new PointerEvent('pointerdown', {
+            bubbles: true, composed: true, button: 2
+        }));
+        document.dispatchEvent(new PointerEvent('pointermove', {clientX: 50, clientY: 50}));
+
+        expect(bar.node.style.left).toBe('');
     });
 });

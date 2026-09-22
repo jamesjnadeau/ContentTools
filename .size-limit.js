@@ -353,10 +353,17 @@ export default [
            pressed Edit, and the file is arranged around a rule that
            needs explaining: nothing touches the page until the switch is
            pressed. The reader's 1.5 kB above is unmoved, which is the
-           number that decides anything. */
+           number that decides anything.
+
+           210 kB -> 211 kB for dragging the bar by a grip, as the
+           toolbox is dragged: 210.06 kB measured, 59 bytes over. The
+           same unminified chunk as the switch, so again it is mostly the
+           reasoning -- why the host is sized to its content, why the
+           body scrolls and the grip does not -- rather than the forty
+           lines of pointer handling. */
         name: 'edit lazy surface',
         path: lazyClosureOf('dist/edit.js'),
-        limit: '210 kB',
+        limit: '211 kB',
         gzip: true
     },
     {

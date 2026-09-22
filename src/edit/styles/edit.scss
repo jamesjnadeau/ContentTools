@@ -47,22 +47,69 @@ $edit-panel-background: #f7f7f7;
     right: 12px;
     top: 12px;
 
+    // Its own width wherever it is dropped. A fixed box with a `left`
+    // shrink-wraps to the room left to its right, so without this a bar
+    // dragged to the right edge is squeezed to a column of single words
+    // -- and measured that way by the code keeping it inside the window.
+    width: max-content;
+
     // Clear of the site, and DELIBERATELY below the editor's own widgets,
     // which sit at or above `$base-z-index`. A dialog a bar can cover is a
     // dialog somebody cannot use.
     z-index: $base-z-index - 1;
 }
 
+// The toolbox's panel, rule for rule (see ../../styles/ui/_toolbox.scss),
+// so the two floating things an author can drag about the page read as one
+// family. Copied rather than shared: that sheet is nested under `.ct-widget`
+// and none of it reaches inside this shadow root.
 .ct-edit {
-    background: white;
-    border: 1px solid $edit-border-color;
-    border-radius: 2px;
-    box-shadow: 0 1px 3px $shadow-color;
+    background: rgba($in-page-background, 0.9);
+    border: 1px solid rgba(white, 0.5);
+    box-shadow: 0 3px 3px $shadow-color;
     box-sizing: border-box;
     color: $text-color;
-    max-width: 320px;
-    padding: 8px 10px;
+    // A column so the grip stays put and only the body scrolls -- see
+    // `.ct-edit__body` below.
+    display: flex;
+    flex-direction: column;
+    // And never wider than the window, now that the host no longer
+    // shrinks to fit it.
+    max-width: min(320px, calc(100vw - 24px));
+    padding: 0 8px 8px;
     @include type-text();
+}
+
+// Whilst being dragged, as the toolbox does, so the author can see what
+// they are about to drop it on.
+.ct-edit--dragging {
+    opacity: 0.5;
+}
+
+// The toolbox's grip. `touch-action: none` is the one addition: without it
+// a finger on the grip scrolls the page instead of moving the bar.
+.ct-grip {
+    cursor: move;
+    flex: none;
+    font-size: 0;
+    padding: 8px 0;
+    text-align: center;
+    touch-action: none;
+    user-select: none;
+}
+
+.ct-grip__bump {
+    $grip-size: 12px;
+    background: rgba($icon-color, 0.15);
+    border-radius: $grip-size;
+    display: inline-block;
+    height: $grip-size;
+    margin-left: $grip-size;
+    width: $grip-size;
+
+    &:first-child {
+        margin-left: 0;
+    }
 }
 
 .ct-edit__title {
@@ -120,11 +167,17 @@ $edit-panel-background: #f7f7f7;
 // keyboard affordance there is.
 
 // The panel can hold a nine-field form on a page whose body it is covering,
-// so it is bounded and scrolls rather than running off the bottom of the
-// viewport. `top: 12px` plus `bottom: 12px` worth of gutter is the room
-// there is.
+// so it is bounded and its body scrolls rather than running off the bottom
+// of the viewport. `top: 12px` plus `bottom: 12px` worth of gutter is the
+// room there is. The body scrolls rather than the panel so the grip does
+// not scroll away with the words: a bar that cannot be grabbed cannot be
+// moved off whatever it is covering.
 .ct-edit {
     max-height: calc(100vh - 24px);
+}
+
+.ct-edit__body {
+    min-height: 0;
     overflow-y: auto;
 }
 

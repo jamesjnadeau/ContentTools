@@ -260,13 +260,35 @@ export function buildBar(doc: Document, handlers: BarHandlers): Bar {
     const fields: FieldsView = buildFields(doc);
     fields.node.setAttribute('id', FIELDS_ID);
 
+    /* The toolbox's grip, bump for bump, so the two things an author can
+       drag around the page look like the same kind of thing. Hidden from
+       assistive technology: it is a mouse affordance, and three empty
+       divs read out of a live region are three announcements of nothing. */
+    const grip = h(doc, 'div', {class: 'ct-edit__grip ct-grip', 'aria-hidden': 'true'},
+                   [0, 1, 2].map(() => h(doc, 'div', {class: 'ct-grip__bump'})));
+
+    /* The words scroll under the grip rather than taking it with them: a
+       nine-field form is taller than some viewports, and a handle that
+       has scrolled out of the panel is a bar that cannot be moved off
+       the paragraph it is covering. */
+    const body = h(doc, 'div', {class: 'ct-edit__body'},
+                   [title, hint, actions, note, fields.node, conflict]);
+
     /* `status` rather than `alert`: the bar is built empty and filled a
        moment later, once the config has been fetched, so without a live
        region somebody using a screen reader gets nothing at all -- and
        three of the four things it can say are not emergencies. */
-    const panel = h(doc, 'div', {class: 'ct-edit', role: 'status'},
-                    [title, hint, actions, note, fields.node, conflict]);
+    const panel = h(doc, 'div', {class: 'ct-edit', role: 'status'}, [grip, body]);
     root.appendChild(panel);
+
+    /* Kept here because `update` rewrites the panel's class list whole,
+       and a state change landing mid-drag must not make the bar opaque
+       under the pointer. */
+    let held = false;
+    const drag = draggable(node, grip, dragging => {
+        held = dragging;
+        panel.classList.toggle('ct-edit--dragging', dragging);
+    });
 
     return {
         node,
@@ -276,6 +298,7 @@ export function buildBar(doc: Document, handlers: BarHandlers): Bar {
         update(state: BarState): void {
             const said = describe(state);
             panel.className = `ct-edit ct-edit--${state.kind}`;
+            panel.classList.toggle('ct-edit--dragging', held);
             title.textContent = said.title;
             hint.textContent = said.hint;
 
@@ -332,8 +355,133 @@ export function buildBar(doc: Document, handlers: BarHandlers): Bar {
 
             (conflict as HTMLTextAreaElement).value = save?.conflict ?? '';
             conflict.hidden = !save?.conflict;
+
+            /* Every update can change the panel's height -- the form
+               opening is most of a screen -- so a bar dropped near the
+               bottom is pulled back up here rather than left with its
+               Submit button below the fold. */
+            drag.contain();
         }
     };
+}
+
+/**
+ * Where the bar was last dropped, as `left,top` in whole pixels.
+ *
+ * The toolbox's `ct-toolbox-position`, one widget along, and in
+ * `localStorage` for the same reason: it is where this author likes the
+ * bar on this site, not something that belongs to one tab.
+ */
+export const BAR_POSITION_KEY = 'ct-edit-bar-position';
+
+/** `localStorage`, or null where reaching for it throws. */
+function storage(view: Window | null): Storage | null {
+    /* Inside a try because the getter itself throws with site data
+       blocked, and a bar that fails to build over a preference is a
+       page that says nothing at all about why it is not editable. */
+    try {
+        return view ? view.localStorage : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Let the bar be dragged by its grip, as the toolbox is by its own.
+ *
+ * Until somebody drags it the bar sits where the stylesheet puts it --
+ * top right -- and nothing here touches it: only a bar that has been
+ * placed has an inline `left`, and only a placed bar is contained.
+ * Pointer events rather than the toolbox's mouse events, so a touch
+ * screen, which has no mouse to drag with, can move it too.
+ */
+function draggable(
+        node: HTMLElement,
+        grip: HTMLElement,
+        dragging: (on: boolean) => void): {contain(): void} {
+    const doc = node.ownerDocument;
+    const view = doc.defaultView;
+    let offset: {x: number; y: number} | null = null;
+
+    /* `right: auto` because the stylesheet's `right` would otherwise
+       stretch the host between the two, and inline because the host's
+       own rules are `:host` rules that any rule on the page outranks. */
+    const place = (left: number, top: number) => {
+        node.style.left = `${Math.round(left)}px`;
+        node.style.top = `${Math.round(top)}px`;
+        node.style.right = 'auto';
+    };
+
+    const contain = () => {
+        if (!node.isConnected || !node.style.left) {
+            return;
+        }
+        /* The document element's client size rather than `innerWidth`,
+           which counts the scrollbar -- a bar tucked under it has a
+           strip nobody can click. */
+        const width = doc.documentElement.clientWidth;
+        const height = doc.documentElement.clientHeight;
+        const rect = node.getBoundingClientRect();
+        place(Math.max(0, Math.min(rect.left, width - rect.width)),
+              Math.max(0, Math.min(rect.top, height - rect.height)));
+    };
+
+    const onMove = (ev: PointerEvent) => {
+        if (offset) {
+            place(ev.clientX - offset.x, ev.clientY - offset.y);
+        }
+    };
+
+    const onStop = () => {
+        if (!offset) {
+            return;
+        }
+        offset = null;
+        doc.removeEventListener('pointermove', onMove);
+        doc.removeEventListener('pointerup', onStop);
+        doc.removeEventListener('pointercancel', onStop);
+        dragging(false);
+
+        contain();
+        try {
+            storage(view)?.setItem(BAR_POSITION_KEY,
+                                   `${parseInt(node.style.left)},${parseInt(node.style.top)}`);
+        } catch {
+            /* Full, or refused. The bar is where it was dropped either
+               way; it only will not be there next time. */
+        }
+    };
+
+    grip.addEventListener('pointerdown', (ev: PointerEvent) => {
+        if (ev.button !== 0 || offset) {
+            return;
+        }
+        /* Suppresses the mousedown that follows, which is what would
+           otherwise start a text selection across somebody's article
+           for the length of the drag. */
+        ev.preventDefault();
+        const rect = node.getBoundingClientRect();
+        offset = {x: ev.clientX - rect.left, y: ev.clientY - rect.top};
+        doc.addEventListener('pointermove', onMove);
+        doc.addEventListener('pointerup', onStop);
+        doc.addEventListener('pointercancel', onStop);
+        dragging(true);
+    });
+
+    /* Same shape as the toolbox's check: two whole numbers, or it is not
+       a position this code wrote and it is ignored. */
+    const saved = storage(view)?.getItem(BAR_POSITION_KEY);
+    if (saved && /^\d+,\d+$/.test(saved)) {
+        const [left, top] = saved.split(',').map(Number);
+        place(left, top);
+    }
+
+    /* Never removed, because the bar never is: it is on the page for as
+       long as the page is. A window made smaller must not leave the bar
+       -- and the Submit button on it -- outside it. */
+    view?.addEventListener('resize', contain);
+
+    return {contain};
 }
 
 /** What the button says when it is not in the middle of saying it. */
