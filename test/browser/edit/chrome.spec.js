@@ -35,7 +35,11 @@ function editing(over = {}) {
     body.className = 'post';
     return {
         kind: 'editing', entry, selector: 'article.post', body,
-        fields: form(), fieldsOpen: false, save: QUIET, ...over
+        /* Started unless a test says otherwise: the bar's controls are
+           what this file is about, and they behave the same either way
+           -- which is itself the point, since the tick takes the tools
+           away and leaves the edits for Submit to commit. */
+        fields: form(), fieldsOpen: false, started: true, save: QUIET, ...over
     };
 }
 
@@ -96,19 +100,43 @@ describe('describeState', function() {
 
         const said = describeState({kind: 'ready', entry, selector: 'main', body});
 
-        expect(said.hint).toBe('Editing main.layout, matched by main.');
+        expect(said.hint).toBe('Found main.layout, matched by main.');
     });
 
-    it('names the element while it is editing, in the same words', function() {
-        /* The same sentence as `ready`, deliberately: the bar never
-           stops at a decision, it reports where the decision LED, and
-           somebody reading it a minute later should not have to work
-           out which of two spellings means the editor is up. */
+    it('says how to start while the switch is off', function() {
+        /* `editing` means the entry is OPEN, not that anybody is
+           editing it -- the ignition switch decides that, and until it
+           is pressed the page is still showing exactly what the site
+           published. A bar claiming "Editing article.post" over the
+           reader's own markup would be describing something that has
+           not happened. */
         const body = document.createElement('article');
         body.className = 'post';
 
         const said = describeState({
-            kind: 'editing', entry, selector: 'article.post', body
+            kind: 'editing', entry, selector: 'article.post', body,
+            started: false
+        });
+
+        expect(said.title).toBe('blog/hello');
+        expect(said.hint).toBe(
+            'Found article.post, matched by article.post. '
+            + 'Press the pencil, top left of the page, to edit it.');
+    });
+
+    it('names the element while it is editing, in the same words',
+       function() {
+        /* The same clause as every other state that has found the
+           element, deliberately: the bar never stops at a decision, it
+           reports where the decision LED, and somebody reading it a
+           minute later should not have to work out which of two
+           spellings means the editor is up. */
+        const body = document.createElement('article');
+        body.className = 'post';
+
+        const said = describeState({
+            kind: 'editing', entry, selector: 'article.post', body,
+            started: true
         });
 
         expect(said.title).toBe('blog/hello');

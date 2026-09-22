@@ -97,6 +97,20 @@ afterEach(async function() {
     }
 });
 
+/**
+ * Press the ignition switch, as a person does.
+ *
+ * Through the pencil in the editor's own shadow root rather than
+ * `editor.start()`, because the switch IS what this surface now turns
+ * on: nothing replaces the reader's page until it is pressed, and a
+ * test that reached past it would go on passing over a switch that had
+ * come unwired.
+ */
+function pressEdit(session, button = 'edit') {
+    session.editor.shadowRoot
+        .querySelector(`.ct-ignition__button--${button}`).click();
+}
+
 describe('resolve', function() {
 
     it('maps a page to its entry and finds the body', async function() {
@@ -431,23 +445,24 @@ describe('open, mounting', function() {
         expect(after.getAttribute('data-name')).toBe('body');
     });
 
-    it('replaces the template\'s HTML with our render of the branch',
+    it('leaves the reader\'s own page exactly as the site built it',
        async function() {
-        /* The two are different documents even when they look the same:
-           the template's is built from the base branch by a static site
-           generator, ours carries the `data-ct-md` indices the splice
-           reads back. Editing the template's markup would serialize to
-           bytes that splice against the wrong blocks. */
+        /* The whole of what the switch is for. The editor element is on
+           the page and its switch is up, and NOTHING else has happened:
+           no toolbox, no `.ce-element`, and above all the site's own
+           markup still in the site's own element. An author who opens a
+           post and does not press anything is looking at the page a
+           reader looks at. */
         const it = sitePage();
         await mount(it);
 
         const body = it.body();
-        expect(body.textContent).not.toContain('What the site built');
-        expect(body.textContent).toContain('First paragraph.');
-        expect(body.querySelector('[data-ct-md]')).not.toBe(null);
+        expect(body.textContent).toBe('What the site built.');
+        expect(body.querySelector('[data-ct-md]')).toBe(null);
+        expect(body.querySelector('.ce-element')).toBe(null);
     });
 
-    it('starts the editor over that element', async function() {
+    it('puts the switch up, and only the switch', async function() {
         const it = sitePage();
         const {session} = await mount(it);
 
@@ -455,10 +470,13 @@ describe('open, mounting', function() {
         const app = ContentTools.EditorApp.current();
         expect(app).not.toBe(null);
         expect(app.isMounted()).toBe(true);
-        /* Named rather than matched: `data-name` is the one attribute we
-           write on an element we did not make, and `data-editable` is
-           deliberately NOT beside it -- there is no query to satisfy. */
-        expect(Object.keys(app.regions())).toEqual(['body']);
+        /* Ready, not editing: the editor is initialised and inert. */
+        expect(app.getState()).toBe('ready');
+        expect(app.regions()).toEqual({});
+        /* And the pencil is genuinely there to be pressed. */
+        const chrome = session.editor.shadowRoot;
+        expect(chrome.querySelector('.ct-ignition--ready')).not.toBe(null);
+        expect(chrome.querySelector('.ct-toolbox')).toBe(null);
         expect(it.body().hasAttribute('data-editable')).toBe(false);
     });
 
@@ -474,14 +492,20 @@ describe('open, mounting', function() {
         expect(session.editor.children).toHaveLength(0);
     });
 
-    it('names the element it is editing', async function() {
+    it('names the element, and says how to start', async function() {
+        /* Naming the element is the deployment check this bar exists
+           for, and it is owed BEFORE anybody presses anything -- the
+           editor replaces that element's children, so `main.layout`
+           where `article.post` was meant is the difference between a
+           post and the site's whole layout, read at a glance. */
         const it = sitePage();
         const {bar} = await mount(it);
 
         expect(said(bar).className).toContain('ct-edit--editing');
         expect(said(bar).title).toBe('blog/hello');
-        expect(said(bar).hint)
-            .toBe('Editing article#post-1.post, matched by article.post.');
+        expect(said(bar).hint).toBe(
+            'Found article#post-1.post, matched by article.post. '
+            + 'Press the pencil, top left of the page, to edit it.');
     });
 
     it('round-trips the file byte for byte when nothing is edited',
@@ -657,6 +681,225 @@ describe('open, mounting', function() {
         expect(links).toHaveLength(1);
         expect(links[0].href).toBe(href);
     });
+
+    describe('the switch', function() {
+
+        /* v1.6.16's ignition, back on the surface that needed it most.
+           The editor element goes up when the entry is read, and the
+           reader's page is untouched until somebody presses the pencil
+           -- so an author who arrives with `?cms-edit` on the URL, or
+           who followed Edit from /admin, still gets a page that looks
+           exactly like the published one until they say otherwise.
+
+           The three buttons and the three things they mean: the pencil
+           puts our render of the branch in the page and starts the
+           editor; the green tick keeps what was typed and takes the
+           tools away; the red cross discards it and hands the reader's
+           own markup back. */
+
+        /** Whatever `window.confirm` answers while `fn` runs. */
+        async function confirming(answer, fn) {
+            const real = window.confirm;
+            window.confirm = () => answer;
+            try {
+                await fn();
+            } finally {
+                window.confirm = real;
+            }
+        }
+
+        /** Rewrite one block, as typing into it would. */
+        function retype(session, text, index = 0) {
+            const block = session.editor.editorApp
+                .regions().body.children[index];
+            block.content = new HTMLString.String(text);
+            block.updateInnerHTML();
+            block.taint();
+        }
+
+        it('replaces the template\'s HTML with our render of the branch',
+           async function() {
+            /* The two are different documents even when they look the
+               same: the template's is built from the base branch by a
+               static site generator, ours carries the `data-ct-md`
+               indices the splice reads back. Editing the template's
+               markup would serialize to bytes that splice against the
+               wrong blocks -- so the swap has to happen, and it has to
+               happen BEFORE ContentEdit parses anything. */
+            const it = sitePage();
+            const {session} = await mount(it);
+            pressEdit(session);
+
+            const body = it.body();
+            expect(body.textContent).not.toContain('What the site built');
+            expect(body.textContent).toContain('First paragraph.');
+            expect(body.querySelector('[data-ct-md]')).not.toBe(null);
+            /* And ContentEdit read OUR markup, not the template's: the
+               region it parsed has one child per markdown block. */
+            const app = ContentTools.EditorApp.current();
+            expect(app.getState()).toBe('editing');
+            expect(Object.keys(app.regions())).toEqual(['body']);
+            expect(app.regions().body.children).toHaveLength(2);
+        });
+
+        it('says it is editing only once it is', async function() {
+            const it = sitePage();
+            const {bar, session} = await mount(it);
+            expect(said(bar).hint).toContain('Press the pencil');
+
+            pressEdit(session);
+
+            expect(said(bar).hint)
+                .toBe('Editing article#post-1.post, matched by article.post.');
+        });
+
+        it('keeps what was typed when the tick is pressed', async function() {
+            /* The green tick means "I am done", not "throw that away".
+               The tools go, the page keeps the edit, and Submit still
+               has something to commit -- which is the whole reason the
+               bar's button stays live with the switch off. */
+            const it = sitePage();
+            const {bar, session} = await mount(it);
+            pressEdit(session);
+            retype(session, 'Rewritten.');
+
+            pressEdit(session, 'confirm');
+
+            expect(session.started()).toBe(false);
+            expect(ContentTools.EditorApp.current().getState()).toBe('ready');
+            expect(it.body().textContent).toContain('Rewritten.');
+            expect(session.pending().content).toContain('Rewritten.');
+            expect(session.dirty()).toBe(true);
+            expect(said(bar).hint).toContain('Press the pencil');
+        });
+
+        it('hands the reader\'s own page back when the cross is pressed',
+           async function() {
+            /* The editor's own revert restores the snapshot it took at
+               `start()`, and that snapshot is OUR render -- so without
+               the session putting the original back, cancelling would
+               leave the page showing the thing the person just asked to
+               be rid of. */
+            const it = sitePage();
+            const {session} = await mount(it);
+            pressEdit(session);
+            retype(session, 'Rewritten.');
+
+            await confirming(true, () => pressEdit(session, 'cancel'));
+
+            expect(session.started()).toBe(false);
+            const body = it.body();
+            expect(body.innerHTML).toBe('<p>What the site built.</p>');
+            /* And the edit is gone from the bytes too. Leaving it would
+               mean Submit committing what the cross discarded. */
+            expect(session.pending().content).toBe(SOURCE);
+            expect(session.dirty()).toBe(false);
+        });
+
+        it('stays on when the cross is refused', async function() {
+            /* `CANCEL_MESSAGE` puts a confirm dialog up and a person who
+               says no aborts the stop, so `ct-stopped` never arrives.
+               This is the case a flag set on `ct-revert` gets wrong: it
+               would still be standing at the next stop, and the next
+               stop is usually the tick -- so saying no to "discard your
+               changes?" would discard them one press later. */
+            const it = sitePage();
+            const {session} = await mount(it);
+            pressEdit(session);
+            retype(session, 'Rewritten.');
+
+            await confirming(false, () => pressEdit(session, 'cancel'));
+
+            expect(session.started()).toBe(true);
+            expect(it.body().textContent).toContain('Rewritten.');
+
+            /* And the tick, now, keeps it. */
+            pressEdit(session, 'confirm');
+            expect(session.pending().content).toContain('Rewritten.');
+        });
+
+        it('picks the edits back up on a second press', async function() {
+            /* A person who presses the tick to read the page, then
+               presses the pencil again to carry on, must not find the
+               file they started from. */
+            const it = sitePage();
+            const {session} = await mount(it);
+            pressEdit(session);
+            retype(session, 'Rewritten.');
+            pressEdit(session, 'confirm');
+
+            pressEdit(session);
+
+            expect(it.body().textContent).toContain('Rewritten.');
+            retype(session, 'Rewritten twice.');
+            pressEdit(session, 'confirm');
+            expect(session.pending().content).toContain('Rewritten twice.');
+        });
+
+        it('cancels the session, not every session before it',
+           async function() {
+            /* The cross means "back to where the pencil found it",
+               which is what the editor's own revert means -- and after
+               a tick that is NOT the file. Somebody who edits, presses
+               the tick to read the page, presses the pencil again and
+               then changes their mind is cancelling the second
+               session. Throwing the first one away as well is silent
+               data loss: the confirm dialog only appears when THIS
+               session has changed something, so a cross pressed
+               straight after a pencil would not even ask. */
+            const it = sitePage();
+            const {session} = await mount(it);
+            pressEdit(session);
+            retype(session, 'Kept.');
+            pressEdit(session, 'confirm');
+
+            pressEdit(session);
+            retype(session, 'Discarded.');
+            await confirming(true, () => pressEdit(session, 'cancel'));
+
+            expect(it.body().textContent).toContain('Kept.');
+            expect(it.body().textContent).not.toContain('Discarded.');
+            expect(session.pending().content).toContain('Kept.');
+            expect(session.pending().content).not.toContain('Discarded.');
+        });
+
+        it('asking what a save would write does not make a cancel keep it',
+           async function() {
+            /* `pending()` is the first thing Submit does, and it asks
+               the editor for the body -- which moves the cached
+               answer. So a person who presses Submit, has it refused
+               for a field they left empty, and then presses the cross
+               has a cached body that is NOT where the pencil found it.
+               Without the restore, the next Submit commits exactly
+               what the cross discarded. */
+            const it = sitePage();
+            const {session} = await mount(it);
+            pressEdit(session);
+            retype(session, 'Kept.');
+            pressEdit(session, 'confirm');
+
+            pressEdit(session);
+            retype(session, 'Discarded.');
+            expect(session.pending().content).toContain('Discarded.');
+            await confirming(true, () => pressEdit(session, 'cancel'));
+
+            expect(session.pending().content).toContain('Kept.');
+            expect(session.pending().content).not.toContain('Discarded.');
+        });
+
+        it('renders the branch afresh after a cancel', async function() {
+            const it = sitePage();
+            const {session} = await mount(it);
+            pressEdit(session);
+            retype(session, 'Rewritten.');
+            await confirming(true, () => pressEdit(session, 'cancel'));
+
+            pressEdit(session);
+
+            expect(it.body().textContent).toContain('First paragraph.');
+            expect(it.body().textContent).not.toContain('Rewritten.');
+        });
+    });
 });
 
 describe('open, submitting', function() {
@@ -730,10 +973,15 @@ describe('open, submitting', function() {
         return it;
     }
 
-    /** Open one, and remember it so `afterEach` can close it. */
+    /** Open one, press the switch, and remember it for `afterEach`. */
     async function mount(it) {
         const surface = await open(it.where, it.options);
         opened.push(surface);
+        /* Every test in this block is about what a submit does, and a
+           submit only has something to write once somebody has turned
+           the editor on. What happens BEFORE the switch is pressed is
+           `open, the switch` above, which is where that is asserted. */
+        pressEdit(surface.session);
         return surface;
     }
 

@@ -201,6 +201,9 @@ nothing `/admin` put away. The `href` itself carries only `?cms-edit` —
 copy it, middle-click it, and it reaches a page that says how to sign in
 — and the token is added only for an unmodified primary click, on the
 fragment, where the receiving script strips it before it loads anything.
+What it opens is the page as its readers see it, with the bar and the
+switch over it: pressing Edit here says which page to edit, not that
+anybody has started. [The switch](in-page.md#the-switch) is what starts.
 [Signing in](auth.md#handing-the-token-to-the-sites-own-page) has the
 whole argument.
 

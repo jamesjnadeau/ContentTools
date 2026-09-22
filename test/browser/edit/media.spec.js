@@ -86,6 +86,20 @@ async function until(check, describe) {
     throw new Error(`${describe} never happened`);
 }
 
+/**
+ * Press the ignition switch, as a person does.
+ *
+ * Through the pencil in the editor's own shadow root rather than
+ * `editor.start()`, because the switch IS what this surface now turns
+ * on: nothing replaces the reader's page until it is pressed, and a
+ * test that reached past it would go on passing over a switch that had
+ * come unwired.
+ */
+function pressEdit(session, button = 'edit') {
+    session.editor.shadowRoot
+        .querySelector(`.ct-ignition__button--${button}`).click();
+}
+
 describe('media travels with its entry', function() {
 
     const planted = [];
@@ -136,6 +150,10 @@ describe('media travels with its entry', function() {
                 }
             });
         opened.push(surface);
+        /* The switch, pressed. Every test here is about what travels
+           with an entry once somebody is editing it, and nothing in
+           this file is about the moment before that. */
+        pressEdit(surface.session);
         return {fake, surface, bar: surface.bar, session: surface.session};
     }
 

@@ -64,6 +64,21 @@ async function signedIn(page) {
     return serveGitHub(page);
 }
 
+/**
+ * Press the ignition switch, as a person does.
+ *
+ * The pencil, the green tick and the red cross are v1.6.16's, in the
+ * editor's own shadow root. Nothing replaces the reader's page until
+ * the pencil is pressed -- however the page was arrived at, `?cms-edit`
+ * or an Edit link from /admin -- so every test below that needs an
+ * editor has to press it, and `hit-tested` is the point: a switch that
+ * something else has floated over is a switch nobody can press.
+ */
+async function pressSwitch(page, button = 'edit') {
+    await page.locator('body > content-tools-editor')
+        .locator(`.ct-ignition__button--${button}`).click();
+}
+
 test('a reader downloads the decision and nothing else', async ({page}) => {
     /* The whole shape of this entry. A reader has no flag and no token,
        so the loader answers no and the surface chunk is never fetched --
@@ -172,17 +187,50 @@ test('a config that will not parse says which line, on the page',
         .toContainText('collections[0]');
 });
 
-test('a token in the tab brings the editor up over the site\'s own element',
+test('a token in the tab puts the switch up and leaves the page alone',
      async ({page}) => {
-    /* The whole milestone, through the built artifact. Everything below
-       is reachable only after the lazy chunk has resolved the editor
-       element, the markdown parser, the GitHub client and the config
-       loader -- four graphs Rollup assembled and no source test loads
-       the way a browser does. */
+    /* The read half of the whole milestone, through the built artifact.
+       Everything below is reachable only after the lazy chunk has
+       resolved the editor element, the markdown parser, the GitHub
+       client and the config loader -- four graphs Rollup assembled and
+       no source test loads the way a browser does.
+
+       And the page is still the READER's. The entry is open, its
+       frontmatter is in the form behind Details, and the site's own
+       words are on screen: an author who opens a post and presses
+       nothing sees exactly what a reader sees. */
     await signedIn(page);
     await page.goto(`${PAGE}?cms-edit`);
 
     await expect(panel(page)).toHaveClass(/ct-edit--editing/);
+    await expect(panel(page).locator('.ct-edit__hint'))
+        .toContainText('Press the pencil');
+
+    const post = page.locator('article.post');
+    await expect(post).toContainText('as the site renders it');
+    await expect(post).not.toContainText('The paragraph as the BRANCH has it.');
+    await expect(post.locator('[data-ct-md]')).toHaveCount(0);
+    await expect(post.locator('.ce-element')).toHaveCount(0);
+
+    /* The editor element itself is an empty block at the end of the
+       page: its region is named rather than matched, so it needs no
+       children, and that is the smallest footprint it can have on a
+       page it does not own. */
+    const editor = page.locator('body > content-tools-editor');
+    await expect(editor).toHaveCount(1);
+    expect(await editor.evaluate(node => node.children.length)).toBe(0);
+    /* Its chrome is the switch and nothing else. */
+    await expect(editor.locator('.ct-ignition--ready')).toHaveCount(1);
+    await expect(editor.locator('.ct-toolbox')).toHaveCount(0);
+});
+
+test('the switch brings the editor up over the site\'s own element',
+     async ({page}) => {
+    await signedIn(page);
+    await page.goto(`${PAGE}?cms-edit`);
+    await expect(panel(page)).toHaveClass(/ct-edit--editing/);
+
+    await pressSwitch(page);
 
     const post = page.locator('article.post');
     /* Still inside the site's own layout: `.layout > article.post` is an
@@ -201,14 +249,35 @@ test('a token in the tab brings the editor up over the site\'s own element',
        adds it on focus and takes it off again on blur.) */
     await expect(post.locator('p.ce-element').first()).toBeVisible();
     await expect(post.locator('h2.ce-element')).toHaveCount(1);
+    await expect(panel(page).locator('.ct-edit__hint'))
+        .toContainText('Editing article.post');
+});
 
-    /* And the editor element itself is an empty block at the end of the
-       page: its region is named rather than matched, so it needs no
-       children, and that is the smallest footprint it can have on a
-       page it does not own. */
-    const editor = page.locator('body > content-tools-editor');
-    await expect(editor).toHaveCount(1);
-    expect(await editor.evaluate(node => node.children.length)).toBe(0);
+test('the cross hands the reader\'s own page back', async ({page}) => {
+    /* The other half of what the switch is for, and the half no source
+       test can see the whole of: the editor's own revert restores the
+       snapshot it took at `start()`, and that snapshot is OUR render --
+       so the site's own markup has to go back over the top of it, from
+       bytes captured before anything was touched. */
+    await signedIn(page);
+    await page.goto(`${PAGE}?cms-edit`);
+    await expect(panel(page)).toHaveClass(/ct-edit--editing/);
+    await pressSwitch(page);
+
+    const paragraph = page.locator('article.post p.ce-element').first();
+    await paragraph.click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' Edited in the page.');
+
+    page.on('dialog', dialog => dialog.accept());
+    await pressSwitch(page, 'cancel');
+
+    const post = page.locator('article.post');
+    await expect(post).toContainText('as the site renders it');
+    await expect(post).not.toContainText('Edited in the page.');
+    await expect(post.locator('.ce-element')).toHaveCount(0);
+    await expect(panel(page).locator('.ct-edit__hint'))
+        .toContainText('Press the pencil');
 });
 
 test('a token handed over on the fragment signs the tab in', async ({page}) => {
@@ -302,6 +371,13 @@ async function editing(page) {
     const fake = await signedIn(page);
     await page.goto(`${PAGE}?cms-edit`);
     await expect(panel(page)).toHaveClass(/ct-edit--editing/);
+    /* The switch, pressed, and hit-tested rather than dispatched: the
+       write half of this file is about what a submit does once somebody
+       is editing, and getting there is one click on a control that has
+       to be clickable. */
+    await pressSwitch(page);
+    await expect(page.locator('article.post p.ce-element').first())
+        .toBeVisible();
     return fake;
 }
 
@@ -451,15 +527,20 @@ test('the toolbox default clears the bar rather than landing on it',
             return {left: r.left, top: r.top, right: r.right, bottom: r.bottom};
         };
         const root = document.querySelector('content-tools-edit-bar').shadowRoot;
-        const box = document.querySelector('content-tools-editor')
-            .shadowRoot.querySelector('.ct-toolbox');
+        const chrome = document.querySelector('content-tools-editor').shadowRoot;
+        const box = chrome.querySelector('.ct-toolbox');
         const named = {};
-        for (const [name, selector] of [
-            ['the bar', '.ct-edit'],
-            ['Submit', '.ct-edit__submit'],
-            ['Details', '.ct-edit__details']
+        for (const [name, selector, where] of [
+            ['the bar', '.ct-edit', root],
+            ['Submit', '.ct-edit__submit', root],
+            ['Details', '.ct-edit__details', root],
+            /* The switch is a control this software owns on somebody
+               else's page too, and it is the ONLY way out of editing --
+               a toolbox resting on the tick is an author who cannot
+               stop. */
+            ['the switch', '.ct-ignition', chrome]
         ]) {
-            const el = root.querySelector(selector);
+            const el = where.querySelector(selector);
             /* A missing selector would make this pass by having nothing
                to overlap, which is the failure shape an overlap
                assertion is most prone to. */

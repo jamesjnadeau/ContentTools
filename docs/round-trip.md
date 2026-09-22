@@ -226,9 +226,12 @@ site for a published entry, the pull request's deploy preview for one already
 under review — with your token handed over on the URL fragment, taken off
 again before anything else loads, so the new tab is signed in on arrival.
 
-What you should see is **your site**: your template, your stylesheet, your
-header and footer, with the post's body editable in place and a bar across
-the bottom carrying the frontmatter fields and **Submit for review**.
+What you should see is **your site, unchanged**: your template, your
+stylesheet, your header and footer, and the post exactly as its readers get
+it — with a bar in the top right carrying the frontmatter fields and
+**Submit for review**, and a **pencil** in the top left. Nothing is editable
+yet, and nothing on the page has been replaced. Pressing Edit under `/admin`
+said which page to edit; it did not say to start.
 
 - If the bar says *this page is not an entry*, `page:` does not describe this
   URL.
@@ -238,6 +241,13 @@ the bottom carrying the frontmatter fields and **Submit for review**.
 - If it says nobody is signed in, the token did not cross. That happens if you
   opened the link with a middle click or by copying it: the `href` carries no
   secret on purpose, so only an ordinary click hands one over.
+
+**Press the pencil.** It turns into a green tick and a red cross, the
+toolbox comes up, and the post's body becomes editable in place. The tick
+ends the session keeping what you typed; the cross ends it putting the
+reader's own page back. Neither of them writes anything to the repository —
+that is still **Submit for review**, on the bar, and it stays available
+after a tick so you can turn the tools off and still commit.
 
 The editor's floating **toolbox** is `position: fixed`, so it floats over the
 page rather than sitting in the layout, bottom right. Drag it by the grip at
@@ -284,16 +294,17 @@ With the pull request open, the parts worth exercising:
   the second diff should still be one hunk. (This is the case where a surface
   that re-parsed the file after saving would silently corrupt it.)
 - **Reopen it from `/admin`.** Go back to the entry screen and press Edit
-  again. Now that a pull request is open, the link goes to its **deploy
-  preview** rather than to the live site — the live site is built from the base
-  branch and does not have your change — and the page you land on reads the
-  entry from the in-flight branch, so you see your own unmerged work.
+  again, then the pencil again on the page. Now that a pull request is open,
+  the link goes to its **deploy preview** rather than to the live site — the
+  live site is built from the base branch and does not have your change — and
+  the page you land on reads the entry from the in-flight branch, so you see
+  your own unmerged work.
 - **Edit a frontmatter field from the bar**, and check the diff again: the
   block should change in exactly the one line you touched, with comments, key
   order and quoting everywhere else preserved.
-- **Insert an image.** Use the image tool in the toolbox, on the page. The
-  bytes are staged in memory and committed *with* the entry, in one commit, so
-  an abandoned edit leaves nothing behind.
+- **Insert an image.** With the switch on, use the image tool in the toolbox
+  on the page. The bytes are staged in memory and committed *with* the entry,
+  in one commit, so an abandoned edit leaves nothing behind.
 - **Move it through review.** The **Review** screen lists every open `cms/*`
   pull request across collections and moves each between draft, in review and
   ready.

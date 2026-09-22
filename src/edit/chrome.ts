@@ -106,6 +106,21 @@ export interface Editing {
     readonly fields: FieldsState;
     /** Whether the form is showing. See `showFields`. */
     readonly fieldsOpen: boolean;
+    /**
+     * Whether the ignition switch is ON.
+     *
+     * The editor element is up in both, and that is the distinction
+     * this flag exists to keep honest: `editing` means the entry is
+     * OPEN, not that anybody is editing it. With the switch off the
+     * page is still showing exactly what the site published, and a bar
+     * that said "Editing article.post" over the reader's own markup
+     * would be describing something that has not happened.
+     *
+     * Submit stays live either way, which is not an oversight: pressing
+     * the green tick keeps the edits and takes the tools away, and the
+     * button that commits them has to still work afterwards.
+     */
+    readonly started: boolean;
     readonly save: SaveState;
 }
 
@@ -334,16 +349,30 @@ export function describe(state: BarState): {title: string; hint: string} {
         case 'no-body':
             return {title: entryName(state.entry), hint: state.hint};
         case 'ready':
-        case 'editing':
             /* Naming the ELEMENT, not just the selector, is the whole
-               point of these two. The editor replaces that element's
-               children, so a `body` selector that matches the page
-               wrapper replaces the site's layout with a post -- and
-               `main.layout` against `article.post` is the difference,
-               read at a glance, before anybody presses anything. */
+               point of this one and the three below. The editor replaces
+               that element's children, so a `body` selector that matches
+               the page wrapper replaces the site's layout with a post --
+               and `main.layout` against `article.post` is the
+               difference, read at a glance, before anybody presses
+               anything. */
             return {
                 title: entryName(state.entry),
-                hint: `Editing ${found(state)}.`
+                hint: `Found ${found(state)}.`
+            };
+        case 'editing':
+            return {
+                title: entryName(state.entry),
+                /* Two sentences rather than one, and which one is first
+                   is the point: with the switch off the page is still
+                   the site's own, so the honest lead is what was found
+                   -- the same words `signed-out` and `ready` use, for
+                   the same reason. "Editing" is claimed only once
+                   something is. */
+                hint: state.started
+                    ? `Editing ${found(state)}.`
+                    : `Found ${found(state)}. Press the pencil, top left `
+                        + 'of the page, to edit it.'
             };
         case 'signed-out':
             return {

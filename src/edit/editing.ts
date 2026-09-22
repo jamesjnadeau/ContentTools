@@ -69,6 +69,11 @@ export class PageEdit {
         this._note = '';
         this._refused = false;
         this._conflict = null;
+        /* The switch is the one control on this surface that nothing
+           here owns: it lives in the editor's own chrome, and a person
+           can press it at any moment. So the session pushes, and this
+           is the only thing it pushes to. */
+        this.session.watch(() => this.render());
     }
 
     /**
@@ -87,6 +92,12 @@ export class PageEdit {
             ...this._seen,
             fields: this._fields,
             fieldsOpen: this._open,
+            /* Asked of the session at render time rather than
+               remembered here. The switch changes it, and the switch is
+               not ours -- a copy kept beside it would be a second
+               answer that goes stale exactly when somebody presses the
+               thing this whole surface is about. */
+            started: this.session.started(),
             save: this._state()
         });
     }

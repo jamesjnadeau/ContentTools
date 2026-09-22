@@ -342,10 +342,21 @@ export default [
            inlines them here, and a few large files gzipped together do
            not weigh quite what the same code weighed split across
            chunks. No code arrived; the boundary moved, and this side of
-           it is where it moved to. */
+           it is where it moved to.
+
+           209 kB -> 210 kB for the switch: 208.24 -> 209.18 kB measured,
+           and most of that is prose. `src/edit/session.ts` lands in a
+           chunk Rollup does not minify, so the reasoning in it is bytes
+           on the wire -- the same trap `src/styles/ui/_toolbox.scss`
+           names, without the escape hatch, because TypeScript keeps `//`
+           comments where Sass drops them. Paid once by the person who
+           pressed Edit, and the file is arranged around a rule that
+           needs explaining: nothing touches the page until the switch is
+           pressed. The reader's 1.5 kB above is unmoved, which is the
+           number that decides anything. */
         name: 'edit lazy surface',
         path: lazyClosureOf('dist/edit.js'),
-        limit: '209 kB',
+        limit: '210 kB',
         gzip: true
     },
     {

@@ -40,10 +40,12 @@ anything is downloaded, so that code is in this file rather than behind the
 import. It is what took the number from 749 B to 1.36 kB.
 
 The price of that is worth stating rather than hiding: a lazy chunk that
-404s from a badly-deployed static host fails nowhere until an author asks
-for the editor, by which time whoever deployed it has stopped looking. The
-failure lands on the screen rather than in the console — but press the
-button once after deploying anyway.
+404s from a badly-deployed static host fails nowhere until somebody opens a
+page that wants the surface, by which time whoever deployed it has stopped
+looking. The failure lands on the screen rather than in the console — but
+open one page with `?cms-edit` after deploying anyway, which is enough to
+ask for the chunk and needs no token. See [Checking it
+worked](#checking-it-worked).
 
 ## How it decides to appear
 
@@ -51,10 +53,13 @@ Three ways in.
 
 - **`?cms-edit` on the URL.** This is what the Edit link on an entry screen
   under `/admin` opens with, so an author who presses it lands on the page
-  itself with the editor already coming up.
-- **A token already in this tab.** Once somebody is signed in the editor
-  follows them as they move around the site, which is what makes it feel
-  like part of the site rather than a mode you enter from somewhere else.
+  itself with the bar and the switch over it — and the page still exactly as
+  its readers get it, until they press the switch.
+- **A token already in this tab.** Once somebody is signed in the bar and the
+  switch follow them as they move around the site, which is what makes it
+  feel like part of the site rather than a mode you enter from somewhere
+  else. What follows them is the offer, never the editor: every page starts
+  switched off.
 - **A token handed over on the fragment.** Which is how the tab comes to
   hold one in the first place — see [Signing in](#signing-in) below.
 
@@ -121,6 +126,7 @@ load.
 | The `body` selector found nothing | Says so, and names the element it did find |
 | Nobody is signed in | Names the element too, and says where to sign in |
 | Reading | Says it is reading the version **on the branch** |
+| Open, switch off | Names the element, and says to press the pencil |
 | Editing | The frontmatter fields, and **Submit for review** |
 | A read that failed | Says why |
 
@@ -135,17 +141,57 @@ post. The bar names what it found in the shape of a selector —
 `article#post-3.prose` — because that is also the answer to the question the
 person reading it is about to ask.
 
-There is no Edit button. A page that is an entry, with a body element and a
-token, is one you are editing; the bar's job is to say which, and to submit.
+The bar never starts the editor. That is the switch's job, below.
+
+## The switch
+
+v1.6.16's ignition, back where it was: a **pencil** at the top left of the
+page, which becomes a **green tick** and a **red cross** while you are
+editing.
+
+Opening an entry does not change the page. The script reads the version on
+the branch, fills the frontmatter form, puts the editor element up and
+mounts its switch — and stops. Until the pencil is pressed the page is
+still showing exactly what the site published, every word of it, which is
+what an author who is only looking should see.
+
+| | |
+|---|---|
+| **Pencil** | Puts our render of the branch in the page and starts the editor |
+| **Green tick** | Keeps what you typed and takes the tools away |
+| **Red cross** | Discards this session's changes |
+
+The waiting applies however you arrived. Pressing **Edit** under `/admin`
+says *which page to open*, not that the reader's view of it should be
+replaced before anybody has looked at it — so that route needs the pencil
+too.
+
+The tick is not a save. **Submit for review** on the bar is the only thing
+that writes to the repository, and it stays live after a tick precisely so
+that it can: the edits are kept, the tools are gone, and the button still
+commits them.
+
+The cross goes back to wherever the pencil found the page. On the first
+press that is the site's own markup; after a tick it is the edits the tick
+kept, which are still yours and still what Submit would write. Discarding
+changes that were confirmed in an earlier session would be silent data
+loss — the confirmation dialog only asks about the session you are in.
 
 ## Editing in place
 
-The editor goes up over the body element **in place**. Nothing on the page
-moves: the region is the site's own element, still in the document, with the
-site's own stylesheet still applying to it. The content stylesheet — drop
-indicators, hover outlines, drag cursors — is injected by this script as a
-`<link>`, because a page this deployment does not own cannot be asked to
-carry one.
+Once the pencil is pressed, the editor goes up over the body element **in
+place**. Nothing on the page moves: the region is the site's own element,
+still in the document, with the site's own stylesheet still applying to it.
+The content stylesheet — drop indicators, hover outlines, drag cursors — is
+injected by this script as a `<link>`, because a page this deployment does
+not own cannot be asked to carry one.
+
+What the pencil swaps in is **our render of the markdown on the branch**,
+not the HTML the template rendered. The two are different documents even
+when they look identical: the template's was built from the base branch by
+a static site generator, and ours carries the block indices the
+byte-preserving splice reads back. Editing the template's markup would
+serialize to bytes that splice against the wrong blocks.
 
 Saving splices the edited blocks back into the markdown source and leaves
 every untouched block byte-identical, exactly as it does everywhere else —
@@ -287,14 +333,17 @@ drafts and pull requests, it simply offers no link to a page and says so.
 
 Open a published entry with `?cms-edit` on the end, signed out. You should
 get the bar, saying **Found `article.post-body`** and that nobody is signed
-in. That one request checks the three things most likely to be wrong — the
-script loaded, the config parsed, and the `page`/`body` pair describes this
-site — without needing a token at all, which is the point of the bar
-answering before authentication rather than after.
+in. That one request checks four things most likely to be wrong — the
+script loaded, the lazy chunk beside it loaded (a `dist/` deployed with
+`chunks/` missing 404s there and nowhere else), the config parsed, and the
+`page`/`body` pair describes this site — without needing a token at all,
+which is the point of the bar answering before authentication rather than
+after.
 
-Then press the button once from `/admin`, with a token, and watch the
-toolbox appear. A lazy chunk that 404s from a badly-deployed `dist/` fails
-nowhere until somebody asks for the editor.
+Then press the pencil once, top left, with a token in the tab, and watch
+the toolbox appear and the body become editable. Until that press the page
+is still the one the site published, whether you typed `?cms-edit` yourself
+or arrived from `/admin`.
 
 ### The site it is proved against
 

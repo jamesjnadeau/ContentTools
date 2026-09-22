@@ -14,6 +14,10 @@
  * and Rollup would put ~80 kB of editor back inside `dist/shell.js` for a
  * screen that never mounts one. `test/browser/shell/imports.spec.js` is
  * what says so out loud.
+ *
+ * NOTHING HERE TOUCHES THE PAGE UNTIL THE SWITCH IS PRESSED. That is the
+ * rule the whole file is arranged around, and it costs more than it looks
+ * like it should -- see `_build` and `_dress`.
  */
 
 import {MediaStore} from '../cms/media.js';
@@ -44,13 +48,13 @@ export interface EditingOptions extends SessionOptions {
      * ancestry intact, or the site's own CSS stops matching it and the
      * page reflows the moment somebody presses Edit.
      *
-     * Its CHILDREN are replaced. What the site's template rendered is
-     * HTML built from the base branch by a static site generator; what
-     * the editor must hold is our render of the markdown on the branch
-     * being edited, with the `data-ct-md` indices the splice reads back.
-     * Those are different documents even when they look identical, and
-     * editing the former would serialize to bytes that splice against
-     * the wrong blocks.
+     * Its CHILDREN are replaced, but only once the switch is pressed.
+     * What the site's template rendered is HTML built from the base
+     * branch by a static site generator; what the editor must hold is
+     * our render of the markdown on the branch being edited, with the
+     * `data-ct-md` indices the splice reads back. Those are different
+     * documents even when they look identical, and editing the former
+     * would serialize to bytes that splice against the wrong blocks.
      */
     readonly region: HTMLElement;
 }
@@ -62,27 +66,85 @@ export class EditingSession extends EntrySession {
 
     readonly store: MediaStore;
 
+    /** The site's own element, whose children are the body. */
+    private readonly _region: HTMLElement;
+
+    /**
+     * The body exactly as the site published it.
+     *
+     * Read before anything is touched, and put back when the switch is
+     * cancelled. The editor's own revert restores the snapshot it took
+     * at `start()`, which is OUR render of the markdown -- so without
+     * this, cancelling would leave the page showing the thing the
+     * person just asked to be rid of.
+     */
+    private readonly _original: string;
+
     /** What the editor last reported for the body. See `_remember`. */
     private _edited: string | null;
+
+    /**
+     * What `_edited` was when the pencil was last pressed.
+     *
+     * Where a cancel goes back to, which is what the editor's own
+     * revert means -- it restores the snapshot it took at `start()`.
+     * That is NOT always the file: somebody who edits, presses the
+     * tick to read the page, presses the pencil again and then
+     * changes their mind is cancelling the second session, not the
+     * first, and the edits the tick kept are still theirs. `_edited`
+     * cannot answer this itself, because a Submit in the middle of an
+     * editing session moves it.
+     */
+    private _dressed: string | null;
+
+    /** Between `ct-started` and `ct-stopped`: the switch is on. */
+    private _started: boolean;
+
+    /**
+     * Whether the stop in flight is a confirm or a cancel.
+     *
+     * Read off `ct-stop`'s own detail rather than from `ct-revert`,
+     * because a revert can be REFUSED: `CANCEL_MESSAGE` puts a confirm
+     * dialog up and a person who says no aborts the stop, so
+     * `ct-stopped` never arrives. A flag set by `ct-revert` would still
+     * be standing at the next stop, and the next stop is usually the
+     * confirm -- so saying no to "discard your changes?" would discard
+     * them one press later.
+     */
+    private _saving: boolean;
+
+    /** Told when the switch is pressed. See `watch`. */
+    private _watcher: (() => void) | null;
 
     constructor(options: EditingOptions) {
         super(options);
         this.store = options.store;
+        this._region = options.region;
+        this._original = options.region.innerHTML;
         this._edited = null;
+        this._dressed = null;
+        this._started = false;
+        this._saving = false;
+        this._watcher = null;
         this.editor = this._build(options);
     }
 
+    /** Whether the switch is on: the tools are up and the body is ours. */
+    started(): boolean {
+        return this._started;
+    }
+
     /**
-     * Begin editing.
+     * Be told when the switch is pressed.
      *
-     * Started by the caller, not by an ignition button: pressing Edit on
-     * the page IS the decision to edit it, and an editor sitting inert
-     * behind a second press is a page that looks broken. It also has to
-     * be started for `save(true)` to have any regions to report --
-     * `_regions` is populated by `start()`.
+     * One watcher, set by whoever is showing the bar. The switch is the
+     * only thing on this surface that changes state without anybody
+     * calling a method here, so it is the only thing that needs to push
+     * rather than be asked -- and one caller means a plain field rather
+     * than a subscriber list whose removal path no test could reach.
      */
-    start(): void {
-        this.editor.start();
+    watch(fn: () => void): void {
+        this._watcher = fn;
     }
 
     /** Take the editor back off the page. */
@@ -123,14 +185,24 @@ export class EditingSession extends EntrySession {
      * is why this may be called twice -- the dirty check and the submit
      * both want the answer, and the second caller would otherwise be
      * told nothing had changed.
+     *
+     * Asked of the editor even while the switch is OFF, and a
+     * `state === 'editing'` guard was written here and deleted after
+     * mutation testing could not kill it. It is measured rather than
+     * assumed: `save()` with no regions reports `{}` -- by the early
+     * return when nothing has moved since the last start, and by an
+     * empty loop otherwise -- so `_remember` skips and the cached
+     * answer stands either way. The one thing it does touch,
+     * `_domRegions`, is recomputed from the region list at the top of
+     * the next `syncRegions()`, which is the first line of `start()`.
+     *
+     * So with the switch off the answer is what the last editing
+     * session left behind, or the branch as it was read if there has
+     * not been one. That is what makes Submit mean something after a
+     * tick: the edits are kept, the tools are gone, and the button
+     * still commits them.
      */
     html(): string {
-        /* No `state === 'editing'` test beside this one. The editor is
-           built in the constructor and started one line after the
-           caller connects it, so an editor that is here and not editing
-           does not exist. If that stops being true, `save()` throws on
-           a disconnected editor, which is the loud failure rather than
-           the quiet one. */
         this.editor.save(true);
         return this._edited ?? this.doc.toHTML();
     }
@@ -151,6 +223,14 @@ export class EditingSession extends EntrySession {
         /* The whole reason markdown mode exists: the editor must not be
            able to produce something the serializer cannot express. */
         editor.setAttribute('mode', 'markdown');
+        /* THE SWITCH. The library's own, which is the pencil that becomes
+           a green tick and a red cross -- v1.6.16's ignition, back where
+           it was, and the reason nothing below replaces the page until
+           somebody presses it. The element's default is off because the
+           shell drives its editor from its own chrome; here there is no
+           chrome of ours around the words, so the switch is how a person
+           says yes. */
+        editor.setAttribute('ignition', '');
         /* Staged in memory and committed by `saveEntry`, so an entry and
            its images land in one commit. An uploader that commits on its
            own leaves an orphan blob behind every abandoned edit. */
@@ -164,15 +244,59 @@ export class EditingSession extends EntrySession {
            published markup for the benefit of a query nobody runs is a
            change to their page for nothing. */
         region.setAttribute('data-name', REGION);
-        region.innerHTML = this.doc.toHTML();
         /* Named rather than matched, and the editor stays empty. See
            `regionElements`: moving this element under the editor to make
            `[data-editable]` reach it would change its ancestry, and the
            site's own CSS is written against the ancestry it has. */
         editor.regionElements = [region];
 
+        /* `ct-start` fires BEFORE the regions are parsed -- `start()`
+           dispatches it on its first line and calls `syncRegions()` on
+           its fourth -- which is what lets the swap happen here rather
+           than in the constructor. That ordering is load-bearing: done
+           a line later, ContentEdit would have parsed the site's own
+           markup and the person would be editing the wrong document. */
+        editor.addEventListener('ct-start', () => this._dress());
+        editor.addEventListener('ct-started', () => {
+            this._started = true;
+            this._watcher?.();
+        });
+        editor.addEventListener('ct-stop', ev => {
+            this._saving = (ev as CustomEvent).detail?.save === true;
+        });
         editor.addEventListener('ct-saved', ev => this._remember(ev as CustomEvent));
+        editor.addEventListener('ct-stopped', () => this._undress());
         return editor;
+    }
+
+    /** Put our render of the branch in the page, ready to be edited. */
+    private _dress(): void {
+        /* `_edited` first, so a second press after a tick picks the
+           edits up where they were left rather than re-rendering the
+           file and throwing them away. */
+        this._dressed = this._edited;
+        this._region.innerHTML = this._edited ?? this.doc.toHTML();
+    }
+
+    /** Hand the page back, as it was or as it has been edited. */
+    private _undress(): void {
+        this._started = false;
+        if (!this._saving) {
+            /* Cancelled, so back to where the pencil found it. For the
+               FIRST press that is the site's own markup, and the
+               editor cannot put it back: the snapshot its revert
+               restores is our render of the markdown, which is the
+               thing the person just asked to be rid of. For a later
+               one it is the edits a tick kept, which the revert has
+               already restored and which are still what Submit
+               commits -- so only `_edited` moves, and the page is left
+               alone. */
+            this._edited = this._dressed;
+            if (this._dressed === null) {
+                this._region.innerHTML = this._original;
+            }
+        }
+        this._watcher?.();
     }
 
     /**

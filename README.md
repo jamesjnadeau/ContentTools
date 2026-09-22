@@ -158,8 +158,11 @@ The **words** are written somewhere else, and that is the other half:
 
 One tag, on every page of the site. Pressing Edit in the admin screens opens
 the entry's published page — the site's real template, the site's real
-stylesheet — with the editor coming up over the post body and a bar carrying
-the frontmatter fields and Submit. It is a preview that costs nothing,
+stylesheet — with a bar carrying the frontmatter fields and Submit, and a
+pencil at the top left. The page itself is untouched until the pencil is
+pressed: nothing is editable and nothing has been replaced, because opening
+an entry is not the same as starting to edit it. Press it and the editor
+comes up over the post body in place. It is a preview that costs nothing,
 because it is not a preview: it is the page. A reader pays 1.36 kB across
 two requests and nothing else; everything behind that decision is a dynamic
 import.
@@ -280,9 +283,11 @@ Deliberately covering different things:
   suite can see: that a reader downloads two small files and stops; that
   `?cms-edit` brings the bar up without a token; that a token handed over on
   the URL fragment lands in `sessionStorage` and is gone from the address bar
-  before anything else loads; that the site's own element becomes the region
-  with the template around it untouched; and that typing one sentence into it
-  reaches GitHub as one hunk.
+  before anything else loads; that the page is still the site's own, every
+  word of it, until the switch is pressed; that pressing it makes the site's
+  own element the region with the template around it untouched; that the
+  cross hands the reader's page back; and that typing one sentence in
+  between reaches GitHub as one hunk.
 
 - **`test/golden/markdown-dist.spec.mjs`**, **`styles.spec.mjs`** and
   **`chunk-closure.spec.mjs`** — the remaining properties of the artifacts

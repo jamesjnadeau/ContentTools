@@ -240,9 +240,15 @@ async function start(
     /* The editor element itself holds nothing and goes at the end of
        <body>: its regions are named rather than matched, so it needs no
        children, and an empty `position: relative` block is the smallest
-       footprint a custom element can have on a page it does not own. */
+       footprint a custom element can have on a page it does not own.
+
+       And it is NOT started. Connecting it mounts the ignition switch
+       and nothing else -- no toolbox, no inspector, and the site's own
+       markup still in the page. Editing begins when somebody presses
+       the switch, however they arrived: pressing Edit under /admin says
+       which page to open, not that the reader's view of it should be
+       replaced before they have looked at it. */
     where.document.body.appendChild(session.editor);
-    session.start();
 
     /* Built and NOT rendered -- see the call site. */
     const editing = new PageEdit({
