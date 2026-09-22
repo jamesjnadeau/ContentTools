@@ -36,6 +36,7 @@ import {DIRECTORY_LIMIT} from '../cms/github.js';
 import type {EditorialStatus} from '../cms/status.js';
 import type {Entry, InFlightEntry} from '../cms/repo.js';
 import {adapterFor} from '../auth/adapter.js';
+import {handoffFragment} from '../auth/handoff.js';
 import {PatAuthAdapter} from '../auth/pat.js';
 import {sessionStorageOrMemory} from '../auth/storage.js';
 import type {TokenStorage} from '../auth/storage.js';
@@ -260,7 +261,8 @@ export class ContentToolsCms extends HTMLElement {
             confirmDelete: () => this._delete(),
             create: title => this._create(title),
             thumbnail: item => this._thumbnail(item),
-            moveStatus: (entry, status) => this._moveStatus(entry, status)
+            moveStatus: (entry, status) => this._moveStatus(entry, status),
+            openOnSite: href => this._openOnSite(href)
         /* A GETTER, not a snapshot. The frame is built here, in the
            constructor, and a host page sets `el.widgets` afterwards --
            it has no element to set it on until this has returned. A
@@ -934,6 +936,34 @@ export class ContentToolsCms extends HTMLElement {
         return Object.keys(defaults).length === 0
             ? blank
             : MarkdownDocument.parse(blank.update('', {frontmatter: defaults}));
+    }
+
+    /**
+     * Open the site's own page, handing this tab's token across.
+     *
+     * `/admin` and the page are different browsing contexts -- and for
+     * any entry with a pull request, different origins, because the
+     * page is that pull request's deploy preview. `sessionStorage` is
+     * scoped to both, so an author who signed in here is nobody there
+     * unless the link carries something. `src/auth/handoff.ts` holds
+     * the whole of why it is a fragment.
+     *
+     * `noopener` for the same reason the link's own `rel` says it: the
+     * page is on another origin and has no business holding a handle to
+     * the screens that hold the token.
+     *
+     * An adapter with no `handoff` opens the plain link rather than
+     * nothing. A host page may assign its own, and the page it reaches
+     * then says how to sign in -- which is a worse afternoon than being
+     * signed in already, and a much better one than a button that does
+     * nothing when pressed.
+     */
+    private _openOnSite(href: string): void {
+        const handed = this.auth.handoff?.() ?? null;
+        const url = handed === null
+            ? href
+            : `${href}#${handoffFragment(handed)}`;
+        this.ownerDocument.defaultView?.open(url, '_blank', 'noopener');
     }
 
     /** Ask before deleting, or take the question back. */

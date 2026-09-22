@@ -15,6 +15,7 @@
 
 import type {AuthAdapter} from './types.js';
 import {memoryStorage, sessionStorageOrMemory, TOKEN_KEY} from './storage.js';
+import type {Handoff} from './handoff.js';
 export {TOKEN_KEY};
 /* Re-exported so `./cms` keeps exporting it from here, where every
    consumer already imports it from. */
@@ -73,6 +74,23 @@ export class PatAuthAdapter implements AuthAdapter {
                exception. */
             return null;
         }
+    }
+
+    /**
+     * What crosses to the site's own page.
+     *
+     * `currentToken()` rather than a second read of storage, so a
+     * storage that has started refusing answers the same way here as it
+     * does everywhere else -- and so the two can never disagree about
+     * whether this tab is signed in.
+     */
+    handoff(): Handoff | null {
+        const held = this.currentToken();
+        /* The KEY this instance was built with, not the module
+           constant. `options.key` exists so a second adapter can be
+           parked somewhere else, and a handoff naming the default would
+           put the token where that instance is not looking. */
+        return held === null ? null : {key: this.key, value: held};
     }
 
     async authenticate(): Promise<{token: string}> {

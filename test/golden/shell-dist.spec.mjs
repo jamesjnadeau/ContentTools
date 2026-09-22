@@ -225,7 +225,7 @@ test('opening an entry, editing it, and submitting one reviewable line',
     await expect(page.locator('content-tools-cms content-tools-editor'))
         .toHaveCount(0);
     await expect(shell(page).locator('.ct-cms__entry-edit'))
-        .toHaveAttribute('href', '/blog/hello/');
+        .toHaveAttribute('href', '/blog/hello/?cms-edit');
     await expect(shell(page).locator('.ct-cms__entry-edit'))
         .toHaveAttribute('target', '_blank');
 
@@ -269,6 +269,49 @@ test('opening an entry, editing it, and submitting one reviewable line',
 
     expect(errors).toEqual([]);
     expect(logged).toEqual([]);
+});
+
+test('the Edit link carries this tab\'s token to the site\'s own page',
+     async ({page}) => {
+    /* The join between the two built artifacts, and the only place it
+       can be proved: `dist/shell.js` writes the fragment and
+       `dist/edit.js` reads it, from two separate Rollup invocations that
+       share nothing but `src/auth/handoff.ts`. A rename on one side is a
+       link that opens a page which says "sign in through the admin
+       screens in this tab" -- in a tab that is not this one.
+
+       `/admin` and the site's page are different browsing contexts, so
+       `sessionStorage` does not cross; a draft's page is a deploy
+       preview, so the ORIGIN does not either. */
+    await serveGitHub(page);
+    await page.route('**/blog/hello/**', route => route.fulfill({
+        status: 200, contentType: 'text/html', body: '<p>the post</p>'
+    }));
+
+    await page.goto(PAGE);
+    await shell(page).locator('.ct-cms__input').fill(TOKEN);
+    await shell(page).locator('.ct-cms__gate-form button').click();
+    await shell(page).locator('.ct-cms__nav-link').first().click();
+    await shell(page).locator('.ct-cms__entry-link').first().click();
+
+    /* The HREF carries the flag and no secret: it is what gets copied
+       out of a context menu and middle-clicked into somebody else's
+       tab. The token rides the click instead. */
+    await expect(shell(page).locator('.ct-cms__entry-edit'))
+        .toHaveAttribute('href', '/blog/hello/?cms-edit');
+
+    const [opened] = await Promise.all([
+        page.waitForEvent('popup'),
+        shell(page).locator('.ct-cms__entry-edit').click()
+    ]);
+    await opened.waitForLoadState('domcontentloaded');
+
+    const url = new URL(opened.url());
+    expect(url.pathname + url.search).toBe('/blog/hello/?cms-edit');
+    const handed = Object.fromEntries(new URLSearchParams(url.hash.slice(1)));
+    expect(handed['cms-token']).toBe(TOKEN);
+    expect(handed['cms-key']).toBe('content-tools:github-token');
+    await opened.close();
 });
 
 test('naming a new entry, writing it, and opening one pull request',
@@ -320,7 +363,7 @@ test('naming a new entry, writing it, and opening one pull request',
        own preview rather than the published page: the post does not
        exist on the live site until somebody merges. */
     await expect(shell(page).locator('.ct-cms__entry-edit'))
-        .toHaveAttribute('href', /deploy-preview-1--.*\/blog\/hello-world\/$/);
+        .toHaveAttribute('href', /deploy-preview-1--.*\/blog\/hello-world\/\?cms-edit$/);
 
     expect(errors).toEqual([]);
     expect(logged).toEqual([]);

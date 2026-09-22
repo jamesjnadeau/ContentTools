@@ -2,6 +2,8 @@ import {
     alertText, createFakeGitHub, entryOf, fieldOf, forgetToken, openAt, openedEntry,
     setField, shellFetch, signIn, until, CONFIG_URL
 } from './helpers.js';
+import {readHandoff} from '../../../src/auth/handoff.js';
+import {TOKEN_KEY} from '../../../src/auth/pat.js';
 
 /* Opening an entry under `/admin`, changing its frontmatter, and turning
  * that into a pull request.
@@ -116,7 +118,11 @@ describe('the entry management screen', function() {
         const {shadow} = await open();
         const link = shadow.querySelector('.ct-cms__entry-edit');
         expect(link.hidden).toBe(false);
-        expect(link.getAttribute('href')).toBe('/blog/hello/');
+        /* The flag, and NO token. The page needs one -- it cannot see
+           this tab's -- but an href is what gets copied into a chat
+           window and middle-clicked into somebody else's tab, so the
+           token rides a click instead. See the handoff tests below. */
+        expect(link.getAttribute('href')).toBe('/blog/hello/?cms-edit');
         expect(link.getAttribute('target')).toBe('_blank');
         expect(link.getAttribute('rel')).toBe('noopener noreferrer');
         // No warning: a published entry's live page IS the right page.
@@ -136,7 +142,7 @@ describe('the entry management screen', function() {
 
         const link = shadow.querySelector('.ct-cms__entry-edit');
         expect(link.getAttribute('href'))
-            .toBe('https://deploy-preview-1--site.test/blog/hello/');
+            .toBe('https://deploy-preview-1--site.test/blog/hello/?cms-edit');
         return expect(shadow.querySelector('.ct-cms__entry-stale').hidden).toBe(true);
     });
 
@@ -157,7 +163,7 @@ describe('the entry management screen', function() {
         });
 
         expect(shadow.querySelector('.ct-cms__entry-edit').getAttribute('href'))
-            .toBe('/blog/hello/');
+            .toBe('/blog/hello/?cms-edit');
         const warning = shadow.querySelector('.ct-cms__entry-stale');
         expect(warning.hidden).toBe(false);
         return expect(warning.textContent).toContain('write over the draft');
@@ -178,6 +184,113 @@ describe('the entry management screen', function() {
         expect(link.hasAttribute('href')).toBe(false);
         expect(getComputedStyle(link).display).toBe('none');
         return expect(shadow.querySelector('.ct-cms__entry-stale').hidden).toBe(true);
+    });
+
+
+    // --- the token that crosses with the click ----------------------------
+
+    /* The href carries the flag and no secret, so what gets copied out of
+       the address bar or middle-clicked into somebody else's tab is
+       harmless. The token rides an unmodified primary click instead,
+       through `window.open`, where it reaches the fragment and nothing
+       else -- not a server log, not a `Referer`. */
+
+    /** Catch what the shell hands `window.open`, and open nothing. */
+    function watchOpen() {
+        const opened = [];
+        const real = window.open;
+        window.open = (...args) => {
+            opened.push(args);
+            return null;
+        };
+        return {opened, restore: () => void (window.open = real)};
+    }
+
+    /** Click the Edit link, and say whether the shell took the click. */
+    function clickEdit(shadow, init = {}) {
+        const ev = new MouseEvent(
+            'click', {bubbles: true, cancelable: true, ...init});
+        shadow.querySelector('.ct-cms__entry-edit').dispatchEvent(ev);
+        return ev;
+    }
+
+    it('carries this tab’s token to the page it opens', async function() {
+        /* `sessionStorage` is per-origin AND per browsing context, and a
+           draft's page is usually neither: an author signed in here
+           cannot be seen there. Without this the link lands on a page
+           that says "sign in through the admin screens in this tab" --
+           in a tab that is not this one, about a screen that cannot
+           help it. */
+        const {shadow} = await open();
+        const watch = watchOpen();
+
+        try {
+            const ev = clickEdit(shadow);
+
+            expect(ev.defaultPrevented).toBe(true);
+            expect(watch.opened.length).toBe(1);
+            const [url, target, features] = watch.opened[0];
+            expect(target).toBe('_blank');
+            /* `noopener` deliberately, even though it costs the
+               `sessionStorage` copy a same-origin tab would otherwise
+               inherit: the copy is not what is being relied on -- the
+               fragment is -- and an opener handle is a live reference
+               into this tab from a page the deployment does not own. */
+            expect(features).toBe('noopener');
+
+            const [page, fragment] = url.split('#');
+            expect(page).toBe('/blog/hello/?cms-edit');
+            return expect(readHandoff(fragment).handoff)
+                .toEqual({key: TOKEN_KEY, value: 'github_pat_test'});
+        } finally {
+            watch.restore();
+        }
+    });
+
+    it.each([
+        ['⌘-click', {metaKey: true}],
+        ['ctrl-click', {ctrlKey: true}],
+        ['shift-click', {shiftKey: true}],
+        ['alt-click', {altKey: true}],
+        ['a middle click', {button: 1}]
+    ])('leaves %s to the browser, carrying no token', async function(_name, init) {
+        /* Every one of these means "open this somewhere I choose", and
+           `window.open` is not that place. Taking the click would break
+           the browser's own affordances; the href is what runs instead,
+           and the page it reaches says how to sign in. A visible
+           degradation rather than a token in a bookmark. */
+        const {shadow} = await open();
+        const watch = watchOpen();
+
+        try {
+            expect(clickEdit(shadow, init).defaultPrevented).toBe(false);
+            return expect(watch.opened).toEqual([]);
+        } finally {
+            watch.restore();
+        }
+    });
+
+    it('opens the plain link for an adapter that hands nothing on',
+       async function() {
+        /* `handoff` is optional, so an adapter written before it existed
+           -- or a host page's own -- is not broken, just quieter. The
+           link still opens, and the page it opens says how to sign in.
+           The alternative, refusing to open, would take in-page editing
+           away from a deployment whose only fault is an older adapter. */
+        const {el, shadow} = await open();
+        el.auth = {
+            currentToken: () => 'held-elsewhere',
+            authenticate: async () => ({token: 'held-elsewhere'}),
+            logout: async () => {}
+        };
+        const watch = watchOpen();
+
+        try {
+            expect(clickEdit(shadow).defaultPrevented).toBe(true);
+            return expect(watch.opened[0][0]).toBe('/blog/hello/?cms-edit');
+        } finally {
+            watch.restore();
+        }
     });
 
     it('names the entry and links back to its collection', async function() {

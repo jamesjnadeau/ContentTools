@@ -22,6 +22,7 @@ import {buildFields} from '../../entry/fields.js';
 import type {FieldsState, FieldsView, WidgetSource} from '../../entry/fields.js';
 import {statusOf} from '../../cms/status.js';
 import {editUrl, editUrlIsStale} from '../../cms/preview.js';
+import {withEditFlag as withFlag} from '../../auth/handoff.js';
 import {findCollection} from '../../cms/config.js';
 import type {CmsConfig} from '../../cms/config.js';
 import type {Entry} from '../../cms/repo.js';
@@ -47,6 +48,15 @@ export interface EntryHandlers {
     askDelete(asking: boolean): void;
     /** Delete it, as a pull request. */
     confirmDelete(): void;
+    /**
+     * Open `href` on the site, handing this tab's token across.
+     *
+     * The link's own `href` is deliberately the plain page URL with the
+     * edit flag on it and NO token, so copying it and middle-clicking it
+     * are safe. The token goes on an ordinary click, through here, where
+     * the adapter that holds it is.
+     */
+    openOnSite(href: string): void;
 }
 
 export interface EntryState {
@@ -140,11 +150,44 @@ export function buildEntry(
 
        An `<a>` with a real href rather than a button, so it can be opened
        in a background tab, copied, and read by a screen reader as what it
-       is: somewhere else. */
+       is: somewhere else.
+
+       THE HREF CARRIES NO TOKEN. The page needs one -- it is on another
+       origin and cannot see this tab's -- but putting it in the href
+       would put it wherever the link goes: "copy link address" into a
+       chat window, a middle click into somebody else's tab. So the href
+       is the page plus `?cms-edit`, which is not a secret, and an
+       ordinary click is taken over below to send the token in the
+       fragment instead. What a copied link opens is a page that puts its
+       bar up and says how to sign in, which is the right answer to give
+       somebody who was sent one. */
     const edit = h(doc, 'a', {
         class: 'ct-cms__button ct-cms__button--muted ct-cms__entry-edit',
         target: '_blank',
-        rel: 'noopener noreferrer'
+        rel: 'noopener noreferrer',
+        onclick: (ev: MouseEvent) => {
+            /* A modified click belongs to the browser, not to us. Ctrl,
+               meta and shift are how a person says background tab, new
+               window, and a middle click says it without a modifier at
+               all -- taking those over would turn every one of them into
+               a foreground tab. They open the plain href and the page
+               asks them to sign in, which is the same degradation a
+               copied link gets and is why the flag is in the href. */
+            if (ev.button !== 0 || ev.metaKey || ev.ctrlKey
+                || ev.shiftKey || ev.altKey) {
+                return;
+            }
+            const href = edit.getAttribute('href');
+            /* No href is a link that is hidden and emptied anyway; the
+               guard is what stops a click that reached it regardless --
+               `hidden` does not stop a click, as Details on the in-page
+               bar had to learn -- from opening `null`. */
+            if (href === null) {
+                return;
+            }
+            ev.preventDefault();
+            handlers.openOnSite(href);
+        }
     }, ['Edit on the site']);
 
     /* Said out loud rather than left to be discovered. With a pull
@@ -308,9 +351,14 @@ export function buildEntry(
             const collection = config && entry
                 ? findCollection(config, entry.collection)
                 : null;
-            const href = config && entry && collection
+            const page = config && entry && collection
                 ? editUrl(config, collection, entry.slug, open?.number ?? null)
                 : null;
+            /* The flag, always, so the page the link opens knows it was
+               asked for. `editUrl` is path arithmetic in a leaf and
+               stays that way -- it answers where the page IS, and what
+               to ask it for is this screen's business. */
+            const href = page === null ? null : withFlag(page);
             /* Emptied rather than left behind `hidden`, for the reason
                the badge above is: a hidden node's text is still in
                `textContent`, so a stale label makes a test pass that

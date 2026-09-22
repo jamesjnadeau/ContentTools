@@ -46,13 +46,19 @@ function page(markup, config = CONFIG, url = 'https://site.test/blog/hello/') {
 const resolveOn = it => resolve(it.where, it.options);
 
 /** Wait until `check()` is true, or fail saying what it was waiting for. */
-async function until(check, describe, attempts = 200) {
-    for (let i = 0; i < attempts; i += 1) {
+async function until(check, describe) {
+    /* A DEADLINE rather than a count of event-loop turns: some of what
+       is waited on here is a real request to the test server, and a
+       couple of hundred `setTimeout(0)` turns is not a duration -- on a
+       loaded runner it elapses in milliseconds while the round trip has
+       not landed. Only paid in full by a test that was going to fail. */
+    const deadline = Date.now() + 5000;
+    do {
         if (check()) {
             return;
         }
         await new Promise(resolve => setTimeout(resolve, 0));
-    }
+    } while (Date.now() < deadline);
     throw new Error(`${describe} never happened`);
 }
 

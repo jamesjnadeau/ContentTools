@@ -12,6 +12,8 @@
  * ends at `ct-saved`.
  */
 
+import type {Handoff} from './handoff.js';
+
 export interface AuthAdapter {
     /**
      * A token, asking the user for one if there is not already one to
@@ -42,6 +44,22 @@ export interface AuthAdapter {
         /** One sentence about what pressing it does. */
         readonly note: string;
     };
+
+    /**
+     * The token as its storage holds it, for handing to another origin.
+     *
+     * `/admin` and the site's own page are different browsing contexts
+     * and usually different origins, so an author who signed in here
+     * cannot be seen there. This is what crosses -- see
+     * `src/auth/handoff.ts` for the whole of that argument.
+     *
+     * Optional, like the two above, so nothing written against this
+     * interface before it existed needs an edit -- including every
+     * hand-rolled stub in the specs. An adapter that declares none is
+     * not broken: the link is still offered, and the page it opens says
+     * how to sign in rather than editing as somebody.
+     */
+    handoff?(): Handoff | null;
 
     /**
      * Finish a flow this page was redirected back from.

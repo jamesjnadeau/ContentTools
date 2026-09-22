@@ -19,12 +19,17 @@ One tag, on every page. Which is what decides the shape of this file.
 
 A blog's readers outnumber its authors by a very long way, and none of them
 should pay for an editor. So `dist/edit.js` is **the decision and nothing
-else** — 749 bytes gzipped, with a budget that fails the build at 1.5 kB —
+else** — 1.36 kB gzipped, with a budget that fails the build at 1.5 kB —
 and everything behind that decision is behind a dynamic `import()`. The editor, the markdown parser, the GitHub client and
 the config loader arrive only for somebody who is actually editing.
 
 A reader downloads this file, asks `sessionStorage` two questions, and
 downloads nothing more.
+
+One thing in it is not a decision, and it is worth naming rather than
+hiding: taking a handed-over token off the URL has to happen *before*
+anything is downloaded, so that code is in this file rather than behind the
+import. It is what took the number from 749 B to 1.36 kB.
 
 The price of that is worth stating rather than hiding: a lazy chunk that
 404s from a badly-deployed static host fails nowhere until an author asks
@@ -34,7 +39,7 @@ button once after deploying anyway.
 
 ## How it decides to appear
 
-Two ways in.
+Three ways in.
 
 - **`?cms-edit` on the URL.** This is what the Edit link on an entry screen
   under `/admin` opens with, so an author who presses it lands on the page
@@ -42,6 +47,8 @@ Two ways in.
 - **A token already in this tab.** Once somebody is signed in the editor
   follows them as they move around the site, which is what makes it feel
   like part of the site rather than a mode you enter from somewhere else.
+- **A token handed over on the fragment.** Which is how the tab comes to
+  hold one in the first place — see [Signing in](#signing-in) below.
 
 A browser that refuses `sessionStorage` — a sandboxed iframe, some private
 modes — is a browser where nobody is signed in, so the honest answer there
@@ -149,11 +156,33 @@ change produces.
 Without it, the Edit link on an unpublished entry falls back to the live URL
 and the entry screen says plainly that it is doing so.
 
+## Signing in
+
+There is no sign-in form here, and there is not going to be one: this
+script runs on a published page that the deployment does not own, and
+putting a credential field on somebody's blog post is a phishing lesson
+nobody should be teaching their readers.
+
+What happens instead is that `/admin` hands the token over when it opens
+the link. The token travels in the URL **fragment**, the script takes it
+off the URL before it downloads anything, and it lands in this tab's
+`sessionStorage` under the key its adapter reads — so an author whose
+`/admin` is on another host, which is every author editing a draft on a
+deploy preview, is signed in on arrival.
+
+[Signing in](auth.md#handing-the-token-to-the-sites-own-page) has the
+whole of that: why a fragment, what it costs, what it does not, and why
+the OAuth implicit-flow objection does not transfer.
+
+A tab that was never handed one, and never signed in, gets a bar that
+says so:
+
+> Sign in through the admin screens in this tab, then come back to edit it.
+
+which is also what a copied link or a middle-clicked one gets, because
+the `href` deliberately carries no secret.
+
 ## Still to come
 
-- **Signing in on the site's own origin.** The token lives in
-  `sessionStorage`, which is per-origin — so today the bar asks you to sign
-  in through the admin screens *in this tab*, and an author whose `/admin`
-  is on another host cannot. The handoff is the next piece of work.
 - **The deployment walkthrough** — where to put `dist/`, what a real site's
   config looks like end to end, and the test site it is proved against.

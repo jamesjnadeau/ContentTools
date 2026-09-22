@@ -32,14 +32,14 @@
  */
 
 import {APP_TOKEN_KEY, TOKEN_KEY} from '../auth/storage.js';
+import {EDIT_FLAG, readHandoff} from '../auth/handoff.js';
 
-/**
- * The query flag that asks for the editing surface on this page.
- *
- * This is what `/admin` links out with, so an author who presses Edit on
- * a row lands on the page itself with the editor already coming up.
- */
-export const EDIT_FLAG = 'cms-edit';
+/* Re-exported, because this is where it was and where every
+   consumer of it looks. It moved down beside `readHandoff` when
+   the shell started writing it: the flag and the token are the two
+   halves of one handoff, and a flag spelled in two places is a link
+   that opens a page where nothing happens. */
+export {EDIT_FLAG};
 
 /**
  * Whether this page should load the editing surface at all.
@@ -70,6 +70,65 @@ export function wanted(where: Window): boolean {
 }
 
 /**
+ * Take a token out of the URL, if `/admin` sent one, and put it away.
+ *
+ * `/admin` holds a token for ITS origin, and this page is a different
+ * browsing context and usually a different origin -- a deploy preview
+ * for anything with a pull request -- so the only thing that crosses is
+ * what the link carries. See `src/auth/handoff.ts` for why that is a
+ * fragment and what it does and does not cost.
+ *
+ * THE ORDER IS THE POINT, and it is the one thing here worth being
+ * careful about.
+ *
+ * The URL is rewritten FIRST, before the token is stored and long
+ * before anything is downloaded. A store that fails leaves an author
+ * looking at a page that says to sign in, which is a clean answer; a
+ * strip that never happens leaves a bearer token in the address bar and
+ * in the session history for as long as the tab lives, which is the one
+ * failure this whole design is trying to keep to a single tick.
+ *
+ * `replaceState` rather than assigning the hash, because assigning adds
+ * a history entry -- so Back would return the author to the URL with
+ * the token in it, which is the opposite of taking it out.
+ *
+ * And it is `sessionStorage` directly with no memory fallback, unlike
+ * everywhere else in this codebase, because there is nowhere for a
+ * fallback to go: `surface.ts` builds its own adapter from the config
+ * and reads real storage, so a token held in a variable here would be a
+ * token nothing ever finds. A browser that refuses storage is one where
+ * this cannot work, and the bar says so.
+ *
+ * Returns whether there was one, which is what makes a failed store
+ * visible: the surface comes up either way and says nobody is signed
+ * in, rather than the page doing nothing at all.
+ */
+export function claim(where: Window): boolean {
+    const claimed = readHandoff(where.location.hash);
+    if (!claimed) {
+        return false;
+    }
+
+    try {
+        const {pathname, search} = where.location;
+        where.history.replaceState(null, '', `${pathname}${search}${claimed.rest}`);
+    } catch {
+        /* A document that forbids it -- a sandboxed iframe, a `file:`
+           URL. Nothing is gained by giving up here: the token is
+           already in a URL somebody can read, and refusing to use it
+           does not take it back out. */
+    }
+
+    try {
+        where.sessionStorage.setItem(claimed.handoff.key, claimed.handoff.value);
+    } catch {
+        /* Same hostility `sessionStorageOrMemory` exists for, with no
+           second-best available. See above. */
+    }
+    return true;
+}
+
+/**
  * Load the editing surface, if this page wants one.
  *
  * Exported and called at the bottom of this file, rather than only
@@ -79,7 +138,16 @@ export function wanted(where: Window): boolean {
  * the automatic call has already answered no.
  */
 export async function boot(where: Window): Promise<void> {
-    if (!wanted(where)) {
+    /* Before `wanted`, and OR'd with it rather than folded into it.
+       Before, because the token it puts away is what `wanted` then
+       finds -- and because a token in a URL should stop being in one
+       whether or not this page turns out to be editable. OR'd, because
+       a store that the browser refused would otherwise leave a link
+       that opens a page where nothing happens: having been handed
+       something is itself a reason to put the bar up and say what
+       became of it. */
+    const handed = claim(where);
+    if (!handed && !wanted(where)) {
         return;
     }
     const {open} = await import('./surface.js');

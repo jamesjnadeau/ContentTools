@@ -633,4 +633,60 @@ describe('GitHubAppAuthAdapter, storage', function() {
            here that matters. */
         return expect(kit.adapter.currentToken()).toBe(null);
     });
+
+    describe('handing the token to the site\'s own page', function() {
+
+        const NOW = 1_700_000_000_000;
+        const signedIn = expiresAt => harness({
+            storage: fakeStorage({
+                [APP_TOKEN_KEY]: JSON.stringify({token: 'ghu_live', expiresAt})
+            })
+        });
+
+        it('hands on the whole record, expiry and all', function() {
+            /* The VALUE as storage holds it, not the bearer inside it.
+               An App token that crossed as a bare string would arrive
+               with no expiry, and the page holding it would go on
+               offering to save hours after GitHub stopped listening --
+               a 401 on Submit rather than a gate before it. */
+            const kit = signedIn(NOW + 28_800_000);
+
+            const handed = kit.adapter.handoff();
+
+            expect(handed.key).toBe(APP_TOKEN_KEY);
+            return expect(JSON.parse(handed.value))
+                .toEqual({token: 'ghu_live', expiresAt: NOW + 28_800_000});
+        });
+
+        it('hands on a token with no expiry at all', function() {
+            // An App with token expiration switched off.
+            const kit = signedIn(null);
+
+            return expect(JSON.parse(kit.adapter.handoff().value).expiresAt)
+                .toBe(null);
+        });
+
+        it('refuses one that has already expired', function() {
+            const kit = signedIn(NOW - 1);
+
+            expect(kit.adapter.currentToken()).toBe(null);
+            return expect(kit.adapter.handoff()).toBe(null);
+        });
+
+        it('refuses one that lapses inside the skew', function() {
+            /* The gate is `currentToken()` rather than a comparison
+               written again here, so the two cannot come to disagree
+               about what "expired" means. A token with thirty seconds
+               left is one this adapter refuses to send a request on;
+               handing it to another page would be sending it on
+               somebody else's behalf. */
+            const kit = signedIn(NOW + EXPIRY_SKEW_MS / 2);
+
+            return expect(kit.adapter.handoff()).toBe(null);
+        });
+
+        it('hands on nothing when nobody has signed in', function() {
+            return expect(harness().adapter.handoff()).toBe(null);
+        });
+    });
 });

@@ -282,7 +282,21 @@ export default [
            heavy has become a STATIC import of the loader, which is the
            one mistake this entry's whole shape exists to prevent. The
            budget is the alarm, because nothing else would ring: the site
-           would keep working perfectly, a little slower, for everybody. */
+           would keep working perfectly, a little slower, for everybody.
+
+           749 B -> 1.36 kB in M6-4, and the limit deliberately does NOT
+           move with it: the headroom is what is left to spend, and
+           spending it on something a reader cannot use should have to
+           be argued for. What arrived is `readHandoff` -- the token
+           `/admin` puts on the fragment has to come off the URL before
+           anything is downloaded, so it cannot live behind the dynamic
+           import like everything else does. About a tenth of the rise
+           is the WRITE half (`handoffFragment`, `withEditFlag`), which
+           only the shell calls and a reader still carries, because both
+           entries reach one module and Rollup shares it. That is the
+           price of the two surfaces spelling the handoff in one place,
+           and it is the right way round: a flag spelled twice is a link
+           that opens a page where nothing happens. */
         name: 'edit entry (every page)',
         path: closureOf('dist/edit.js'),
         limit: '1.5 kB',

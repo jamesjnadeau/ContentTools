@@ -188,6 +188,15 @@ A collection that declares no `page` gets no link, and the link is removed
 rather than emptied — a hidden `<a href="">` is a link to the current page,
 and a screen reader in links mode still offers it.
 
+**The link carries this tab's token**, because the page it opens is a
+different browsing context and usually a different origin, so it can see
+nothing `/admin` put away. The `href` itself carries only `?cms-edit` —
+copy it, middle-click it, and it reaches a page that says how to sign in
+— and the token is added only for an unmodified primary click, on the
+fragment, where the receiving script strips it before it loads anything.
+[Signing in](auth.md#handing-the-token-to-the-sites-own-page) has the
+whole argument.
+
 Saving from here writes the frontmatter block and **nothing else**: the body
 is never read, never rendered and never put back through a walker, so it
 comes back byte for byte. That is a property of the code path rather than of

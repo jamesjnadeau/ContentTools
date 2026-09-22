@@ -207,6 +207,75 @@ with a fixture, and a fixture sends no COOP.
   That is a longer-lived credential in `sessionStorage` than the
   default, and it is the App's setting rather than this tool's.
 
+## Handing the token to the site's own page
+
+`/admin` manages drafts and pull requests; the words of an entry are
+written on the site's own page, by [`dist/edit.js`](in-page.md). Those
+are two different browsing contexts, and usually two different origins —
+a draft's page is its pull request's deploy preview at
+`deploy-preview-12--site.netlify.app`. `sessionStorage` is per-origin
+*and* per-tab, and `target="_blank"` implies `noopener` in current
+browsers, so an author who signed in at `/admin` is invisible on the page
+they were just sent to.
+
+So the Edit link carries the token across, in the URL **fragment**:
+
+```
+https://deploy-preview-12--site.netlify.app/blog/hello/?cms-edit#cms-token=…&cms-key=…
+```
+
+The `?cms-edit` flag rides in the `href`, and the token does not. That
+split is the point. An `href` is what a context menu copies and what a
+middle click opens, so it carries nothing secret — the page it reaches
+puts its bar up and says how to sign in. The token is added only when the
+link is opened by an unmodified primary click, through `window.open`, and
+a ⌘-, ctrl-, shift- or middle-click falls through to the plain `href`
+deliberately: those mean "open this somewhere I choose", and taking them
+over would turn every one of them into a foreground tab.
+
+The receiving script takes the fragment off the URL with
+`history.replaceState` before it stores anything or downloads anything —
+`replaceState` rather than assigning the hash, because assigning adds a
+history entry, so Back would put the token back in the address bar. The
+site's own anchor is left exactly where it was.
+
+What crosses is the **stored value, byte for byte, and the key it lives
+under** — not a bearer string. That is what carries a GitHub App token's
+expiry across without the handoff knowing what an expiry is. The key is
+checked against a fixed list on the way in, so a crafted link cannot
+write an arbitrary key into somebody's `sessionStorage`.
+
+### What it costs, and what it does not
+
+A fragment is **never sent to a server and never appears in a
+`Referer`**, so it stays out of every access log. What it does reach is
+the address bar, that one session history entry, and anything with tab
+access — an extension, or somebody reading over a shoulder. The script
+removes it from all three on its first line; what it cannot undo is that
+it was there for that tick.
+
+It is worth being precise about why this is not OAuth's implicit grant,
+because the mechanism looks similar and the deprecation is well known.
+The implicit flow was dropped for two reasons, and neither describes
+this. The first is that an **authorization server** delivered a token to
+a `redirect_uri` supplied by the client, which made lax registration and
+open redirectors into token leaks. There is no authorization server here
+and no `redirect_uri`: the URL is computed by our own shell, from the
+deployment's own config, on an explicit click. The second is the absence
+of client binding, which allows token **injection** — and injection buys
+an attacker nothing here. A crafted `#cms-token=` link makes a victim's
+browser hold the *attacker's* token for that origin, but the repository
+comes from the site's config rather than from the token, so a token
+without write access makes the author's next Submit fail, and one with
+write access is something the attacker could have used directly. The
+residual is misattribution and annoyance, in both directions.
+
+What *does* carry over from that deprecation is only the mechanical part
+above: a bearer in a URL is visible in places a POST body is not.
+
+An adapter that declares no `handoff` is not broken, just quieter: the
+link still opens, and the page says how to sign in.
+
 ## Writing your own
 
 Assign an adapter and it wins over whatever the config asked for:
@@ -219,4 +288,7 @@ Implement `authenticate`, `logout` and `currentToken` and the shell
 works. Add `gate` and the sign-in screen becomes your button and your
 sentence instead of a token field. Add `resume` and it is awaited once
 at boot, after the config has loaded and before the first route, which
-is where a redirect-based flow finishes.
+is where a redirect-based flow finishes. Add `handoff` and the Edit
+link carries your token to the site's own page; return `null` whenever
+`currentToken()` would, so a token this tab refuses to use is not one it
+sends anywhere else.

@@ -211,6 +211,44 @@ test('a token in the tab brings the editor up over the site\'s own element',
     expect(await editor.evaluate(node => node.children.length)).toBe(0);
 });
 
+test('a token handed over on the fragment signs the tab in', async ({page}) => {
+    /* The link `/admin` opens, spelled the way the shell spells it, on a
+       tab that has never been signed in. Two browsing contexts do not
+       share `sessionStorage` -- and this one is usually a different
+       ORIGIN as well, because a draft's page is a deploy preview -- so
+       without the fragment this page could only say "sign in through the
+       admin screens in this tab", in a tab that is not that one.
+
+       Only the built artifact can say whether the claim happens BEFORE
+       the loader decides, since both live in the 749-byte entry and
+       everything they lead to is behind a dynamic specifier Rollup
+       wrote. */
+    await serveGitHub(page);
+    // A page to go Back to, and a tab holding nothing.
+    await page.goto(PAGE);
+    await page.goto(`${PAGE}?cms-edit#cms-token=github_pat_playwright`
+        + '&cms-key=content-tools%3Agithub-token&section-2');
+
+    await expect(panel(page)).toHaveClass(/ct-edit--editing/);
+
+    /* The token is off the address bar, and the site's own anchor is
+       not: a fragment is not a query string, and a page whose anchor
+       went missing because somebody signed in is a page that stopped
+       scrolling where it was asked to. */
+    expect(new URL(page.url()).hash).toBe('#section-2');
+    expect(new URL(page.url()).search).toBe('?cms-edit');
+
+    // And in the storage this tab's adapter reads, under the key that crossed.
+    expect(await page.evaluate(key => sessionStorage.getItem(key), TOKEN_KEY))
+        .toBe('github_pat_playwright');
+
+    /* REPLACED rather than assigned. Assigning the hash pushes a history
+       entry, so Back would put the token back in the address bar -- and
+       into whatever reads it there next. */
+    await page.goBack();
+    expect(new URL(page.url()).search).toBe('');
+});
+
 test('the content stylesheet reaches the light DOM', async ({page}) => {
     /* In Mode A the content stays in the page, so the editing
        affordances have to be styled by a real `<link>` in the site's own

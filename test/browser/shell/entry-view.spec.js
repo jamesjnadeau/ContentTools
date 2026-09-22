@@ -248,7 +248,7 @@ describe('the entry view', () => {
             const {find} = view({entry: ENTRY, config: CONFIG});
             const link = find('.ct-cms__entry-edit');
             expect(link.hidden).toBe(false);
-            expect(link.getAttribute('href')).toBe('/blog/hello/');
+            expect(link.getAttribute('href')).toBe('/blog/hello/?cms-edit');
             return expect(find('.ct-cms__entry-stale').hidden).toBe(true);
         });
     });

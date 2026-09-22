@@ -182,4 +182,41 @@ describe('PatAuthAdapter', function() {
             await auth.logout();
         }
     });
+
+    describe('handing the token to the site\'s own page', function() {
+
+        it('hands on the bearer it is holding', async function() {
+            const auth = adapter();
+            await auth.authenticate();
+
+            return expect(auth.handoff()).toEqual({
+                key: TOKEN_KEY, value: 'github_pat_typed'
+            });
+        });
+
+        it('hands on nothing when nobody has signed in', function() {
+            return expect(adapter().handoff()).toBe(null);
+        });
+
+        it('names the key THIS instance was built with', async function() {
+            /* `options.key` exists so a second adapter can be parked
+               somewhere else. A handoff naming the module default would
+               write the token where that instance is not looking, and
+               the page it opened would read as signed out with a
+               perfectly good token sitting one key away. */
+            const auth = adapter({key: 'somewhere:else'});
+            await auth.authenticate();
+
+            return expect(auth.handoff().key).toBe('somewhere:else');
+        });
+
+        it('hands on nothing when the storage has started refusing', function() {
+            /* The same answer `currentToken()` gives, which is the point
+               of routing through it: a tab that reads as signed out must
+               not hand a token to the next page. */
+            const auth = adapter({storage: hostileStorage(['getItem'])});
+
+            return expect(auth.handoff()).toBe(null);
+        });
+    });
 });

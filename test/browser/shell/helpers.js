@@ -107,26 +107,42 @@ export async function mountShell(options = {}) {
     return {el, fake, shadow: el.shadowRoot};
 }
 
-/** Wait until the shell's reflected state is no longer `loading`. */
-export async function settled(el, attempts = 100) {
-    for (let i = 0; i < attempts; i += 1) {
-        if (el.getAttribute('state') && el.getAttribute('state') !== 'loading') {
-            return;
-        }
-        await new Promise(resolve => setTimeout(resolve, 0));
-    }
-    throw new Error(`shell never settled; state=${el.getAttribute('state')}`);
-}
+/**
+ * How long a wait may take before it is called a failure.
+ *
+ * A DEADLINE rather than a count of event-loop turns, which is what
+ * these waits used to be. Several of the things waited on here are real
+ * requests to the test server -- the config, a `publicPath` that 404s
+ * -- and a hundred `setTimeout(0)` turns is not a duration: under a
+ * loaded runner it elapses in a few milliseconds while the round trip
+ * has not landed, so the suite fails on machine speed rather than on
+ * anything about the shell. Only ever paid in full by a test that was
+ * going to fail anyway.
+ */
+const DEADLINE_MS = 5000;
 
-/** Wait until `check()` is true, or fail saying what it was instead. */
-export async function until(check, describe = 'condition', attempts = 100) {
-    for (let i = 0; i < attempts; i += 1) {
+/** Wait for `check()`, yielding between tries, or throw `describe`. */
+async function waitFor(check, describe) {
+    const until = Date.now() + DEADLINE_MS;
+    do {
         if (check()) {
             return;
         }
         await new Promise(resolve => setTimeout(resolve, 0));
-    }
-    throw new Error(`${describe} never became true`);
+    } while (Date.now() < until);
+    throw new Error(describe());
+}
+
+/** Wait until the shell's reflected state is no longer `loading`. */
+export function settled(el) {
+    return waitFor(
+        () => el.getAttribute('state') && el.getAttribute('state') !== 'loading',
+        () => `shell never settled; state=${el.getAttribute('state')}`);
+}
+
+/** Wait until `check()` is true, or fail saying what it was instead. */
+export function until(check, describe = 'condition') {
+    return waitFor(check, () => `${describe} never became true`);
 }
 
 /** Sign in through the gate, exactly as a person does. */

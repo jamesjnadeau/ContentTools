@@ -36,6 +36,7 @@
 
 import type {AuthAdapter} from './types.js';
 import {APP_TOKEN_KEY, memoryStorage, sessionStorageOrMemory} from './storage.js';
+import type {Handoff} from './handoff.js';
 export {APP_TOKEN_KEY};
 import type {TokenStorage} from './storage.js';
 
@@ -148,6 +149,27 @@ export class GitHubAppAuthAdapter implements AuthAdapter {
             return null;
         }
         return held.token;
+    }
+
+    /**
+     * What crosses to the site's own page.
+     *
+     * The STORED shape, expiry and all, rather than the bearer alone:
+     * an App token lasts about eight hours and the page it lands on has
+     * no way to renew one, so a bearer handed over without its expiry
+     * would be a page that keeps sending a dead token and collecting
+     * 401s instead of saying, once, that the session is over.
+     *
+     * `currentToken()` is what gates it, so a token THIS adapter would
+     * refuse to use is not one it hands on. `held === null` after that
+     * cannot happen -- it is the same read -- and is kept for the
+     * narrowing, like the guard in `read` below.
+     */
+    handoff(): Handoff | null {
+        const held = this.read<Held>(APP_TOKEN_KEY);
+        return held === null || this.currentToken() === null
+            ? null
+            : {key: APP_TOKEN_KEY, value: JSON.stringify(held)};
     }
 
     async authenticate(): Promise<{token: string}> {
