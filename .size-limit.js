@@ -118,10 +118,21 @@ export default [
            than being taught what a fine-grained token is. Both adapters
            are named exports of one entry, so a deployment that stays on
            the PAT pays it here; the shell's own build tree-shakes
-           whichever adapter it does not construct. */
+           whichever adapter it does not construct.
+
+           13.5 kB -> 15.5 kB with the page mapping: `src/cms/preview.ts`
+           -- both directions of one mapping, so a URL built from a
+           collection's `page` template is recognised by the same
+           spelling that built it -- plus the `site` block and the
+           `page`/`body` schema with their pathed errors. It is here
+           rather than in the shell because in-page editing has two
+           readers that must agree about which entry a page is: the
+           script on the site's own page, and the /admin listing that
+           links to it. Two places that answer that question are two
+           places that can disagree. */
         name: 'cms entry',
         path: closureOf('dist/cms.js'),
-        limit: '13.5 kB',
+        limit: '15.5 kB',
         gzip: true
     },
     {

@@ -27,10 +27,27 @@ export {
     slugFromPath,
     slugify,
     expandSlug,
+    expandTokens,
     SLUG_TOKENS,
+    PAGE_TOKENS,
+    PREVIEW_TOKENS,
     mediaPath,
     mediaURL
 } from './config.js';
+
+/* Where an entry is published, and which entry a page is showing. Both
+ * directions of one mapping, so the admin screens can link out to a page
+ * and a script running on that page can recognise itself. */
+export {
+    pagePath,
+    previewOrigin,
+    editUrl,
+    editUrlIsStale,
+    entryForUrl,
+    declaredEntry,
+    bodySelector
+} from './preview.js';
+export type {PageEntry} from './preview.js';
 
 /* The client is public because a shell will want to reach past the entry
  * workflow eventually -- to read an arbitrary file, or to open a pull
@@ -47,6 +64,7 @@ export type {
     BackendConfig,
     BackendAuthConfig,
     MediaConfig,
+    SiteConfig,
     Collection,
     FolderCollection,
     FileCollection,

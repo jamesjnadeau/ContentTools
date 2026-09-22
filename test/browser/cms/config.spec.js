@@ -859,3 +859,157 @@ describe('the delete flag', function() {
         return expect(thrown.path).toBe('collections[0].delete');
     });
 });
+
+/* Where the content is PUBLISHED, which is what in-page editing needs and
+   nothing before it did. Every rule here is one an author cannot see the
+   effect of from the config file alone: a page that claims to be every
+   entry, a preview URL that quietly resolves to the live site, a token
+   spelled with spaces that builds correct URLs and recognises none of
+   them. */
+describe('the site block', function() {
+
+    it('is absent by default, and says so rather than guessing', function() {
+        const site = parseConfig(minimal()).site;
+        expect(site.base).toBe('');
+        return expect(site.preview).toBe(null);
+    });
+
+    it('normalises the base to leading-slash-no-trailing', function() {
+        const site = parseConfig(minimal({site: {base: 'ContentTools-test/'}})).site;
+        return expect(site.base).toBe('/ContentTools-test');
+    });
+
+    it('refuses an explicitly empty base, naming where', function() {
+        /* A site at the root omits `base` rather than writing it empty,
+           which is what every other optional string here already asks
+           for -- and `base:` with nothing after it is YAML's null, so
+           the natural spelling still works. */
+        return expect(errorFrom(minimal({site: {base: ''}})).path).toBe('site.base');
+    });
+
+    it('refuses a preview URL that is not absolute, naming where', function() {
+        const error = errorFrom(minimal({site: {preview: '/preview/{{pr}}'}}));
+        expect(error.path).toBe('site.preview');
+        return expect(error.message).toContain('different origin');
+    });
+
+    it('refuses a preview URL with no {{pr}}, naming where', function() {
+        const error = errorFrom(minimal({site: {preview: 'https://preview.example'}}));
+        expect(error.path).toBe('site.preview');
+        return expect(error.message).toContain('{{pr}}');
+    });
+
+    it('refuses a token that is not {{pr}}, naming where', function() {
+        const error = errorFrom(
+            minimal({site: {preview: 'https://x--{{slug}}.example/{{pr}}'}}));
+        return expect(error.path).toBe('site.preview');
+    });
+
+    it('drops a trailing slash, so joining a page path cannot double it', function() {
+        const site = parseConfig(minimal(
+            {site: {preview: 'https://dp-{{pr}}--x.netlify.app/'}})).site;
+        return expect(site.preview).toBe('https://dp-{{pr}}--x.netlify.app');
+    });
+});
+
+describe('the page template', function() {
+
+    function withPage(page, rest = {}) {
+        return minimal({
+            collections: [{name: 'blog', folder: 'content/blog', body: 'main',
+                           page, ...rest}]
+        });
+    }
+
+    it('is null when a collection is not pages', function() {
+        const collection = parseConfig(minimal()).collections[0];
+        expect(collection.page).toBe(null);
+        return expect(collection.body).toBe(null);
+    });
+
+    it('refuses a path that is not rooted, naming where', function() {
+        const error = errorFrom(withPage('blog/{{slug}}/'));
+        expect(error.path).toBe('collections[0].page');
+        return expect(error.message).toContain('starts with "/"');
+    });
+
+    it('refuses one with no {{slug}}, naming where', function() {
+        const error = errorFrom(withPage('/blog/'));
+        expect(error.path).toBe('collections[0].page');
+        return expect(error.message).toContain('claim the same page');
+    });
+
+    it('refuses an unknown token, naming where', function() {
+        /* `{{year}}` is a SLUG token and not a page one. A page URL is
+           recomputed every time something links to it, so a date token
+           here would be read from the clock at link time. */
+        const error = errorFrom(withPage('/blog/{{year}}/{{slug}}/'));
+        expect(error.path).toBe('collections[0].page');
+        return expect(error.message).toContain('{{slug}}');
+    });
+
+    it('refuses a stray brace, naming where', function() {
+        const error = errorFrom(withPage('/blog/{{slug}}-{draft}/'));
+        expect(error.path).toBe('collections[0].page');
+        return expect(error.message).toContain('brace');
+    });
+
+    it('stores one spelling of the token, spaces and all', function() {
+        /* The only template that is both EXPANDED and MATCHED AGAINST.
+           Expansion goes through the token regex and matching splits on
+           a literal, so without this a config written with spaces would
+           build correct URLs and then recognise none of them. */
+        const collection = parseConfig(withPage('/blog/{{ slug }}/')).collections[0];
+        return expect(collection.page).toBe('/blog/{{slug}}/');
+    });
+
+    it('requires a body selector alongside it, naming where', function() {
+        const error = errorFrom(minimal({
+            collections: [{name: 'blog', folder: 'content/blog', page: '/blog/{{slug}}/'}]
+        }));
+        expect(error.path).toBe('collections[0].body');
+        return expect(error.message).toContain('which element holds');
+    });
+
+    it('does not require a body selector without it', function() {
+        const collection = parseConfig(minimal({
+            collections: [{name: 'blog', folder: 'content/blog'}]
+        })).collections[0];
+        return expect(collection.body).toBe(null);
+    });
+
+    describe('on a file collection', function() {
+
+        function withFiles(files, rest = {}) {
+            return minimal({collections: [{name: 'pages', files, ...rest}]});
+        }
+
+        it('is a literal, so a token is refused naming the file', function() {
+            const error = errorFrom(withFiles(
+                [{name: 'about', file: 'src/about.md', page: '/{{slug}}/'}],
+                {body: 'main'}));
+            expect(error.path).toBe('collections[0].files[0].page');
+            return expect(error.message).toContain('no tokens at all');
+        });
+
+        it('is read when given', function() {
+            const collection = parseConfig(withFiles(
+                [{name: 'about', file: 'src/about.md', page: '/about/'}],
+                {body: 'main'})).collections[0];
+            return expect(collection.files[0].page).toBe('/about/');
+        });
+
+        it('requires a body selector on the collection, naming where', function() {
+            const error = errorFrom(withFiles(
+                [{name: 'about', file: 'src/about.md', page: '/about/'}]));
+            return expect(error.path).toBe('collections[0].body');
+        });
+
+        it('leaves a file that is not a page null', function() {
+            const collection = parseConfig(withFiles(
+                [{name: 'data', file: 'src/data.md'}])).collections[0];
+            expect(collection.files[0].page).toBe(null);
+            return expect(collection.body).toBe(null);
+        });
+    });
+});

@@ -55,6 +55,10 @@ media:
   folder: static/images # where uploads are committed
   publicPath: /images   # what the content references them by
 
+site:                   # optional -- see "Where the content is published"
+  base: /my-project     # path prefix the built site is served under
+  preview: https://deploy-preview-{{pr}}--site.netlify.app
+
 collections:
   - name: blog
     label: Blog
@@ -63,12 +67,15 @@ collections:
     delete: true        # default: false -- and may they remove them?
     extension: md       # default: md
     slug: "{{year}}-{{slug}}"   # default: "{{slug}}"
+    page: /blog/{{slug}}/       # where an entry is published
+    body: main                  # the element holding its rendered body
     fields:
       - {name: title, widget: string}
   - name: pages
     label: Pages
+    body: main
     files:
-      - {name: about, label: About, file: content/about.md}
+      - {name: about, label: About, file: content/about.md, page: /about/}
 ```
 
 ```js
@@ -107,6 +114,54 @@ import {slugify, expandSlug} from '@jamesjnadeau/content-tools/cms';
 slugify('Hello, World!');                      // 'hello-world'
 expandSlug(collection, 'Hello World!', new Date());   // '2026-hello-world'
 ```
+
+## Where the content is published
+
+`backend` says where the content is **stored**. `site` and `page` say where
+it is **served**, which is what lets an entry be edited on its own page
+rather than in an admin pane — see [in-page editing](in-page.md). Both are
+optional: a deployment that omits them edits perfectly well through the
+admin screens and simply offers no in-page editing.
+
+```js
+import {pagePath, editUrl, entryForUrl} from '@jamesjnadeau/content-tools/cms';
+
+pagePath(config, collection, 'hello');      // '/my-project/blog/hello/'
+editUrl(config, collection, 'hello', 12);   // the pull request's preview
+entryForUrl(config, location.href);         // {collection: 'blog', slug: 'hello'}
+```
+
+`page` is a URL template **relative to `site.base`**, and `{{slug}}` is its
+only token. Deliberately: a filename is decided once, when the entry is
+created, but a page URL is recomputed every time something links to it, so a
+`{{year}}` here would be read from the clock at link time and send an author
+editing a January post to last year's URL. A file collection writes `page`
+per file instead, as a literal — it names its entries one by one, so there
+is nothing for a template to vary over.
+
+`body` is the CSS selector for the element holding the rendered body, and it
+is **required** wherever `page` is set rather than defaulting to something
+like `main`. The in-page editor replaces that element's children with its
+own render of the markdown, so a wrong default would wipe the navigation off
+the screen the first time somebody pressed Edit.
+
+`site.base` is held apart from `page` rather than written into it, because
+one build can be served at two prefixes — this project's own test site
+answers at `/` and at `/ContentTools-test/` on the same host. `entryForUrl`
+matches a page reached by either.
+
+`site.preview` is the URL template for a pull request's preview deployment,
+with `{{pr}}` for its number. It is what makes an entry that is **not
+published yet** editable at all: a new post and a post under review are both
+absent from the live site, and the preview built for their pull request
+renders the very branch the editor commits to. Without it `editUrl` falls
+back to the live page, which shows the published text — so the shell warns
+rather than linking silently.
+
+Every rule here is checked at parse time with a `ConfigError` naming the
+path, for the reason `slug` is: a `page` with no `{{slug}}` claims to be
+every entry in its collection, and a `preview` written as a path resolves
+against the admin's own origin and quietly sends an author to the live site.
 
 `slugify` is the same function `safeFilename` uses for uploads, on purpose: a
 post and an image named from the same title have to agree on what a filename

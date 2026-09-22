@@ -63,6 +63,43 @@ export interface MediaConfig {
     readonly publicPath: string;
 }
 
+/**
+ * Where this deployment's content is PUBLISHED, so the editor can be taken
+ * to it.
+ *
+ * Separate from `backend`, which says where the content is stored. A repo
+ * and a site are different things and a deployment can know one without
+ * the other: a config with no `site` block edits perfectly well through
+ * the admin screens and simply offers no in-page editing, which is why
+ * every field here is optional.
+ */
+export interface SiteConfig {
+    /**
+     * Path prefix the built site is served under, with a leading slash and
+     * no trailing one, or `''` for a site at the root.
+     *
+     * Held apart from each collection's `page` rather than written into
+     * it, because one build can be served at two prefixes. This one is,
+     * deliberately: the test site answers at `/` on Netlify and at
+     * `/ContentTools-test/` on Pages AND on Netlify, through a rewrite. A
+     * `page` carrying the prefix would match a page URL on one of those
+     * and not the other, and the author would be told the page they are
+     * looking at is not an entry.
+     */
+    readonly base: string;
+    /**
+     * URL template for a pull request's preview deployment, e.g.
+     * `https://deploy-preview-{{pr}}--example.netlify.app`, or null.
+     *
+     * This is what makes an entry that is not published yet editable at
+     * all. A brand-new post and a post under review are both absent from
+     * the live site, so the live URL cannot show them; the preview built
+     * for their pull request can, and it renders the branch the editor
+     * would be committing to.
+     */
+    readonly preview: string | null;
+}
+
 /** One choice in a `select` field. */
 export interface FieldOption {
     readonly value: string;
@@ -135,6 +172,16 @@ export interface FolderCollection {
      */
     readonly slug: string;
     readonly fields: readonly Field[];
+    /**
+     * URL template for a published entry, e.g. `/blog/{{slug}}/`, relative
+     * to `site.base`; null when this collection's entries are not pages.
+     *
+     * Without it an entry of this collection has nowhere to be edited in
+     * place, which is a thing the shell says out loud rather than a
+     * silently missing button -- see `docs/in-page.md`.
+     */
+    readonly page: string | null;
+    readonly body: string | null;
 }
 
 /** A fixed set of named files, each edited in place. */
@@ -143,6 +190,7 @@ export interface FileCollection {
     readonly name: string;
     readonly label: string;
     readonly files: readonly FileEntry[];
+    readonly body: string | null;
 }
 
 export interface FileEntry {
@@ -150,6 +198,14 @@ export interface FileEntry {
     readonly label: string;
     readonly file: string;
     readonly fields: readonly Field[];
+    /**
+     * The URL this file is published at, e.g. `/about/`, relative to
+     * `site.base`; null when it is not a page.
+     *
+     * A literal, with no tokens: a file collection names its entries one
+     * by one, so there is nothing for a template to vary over.
+     */
+    readonly page: string | null;
 }
 
 export type Collection = FolderCollection | FileCollection;
@@ -157,6 +213,7 @@ export type Collection = FolderCollection | FileCollection;
 export interface CmsConfig {
     readonly backend: BackendConfig;
     readonly media: MediaConfig;
+    readonly site: SiteConfig;
     readonly collections: readonly Collection[];
 }
 
@@ -181,6 +238,21 @@ const DEFAULT_SLUG = '{{slug}}';
  */
 export const SLUG_TOKENS: readonly string[] = Object.freeze(
     ['slug', 'year', 'month', 'day']);
+
+/**
+ * The names a collection's `page` template may use.
+ *
+ * Only the slug, and deliberately not the date tokens `slug` has. A
+ * filename is decided once, when the entry is created; a page URL has to
+ * be recomputed from the entry every time something links to it, and the
+ * only thing about an entry that is certainly still true later is its
+ * slug. A `{{year}}` here would be read from the clock at LINK time and
+ * send an author editing a January post to last year's URL.
+ */
+export const PAGE_TOKENS: readonly string[] = Object.freeze(['slug']);
+
+/** The names `site.preview` may use. */
+export const PREVIEW_TOKENS: readonly string[] = Object.freeze(['pr']);
 
 /**
  * Anything written as a token, known or not.
@@ -330,6 +402,48 @@ function parseFields(value: unknown, path: string): Field[] {
 }
 
 /**
+ * The tokens a template uses, refusing any it may not.
+ *
+ * One helper for `slug`, `page` and `site.preview` rather than the same
+ * loop three times, for the reason `SLUG_TOKEN` is one constant: a check
+ * looser than the expansion writes the typo straight through. `{{Slug}}`
+ * is not a token, because the tokens are lower case, so nothing replaces
+ * it -- and every filename or URL this deployment builds then carries
+ * those eight characters literally, from a config that looks right.
+ */
+function templateTokens(
+    template: string, allowed: readonly string[], path: string
+): Set<string> {
+    const used = new Set<string>();
+    for (const [, name] of template.matchAll(SLUG_TOKEN)) {
+        const token = name.trim();
+        if (!allowed.includes(token)) {
+            throw new ConfigError(
+                path,
+                `"{{${name}}}" is not a token here; expected `
+                + (allowed.length
+                    ? `one of ${allowed.map(t => `{{${t}}}`).join(', ')}`
+                    : 'no tokens at all'));
+        }
+        used.add(token);
+    }
+
+    /* A brace nothing above accounted for. `{{slug}}-{draft}` passes
+       every check so far -- it has its `{{slug}}`, and the single-braced
+       word is not a token at all, so no rule looks at it -- and then
+       every file the collection ever creates is called
+       `hello-{draft}.md`. Nobody connects that to the config, because
+       the config looks like it worked. */
+    if (/[{}]/.test(template.replace(SLUG_TOKEN, ''))) {
+        throw new ConfigError(
+            path,
+            `"${template}" has a brace that is not part of a token;`
+            + ' a token is written {{like-this}}');
+    }
+    return used;
+}
+
+/**
  * A `slug` template, checked.
  *
  * Every rule here names a failure that is invisible once the file is
@@ -349,31 +463,7 @@ function slugTemplate(raw: unknown, path: string): string {
             path, `"${template}" contains "/"; a slug names one file, not a path`);
     }
 
-    const used = new Set<string>();
-    for (const [, name] of template.matchAll(SLUG_TOKEN)) {
-        const token = name.trim();
-        if (!SLUG_TOKENS.includes(token)) {
-            throw new ConfigError(
-                path,
-                `"{{${name}}}" is not a slug token; expected one of `
-                + SLUG_TOKENS.map(t => `{{${t}}}`).join(', '));
-        }
-        used.add(token);
-    }
-
-    /* A brace nothing above accounted for. `{{slug}}-{draft}` passes
-       every check so far -- it has its `{{slug}}`, and the single-braced
-       word is not a token at all, so no rule looks at it -- and then
-       every file the collection ever creates is called
-       `hello-{draft}.md`. Nobody connects that to the config, because
-       the config looks like it worked. */
-    const rest = template.replace(SLUG_TOKEN, '');
-    if (/[{}]/.test(rest)) {
-        throw new ConfigError(
-            path,
-            `"${template}" has a brace that is not part of a token;`
-            + ' a token is written {{slug}}');
-    }
+    const used = templateTokens(template, SLUG_TOKENS, path);
 
     /* Without `{{slug}}` the template says the same thing for every
        entry, so the second one an author writes this year collides with
@@ -388,10 +478,116 @@ function slugTemplate(raw: unknown, path: string): string {
     return template;
 }
 
+/**
+ * A `page` template, checked. Absent is null: not every collection is pages.
+ *
+ * `slugged` is false for a file collection's entries, which name their
+ * page one by one and so have nothing for a token to vary over.
+ */
+function pageTemplate(raw: unknown, path: string, slugged: boolean): string | null {
+    if (raw === undefined || raw === null) {
+        return null;
+    }
+    const template = str(raw, path);
+
+    /* Rooted, because this is matched against `location.pathname` and
+       joined onto an origin. A relative `blog/{{slug}}/` would match
+       nothing and build a URL relative to whatever page happened to be
+       open, so the failure would depend on where the author was
+       standing. */
+    if (!template.startsWith('/')) {
+        throw new ConfigError(
+            path, `"${template}" is not rooted; a page path starts with "/"`);
+    }
+
+    const used = templateTokens(template, slugged ? PAGE_TOKENS : [], path);
+    if (slugged && !used.has('slug')) {
+        throw new ConfigError(
+            path,
+            `"${template}" has no {{slug}}, so every entry in this`
+            + ' collection would claim the same page');
+    }
+
+    /* Stored with ONE spelling of its token. `{{ slug }}` is legal --
+       `templateTokens` trims -- and this template is the only one that
+       is both expanded and MATCHED AGAINST, by two pieces of code that
+       would otherwise have to agree about whitespace on their own. They
+       would not: expansion goes through the token regex and matching
+       splits on a literal, so a config written with spaces would build
+       correct URLs and then recognise none of them. Normalising here is
+       what makes that impossible rather than tested for. */
+    return expandTokens(template, {slug: '{{slug}}'});
+}
+
+/** The `site.preview` template, checked. */
+function previewTemplate(raw: unknown, path: string): string | null {
+    if (raw === undefined || raw === null) {
+        return null;
+    }
+    const template = str(raw, path);
+
+    /* Absolute, and that is the whole nature of the thing: a preview
+       deployment is a DIFFERENT ORIGIN from the one the admin screens
+       are served from. A path here would resolve against this origin
+       and quietly send an author to a page of the live site that shows
+       the published text, so they would edit what looked like their
+       draft and find none of their changes in it. */
+    if (!/^https?:\/\//.test(template)) {
+        throw new ConfigError(
+            path,
+            `"${template}" is not an absolute http(s) URL; a preview`
+            + ' deployment is served from a different origin');
+    }
+
+    if (!templateTokens(template, PREVIEW_TOKENS, path).has('pr')) {
+        throw new ConfigError(
+            path,
+            `"${template}" has no {{pr}}, so every pull request would`
+            + ' preview at the same URL');
+    }
+    return template.replace(/\/+$/, '');
+}
+
+/** The optional `site` block. Absent means "no in-page editing here". */
+function parseSite(raw: unknown): SiteConfig {
+    const input = raw === undefined || raw === null ? {} : object(raw, 'site');
+    const base = optionalStr(input.base, 'site.base', '');
+    return Object.freeze({
+        /* Normalised to leading-slash-no-trailing so that
+           `${base}${page}` is right for both a site at the root and one
+           under a prefix, without either end guessing what the other
+           wrote. */
+        base: base === '' ? '' : `/${trimSlashes(base)}`,
+        preview: previewTemplate(input.preview, 'site.preview')
+    });
+}
+
+/**
+ * `body` is required once anything in the collection names a `page`.
+ *
+ * Refused here rather than defaulted to something like `main`, because a
+ * default that is wrong is worse than an absent one: the in-page editor
+ * REPLACES the container's children with its render of the markdown, so
+ * guessing `main` on a site whose `<main>` holds the whole page would
+ * wipe the navigation off the screen the first time somebody pressed
+ * Edit. Nothing is committed by that, but nothing tells them why either.
+ */
+function requireBody(hasPage: boolean, body: string | null, path: string): void {
+    if (hasPage && body === null) {
+        throw new ConfigError(
+            `${path}.body`,
+            'is required alongside `page`: in-page editing has to be told'
+            + ' which element holds the rendered body');
+    }
+}
+
 function parseCollection(raw: unknown, path: string): Collection {
     const input = object(raw, path);
     const name = str(input.name, `${path}.name`);
     const label = optionalStr(input.label, `${path}.label`, name);
+    const body = input.body === undefined || input.body === null
+        ? null
+        : str(input.body, `${path}.body`);
 
     /* `folder` and `files` are what distinguish the two kinds, so a
        collection carrying both is ambiguous rather than merely redundant --
@@ -415,19 +611,27 @@ function parseCollection(raw: unknown, path: string): Collection {
                 name: fileName,
                 label: optionalStr(file.label, `${at}.label`, fileName),
                 file: trimSlashes(str(file.file, `${at}.file`)),
-                fields: Object.freeze(parseFields(file.fields, `${at}.fields`))
+                fields: Object.freeze(parseFields(file.fields, `${at}.fields`)),
+                page: pageTemplate(file.page, `${at}.page`, false)
             });
         });
         if (files.length === 0) {
             throw new ConfigError(`${path}.files`, 'is empty');
         }
-        return Object.freeze({kind: 'file' as const, name, label, files: Object.freeze(files)});
+        requireBody(files.some(f => f.page !== null), body, path);
+        return Object.freeze({
+            kind: 'file' as const, name, label, files: Object.freeze(files), body
+        });
     }
 
+    const page = pageTemplate(input.page, `${path}.page`, true);
+    requireBody(page !== null, body, path);
     return Object.freeze({
         kind: 'folder' as const,
         name,
         label,
+        page,
+        body,
         folder: trimSlashes(str(input.folder, `${path}.folder`)),
         create: optionalBool(input.create, `${path}.create`, false),
         delete: optionalBool(input.delete, `${path}.delete`, false),
@@ -491,6 +695,7 @@ export function parseConfig(input: CmsConfigInput): CmsConfig {
                what the published markdown says. */
             publicPath: str(media.publicPath, 'media.publicPath').replace(/\/+$/, '')
         }),
+        site: parseSite(root.site),
         collections: Object.freeze(collections)
     });
 }
@@ -612,7 +817,22 @@ export function expandSlug(collection: FolderCollection, title: string, at: Date
        template otherwise. That is the point of checking it there: this
        cannot produce `{{Year}}-hello`, and there is no fallback here
        whose behaviour anybody would have to guess at. */
-    return collection.slug.replace(SLUG_TOKEN, (_, name: string) => values[name.trim()]);
+    return expandTokens(collection.slug, values);
+}
+
+/**
+ * Substitute `{{token}}` throughout, from a map of known names.
+ *
+ * Shared by the three templates this config carries -- `slug`, a
+ * collection's `page` and `site.preview` -- because they are checked by
+ * one function and so must be expanded by one too. A second expander
+ * that handled `{{ slug }}` differently from the checker would accept a
+ * template at parse time and then write the braces into a filename.
+ */
+export function expandTokens(
+    template: string, values: Readonly<Record<string, string>>
+): string {
+    return template.replace(SLUG_TOKEN, (_, name: string) => values[name.trim()]);
 }
 
 /** The slug a repository path corresponds to, or null if it is not one. */
