@@ -80,11 +80,20 @@ const WHITESPACE = /[\t\n\r ]+/g;
  * Three richer versions were written before this one and all three were
  * code no test could fail: descending into nested children (already done
  * by the nested call), trimming either side of a `<br>`, and pruning
- * inline elements the trim had emptied. ContentEdit's serializer never
- * puts whitespace next to an inline tag and `HTMLString.optimize()`
- * drops empty ones, so none of those cases can arrive. What this has to
- * handle is bounded by `region.spec.js`, which feeds it nothing but real
- * `region.html()`.
+ * inline elements the trim had emptied. Inside a paragraph ContentEdit's
+ * serializer never puts whitespace next to an inline tag and
+ * `HTMLString.optimize()` drops empty ones, so none of those cases can
+ * arrive. What this has to handle is bounded by `region.spec.js` and
+ * `table-strong.spec.js`, which feed it nothing but real `region.html()`.
+ *
+ * A table cell is the exception to "never next to an inline tag": it is
+ * pretty-printed as `<td>\n    <strong>...`, so its first text node is
+ * all whitespace and the trim leaves it empty. That empty node has to go.
+ * mdast-util-to-markdown encodes the character before a strong run that
+ * opens on punctuation, and the last character of '' is `charCodeAt(-1)`,
+ * NaN -- which it writes as `&#xNAN;`. The same mismatch made `sameBlock()`
+ * report every such table changed, so a save rewrote tables nobody had
+ * touched.
  */
 function normalise(nodes: Node[]): Node[] {
     for (let i = 0; i < nodes.length; i += 1) {
@@ -102,7 +111,7 @@ function normalise(nodes: Node[]): Node[] {
         node.value = value;
     }
 
-    return nodes;
+    return nodes.filter(node => node.type !== 'text' || node.value !== '');
 }
 
 /** Adjacent text nodes serialize differently from one; merge them. */
