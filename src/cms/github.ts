@@ -148,7 +148,23 @@ export interface PullRequest {
     updated_at: string;
 }
 
+/* What we ASK for: GitHub's versioned media type, which is what pins the
+   API version alongside `X-GitHub-Api-Version`. */
 const JSON_MEDIA = 'application/vnd.github+json';
+
+/* What we SEND, and it is deliberately not the above. GitHub accepts the
+   versioned type on `Accept` and refuses it on a request body:
+   `415 -- Request bodies must declare Content-Type: application/json`.
+   So every write -- a blob, a tree, a commit, a ref, a pull request, a
+   label -- fails, which is to say the whole save path fails, while every
+   read succeeds and the deployment looks healthy right up to the moment
+   somebody presses Submit.
+
+   Nothing caught this for the life of the milestone because the in-memory
+   fake did not look at `Content-Type`, and a fake that accepts what the
+   real server rejects is a fake that certifies a broken client. It looks
+   at it now. */
+const JSON_BODY = 'application/json';
 
 export class GitHub {
 
@@ -216,7 +232,7 @@ export class GitHub {
         };
         if (options.body !== undefined) {
             init.body = JSON.stringify(options.body);
-            (init.headers as Record<string, string>)['Content-Type'] = JSON_MEDIA;
+            (init.headers as Record<string, string>)['Content-Type'] = JSON_BODY;
         }
         return this.http(`${this.apiBase}${path}`, init);
     }

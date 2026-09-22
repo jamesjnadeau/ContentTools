@@ -111,9 +111,34 @@ describe('requests', function() {
     });
 
     it('declares the content type of a body it sends', async function() {
+        /* `application/json`, NOT the versioned `application/vnd.github+json`
+           this asked for until the first save against a real repository.
+           GitHub wants the versioned type on `Accept` and refuses it on a
+           body -- `415 Request bodies must declare Content-Type:
+           application/json` -- so every write failed: blob, tree, commit,
+           ref, pull request, label. Every read succeeded, which is what made
+           it invisible; a deployment looked perfectly healthy until somebody
+           pressed Submit.
+
+           This test existed and PINNED the broken value, which is the part
+           worth remembering. It was written from the client's own source
+           rather than from the server's behaviour, so it asserted that the
+           code did what it does instead of that it does the right thing,
+           and the fake was equally happy to accept it. A test and a fake
+           that agree with the implementation and not with the world will
+           certify anything. */
         const {fake, client} = connect({'a.md': 'a'});
         await client.createBlob('x', 'utf-8');
-        return expect(fake.requests.at(-1)[2]['Content-Type']).toBe('application/vnd.github+json');
+        return expect(fake.requests.at(-1)[2]['Content-Type']).toBe('application/json');
+    });
+
+    it('still asks for the versioned media type', async function() {
+        /* The other half, so a fix to the line above cannot be "make them
+           the same again" in the other direction. `Accept` is where the API
+           version is pinned, and it is NOT `application/json`. */
+        const {fake, client} = connect({'a.md': 'a'});
+        await client.createBlob('x', 'utf-8');
+        return expect(fake.requests.at(-1)[2].Accept).toBe('application/vnd.github+json');
     });
 
     it('talks to a GitHub Enterprise host when told to', async function() {

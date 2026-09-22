@@ -198,6 +198,27 @@ export function createFakeGitHub(options = {}) {
 
         requests.push([method, path + (request.search || ''), init.headers ?? {}]);
 
+        /* GitHub refuses a request body that does not declare
+           `application/json` -- the VERSIONED type it wants on `Accept` is
+           rejected here, which is not a distinction any amount of reading
+           the docs makes obvious.
+
+           This check exists because its absence certified a broken client
+           for the whole of M3 through M5: the shipped `GitHub` client sent
+           `application/vnd.github+json` as its Content-Type, every write
+           against real GitHub came back 415, and 1,577 unit tests and 14
+           dist tests were green the entire time. A fake that accepts what
+           the real server refuses is worse than no fake, because it is
+           trusted. Found by the first save against a real repository. */
+        if (init.body !== undefined) {
+            const sent = (header(init.headers, 'content-type') ?? '')
+                .split(';')[0].trim().toLowerCase();
+            if (sent !== 'application/json') {
+                return fail(415, 'Request bodies must declare Content-Type: '
+                    + 'application/json. Resend the JSON body with that header.');
+            }
+        }
+
         const prefix = `/repos/${repo}`;
         if (!path.startsWith(prefix)) {
             return fail(404, 'Not Found');
