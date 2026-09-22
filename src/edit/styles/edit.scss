@@ -1,0 +1,84 @@
+// The IN-PAGE bar's stylesheet, imported with `?inline` and adopted into
+// the shadow root of the element this script appends to the site's own
+// <body>.
+//
+// Four constraints. The first two are the shell's, and they fail the same
+// silent way; the last two belong to this sheet alone, because this is the
+// only stylesheet in the project that lands on a page somebody else wrote.
+//
+//   NO url(). It compiles to a string inside a JavaScript chunk, so a
+//   relative URL has no stylesheet base to resolve against and would
+//   resolve against the PAGE -- a different page every time, on a site we
+//   have never seen.
+//
+//   NO @font-face. One declared inside a shadow root is ignored outright by
+//   Chromium and WebKit, so the editor's `icon` family is unavailable here
+//   and nothing below reaches for `type-icons`. The bar's affordances are
+//   words.
+//
+//   EVERY INHERITED PROPERTY IS ANSWERED, not just the ones that look like
+//   typography. Inheritance crosses a shadow boundary through the host, so
+//   a site with `body { font-family: cursive; letter-spacing: .12em;
+//   text-transform: uppercase }` styles this bar -- and it is not wrong to
+//   have done that. `all: initial` on :host is the only spelling of "none
+//   of it" that cannot fall out of step with a list.
+//
+//   THE :host RULES ARE THE SITE'S TO OVERRIDE, and nothing here can stop
+//   that. Rules in the outer tree beat `:host` rules whatever the
+//   specificity -- that is the spec rather than an ordering accident -- so
+//   `body > * { position: static }` unpins the bar and `* { display: none }`
+//   hides it. The mitigation is the tag name: `content-tools-edit-bar` is
+//   not a selector anybody writes by accident, so only a universal rule
+//   reaches it, and a site with one of those has already accepted what it
+//   does to every widget on the page.
+
+@use "../../styles/settings" as *;
+
+$edit-border-color: #d0d0d0;
+
+:host {
+    // Also resets `display` to inline and `position` to static, which is
+    // why both are set again immediately below.
+    all: initial;
+
+    display: block;
+    position: fixed;
+    right: 12px;
+    top: 12px;
+
+    // Clear of the site, and DELIBERATELY below the editor's own widgets,
+    // which sit at or above `$base-z-index`. A dialog a bar can cover is a
+    // dialog somebody cannot use.
+    z-index: $base-z-index - 1;
+}
+
+.ct-edit {
+    background: white;
+    border: 1px solid $edit-border-color;
+    border-radius: 2px;
+    box-shadow: 0 1px 3px $shadow-color;
+    box-sizing: border-box;
+    color: $text-color;
+    max-width: 320px;
+    padding: 8px 10px;
+    @include type-text();
+}
+
+.ct-edit__title {
+    color: black;
+    font-weight: bold;
+    margin: 0;
+}
+
+.ct-edit__hint {
+    margin: 4px 0 0;
+}
+
+// The two states that need somebody to go and change a file say so in the
+// colour this project already uses for a refusal. `not-an-entry` does not:
+// most pages of most sites are not entries, and colouring the ordinary
+// answer as a fault teaches an author to ignore the colour.
+.ct-edit--broken .ct-edit__title,
+.ct-edit--no-body .ct-edit__title {
+    color: $cancel-action-color;
+}

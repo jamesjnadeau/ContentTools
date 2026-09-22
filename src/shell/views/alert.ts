@@ -12,7 +12,7 @@
  * inserted already-populated is silent, which is the failure that looks
  * exactly like success.
  */
-import {h} from '../render.js';
+import {h} from '../../core/render.js';
 import type {Described} from '../errors.js';
 
 /** The permanent, empty region. Built once; filled by `showAlert`. */

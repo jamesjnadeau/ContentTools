@@ -12,7 +12,7 @@
  * actively wrong from M5-4, when the frontmatter fields land in this same
  * panel and a rebuild starts eating keystrokes.
  */
-import {h} from '../render.js';
+import {h} from '../../core/render.js';
 import {formatRoute} from '../routes.js';
 import {buildFields} from './fields.js';
 import type {FieldsState, FieldsView, WidgetSource} from './fields.js';

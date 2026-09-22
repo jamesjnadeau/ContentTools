@@ -25,7 +25,7 @@
  * rate-limited authenticated request per tile to show what a static host
  * was giving away.
  */
-import {h, list} from '../render.js';
+import {h, list} from '../../core/render.js';
 import {mediaURL} from '../../cms/config.js';
 import {imageType} from '../../cms/media.js';
 import type {CmsConfig} from '../../cms/config.js';

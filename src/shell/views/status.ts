@@ -8,7 +8,7 @@
  * hand-edited config file -- is also the one the operator can act on
  * immediately, which is why the alert carries the offending path.
  */
-import {h} from '../render.js';
+import {h} from '../../core/render.js';
 import {alertRegion, showAlert} from './alert.js';
 import type {Described} from '../errors.js';
 

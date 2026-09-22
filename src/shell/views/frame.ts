@@ -11,7 +11,7 @@
  * For the same reason the view pane and the slot are siblings: `update()`
  * rebuilds the pane's contents freely and can never reach the slot.
  */
-import {h, list} from '../render.js';
+import {h, list} from '../../core/render.js';
 import {alertRegion, showAlert} from './alert.js';
 import {buildEntries} from './entries.js';
 import type {Entries} from './entries.js';

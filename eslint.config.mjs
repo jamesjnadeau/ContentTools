@@ -30,12 +30,20 @@ export default [
         rules: NO_GLOBALS
     },
     {
-        // Exempt: the seam itself; the entry that attaches the browser
-        // globals; and the playground, which is a HOST page rather than
-        // library code -- exactly the sort of integration that is supposed
-        // to touch window directly.
+        // Exempt: the seam itself; the two entries where the ambient
+        // browser globals enter, because a plain <script> has no element
+        // to hand it a document; and the playground, which is a HOST page
+        // rather than library code -- exactly the sort of integration
+        // that is supposed to touch window directly.
+        //
+        // `src/edit/index.ts` is the whole of the second case and
+        // deliberately the only file of it: it reads `window` once, at
+        // the bottom, and passes it down. Everything under `src/edit/`
+        // besides this one file takes its document as a parameter and is
+        // held to the rule.
         files: ['src/core/document-root-context.ts', 'src/core/root-context.ts',
-                'src/global.ts', 'src/playground/**/*.{ts,js}'],
+                'src/global.ts', 'src/edit/index.ts',
+                'src/playground/**/*.{ts,js}'],
         rules: {'no-restricted-globals': 'off'}
     }
 ];

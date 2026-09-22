@@ -18,7 +18,7 @@
  * shells out to Sass. It opens no page.
  */
 import {test, expect} from '@playwright/test';
-import {closureOf, orphanChunks} from '../../scripts/chunk-closure.mjs';
+import {closureOf, lazyClosureOf, orphanChunks} from '../../scripts/chunk-closure.mjs';
 
 const AT = 'test/golden/fixtures/chunk-closure';
 
@@ -67,10 +67,44 @@ test.describe('closureOf', () => {
     });
 });
 
+test.describe('lazyClosureOf', () => {
+    test('is everything reached ONLY through a dynamic import', () => {
+        /* `dist/edit.js`'s shape, and both halves of what this number
+           means. `chunks/five.js` is in it although nothing imports it
+           dynamically -- the lazily loaded chunk imports it STATICALLY,
+           and a walker that stopped at the first hop would under-measure
+           the thing this budget states. `chunks/two.js` is NOT in it
+           although the lazy side reaches it, because the static side
+           reached it first: the page already has those bytes, so they
+           are not part of what pressing Edit costs. */
+        expect(lazyClosureOf(`${AT}/entry-mixed.js`).sort()).toEqual([
+            `${AT}/chunks/five.js`,
+            `${AT}/chunks/four.js`
+        ]);
+    });
+
+    test('is the whole graph for an entry whose body is only a decision', () => {
+        expect(lazyClosureOf(`${AT}/entry-b.js`)).toEqual([
+            `${AT}/chunks/three.js`
+        ]);
+    });
+
+    test('throws when there is nothing lazy about the entry', () => {
+        /* Not an empty list, for the reason `closureOf` throws for a
+           missing file: size-limit given no paths measures nothing and
+           passes. An entry whose dynamic import has been inlined --
+           `inlineDynamicImports`, a bundler default changing -- is
+           precisely what this budget exists to catch, and it would
+           otherwise catch it by going green. */
+        expect(() => lazyClosureOf(`${AT}/entry-a.js`))
+            .toThrow(/imports nothing dynamically/);
+    });
+});
+
 test.describe('orphanChunks', () => {
     test('reports a chunk no entry reaches', () => {
         expect(orphanChunks(
-            [`${AT}/entry-a.js`, `${AT}/entry-b.js`],
+            [`${AT}/entry-a.js`, `${AT}/entry-b.js`, `${AT}/entry-mixed.js`],
             [`${AT}/chunks`]
         )).toEqual([`${AT}/chunks/orphan.js`]);
     });

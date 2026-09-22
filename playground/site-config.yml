@@ -1,0 +1,32 @@
+# The config for the FAKE SITE in first-post.html -- a site's own
+# deployment config, not the playground's.
+#
+# Separate from cms-config.yml on purpose. That one describes a repository
+# an admin screen browses; this one also has to describe where each entry
+# is PUBLISHED and which element on that page holds its body, which is
+# what the in-page script needs and the admin screen does not.
+backend:
+  repo: owner/site
+  branch: main
+
+media:
+  folder: static/images
+  publicPath: /images
+
+collections:
+  - name: blog
+    label: Blog
+    folder: content/blog
+    create: true
+    # Where an entry of this collection is published. A real site writes
+    # `/blog/{{slug}}/`; the playground has no router, so its one post is
+    # a file whose name IS the slug -- `first-post.html`, entry
+    # `blog/first-post`.
+    page: /playground/{{slug}}.html
+    # The element whose children ARE the entry's body. Point this at the
+    # page wrapper instead and the editor replaces the site's layout with
+    # a post -- which is why the bar names the element it found.
+    body: article.post
+    fields:
+      - {name: title, widget: string}
+      - {name: date, widget: datetime}

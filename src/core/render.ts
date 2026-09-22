@@ -1,9 +1,13 @@
 /* Sixty lines standing in for a view library, and the reason they earn it.
  *
- * `src/shell/` may not import a package -- test/browser/shell/imports.spec.js
- * asserts zero bare specifiers -- but that constraint is not why this file is
- * small. The alternative to it is not Lit, it is `innerHTML`, and `innerHTML`
- * is wrong here for one concrete reason: DOM IDENTITY.
+ * In `src/core/` because TWO surfaces build chrome now -- the admin shell and
+ * the in-page editing script -- and a second copy of this would be a second
+ * set of rules about when a node is kept.
+ *
+ * Neither may import a package -- test/browser/shell/imports.spec.js asserts
+ * zero bare specifiers -- but that constraint is not why this file is small.
+ * The alternative to it is not Lit, it is `innerHTML`, and `innerHTML` is
+ * wrong here for one concrete reason: DOM IDENTITY.
  *
  * Re-rendering by assigning innerHTML builds new nodes, so it destroys the
  * caret and the selection in whatever field the user is typing into -- every

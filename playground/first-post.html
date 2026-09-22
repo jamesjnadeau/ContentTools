@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A first post &mdash; Example</title>
+
+<!-- Where this deployment's config lives. Without it the script looks in
+     `/cms-config.yml`, which is right for a site served at the root and
+     wrong for this one. -->
+<meta name="cms:config" content="/playground/site-config.yml">
+
+<style>
+    body { font: 16px/1.5 Georgia, serif; margin: 0; color: #222; }
+    header, footer { background: #f3f3f3; padding: 12px 24px; }
+    nav a { margin-right: 12px; }
+    .layout { max-width: 40em; margin: 0 auto; padding: 24px; }
+    .post h2 { font-size: 1.1em; }
+</style>
+</head>
+<body>
+
+<header>
+    <strong>Example</strong>
+    <nav><a href="./index.html">Home</a><a href="./cms.html">Admin</a></nav>
+</header>
+
+<div class="layout">
+    <!-- Rendered by the site's TEMPLATE from the entry's frontmatter, so
+         it is outside anything the body editor can touch. Editing these
+         is the frontmatter panel's job, not the editor's. -->
+    <h1>A first post</h1>
+    <p><time datetime="2026-09-01">1 September 2026</time></p>
+
+    <!-- `body: article.post` in site-config.yml. The children of THIS
+         element are the entry's markdown body, and nothing else on the
+         page is. -->
+    <article class="post">
+        <p>The first paragraph of the post, as the site renders it.</p>
+        <h2>A heading</h2>
+        <p>A second paragraph, with <a href="#">a link</a> in it.</p>
+    </article>
+</div>
+
+<footer>
+    <p>Open this page with <code>?cms-edit</code> to bring up the editing
+    surface. Without it, and without a token in this tab, the script below
+    downloads nothing else at all &mdash; which is the point of it: every
+    reader of every page pays for that decision and no more.</p>
+</footer>
+
+<!-- The one line a site adds. It goes on EVERY page, so what it costs a
+     reader is the whole argument for its shape. -->
+<script type="module" src="../dist/edit.js"></script>
+
+</body>
+</html>

@@ -1,10 +1,11 @@
-/* The shell's dependency direction, enforced rather than commented.
+/* The two editing surfaces' dependency direction, enforced rather than
+ * commented.
  *
  * Three silent failures live here, and none of them produces an error at
  * the point of the mistake:
  *
- * 1. A `src/shell/` or `src/entry/` file importing another ENTRY of the
- *    same Vite build.
+ * 1. A `src/shell/`, `src/entry/` or `src/edit/` file importing another
+ *    ENTRY of the same Vite build.
  *    Rollup turns an entry that another entry imports into a facade and
  *    hoists its body into a shared chunk. For `src/element/index.ts` that
  *    body includes `customElements.define`, and `package.json` lists
@@ -21,10 +22,10 @@
  *    stating: it is the entry of a SEPARATE Vite invocation (`--mode
  *    cms`), so inside the esm build it is an ordinary module.
  *
- * 2. Anything below the shell importing the shell. The Milestone 1
- *    obligation is that the editor knows nothing about persistence and its
- *    contract ends at `ct-saved`; one import the other way and the editor
- *    entry starts carrying a CMS.
+ * 2. Anything below a surface importing one. The Milestone 1 obligation
+ *    is that the editor knows nothing about persistence and its contract
+ *    ends at `ct-saved`; one import the other way and the editor entry
+ *    starts carrying a CMS.
  *
  * 3. A bare package in either. "Vanilla, no new runtime dependency" is a
  *    decision, and a decision nobody checks is a preference.
@@ -47,7 +48,16 @@ const ENTRY = import.meta.glob('../../../src/entry/**/*.ts', {
     query: '?raw', eager: true, import: 'default'
 });
 
-const ABOVE = {...SHELL, ...ENTRY};
+/* `src/edit/` -- the script that runs on the SITE's own pages -- is the
+   second surface, and it is held to the same rules for the same reasons.
+   It is also the one with the sharpest version of rule 3: it is
+   downloaded by every reader of every page, so a bare package here is
+   not a preference lost, it is somebody's page weight. */
+const EDIT = import.meta.glob('../../../src/edit/**/*.ts', {
+    query: '?raw', eager: true, import: 'default'
+});
+
+const ABOVE = {...SHELL, ...ENTRY, ...EDIT};
 
 const BELOW = import.meta.glob(
     ['../../../src/cms/**/*.ts', '../../../src/auth/**/*.ts',
@@ -87,25 +97,29 @@ function resolveFrom(importer, specifier) {
     return parts.join('/');
 }
 
-describe('the shell imports one way only', () => {
+describe('the editing surfaces import one way only', () => {
     it('has source files to check', () => {
-        /* All three globs. If any silently matched nothing -- a renamed
+        /* All four globs. If any silently matched nothing -- a renamed
            directory, a changed extension -- every assertion below would
            pass while checking no code at all. */
         expect(Object.keys(SHELL).length).toBeGreaterThan(0);
         expect(Object.keys(ENTRY).length).toBeGreaterThan(0);
+        expect(Object.keys(EDIT).length).toBeGreaterThan(0);
         expect(Object.keys(BELOW).length).toBeGreaterThan(0);
     });
 
     it('never reaches for a sibling build ENTRY, only the class modules', () => {
-        /* The other three entries of the `esm` build, as vite.config.mjs
-           lists them. `src/shell/index.ts` is the fourth and is one of
-           these globs' own, so a file importing IT is caught by the
-           count below being wrong rather than by this. */
+        /* Every OTHER entry of the `esm` build, as vite.config.mjs lists
+           them -- the two surfaces' own entries included, because they
+           are siblings to each other. Neither can name itself here: a
+           module does not import itself, so a rule about `src/edit/
+           index.ts` is a rule for every file that is not it. */
         const ENTRIES = [
             /\/src\/element\/index(\.js)?$/,
             /\/src\/markdown\/index(\.js)?$/,
-            /\/src\/index(\.js)?$/
+            /\/src\/index(\.js)?$/,
+            /\/src\/shell\/index(\.js)?$/,
+            /\/src\/edit\/index(\.js)?$/
         ];
         const violations = [];
         for (const [path, source] of Object.entries(ABOVE)) {
@@ -124,8 +138,14 @@ describe('the shell imports one way only', () => {
         const violations = [];
         for (const [path, source] of Object.entries(BELOW)) {
             for (const specifier of specifiersOf(source)) {
-                if (specifier.startsWith('.')
-                    && resolveFrom(path, specifier).includes('/src/shell/')) {
+                if (!specifier.startsWith('.')) { continue; }
+                const resolved = resolveFrom(path, specifier);
+                /* Both surfaces, one rule. They sit at the same level
+                   and the direction is the same for each: down into the
+                   editor, the parser and the git client, and never back
+                   up into a screen. */
+                if (resolved.includes('/src/shell/')
+                    || resolved.includes('/src/edit/')) {
                     violations.push(`${path} -> ${specifier}`);
                 }
             }

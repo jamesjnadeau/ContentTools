@@ -14,7 +14,8 @@
  */
 
 import type {AuthAdapter} from './types.js';
-import {memoryStorage, sessionStorageOrMemory} from './storage.js';
+import {memoryStorage, sessionStorageOrMemory, TOKEN_KEY} from './storage.js';
+export {TOKEN_KEY};
 /* Re-exported so `./cms` keeps exporting it from here, where every
    consumer already imports it from. */
 export type {TokenStorage} from './storage.js';
@@ -35,7 +36,6 @@ export interface PatAuthOptions {
     key?: string;
 }
 
-export const TOKEN_KEY = 'content-tools:github-token';
 
 /** Nobody signed in. */
 export class NotAuthenticatedError extends Error {

@@ -13,7 +13,7 @@
  * copy, and keying on that would rebuild the form -- losing focus --
  * every time somebody pressed Submit.
  */
-import {h} from '../render.js';
+import {h} from '../../core/render.js';
 import {buildWidget, DEFAULT_WIDGETS} from '../widgets/index.js';
 import type {Widget, WidgetFactory} from '../widgets/index.js';
 import type {Field} from '../../cms/config.js';

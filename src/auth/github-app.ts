@@ -35,14 +35,12 @@
  */
 
 import type {AuthAdapter} from './types.js';
-import {memoryStorage, sessionStorageOrMemory} from './storage.js';
+import {APP_TOKEN_KEY, memoryStorage, sessionStorageOrMemory} from './storage.js';
+export {APP_TOKEN_KEY};
 import type {TokenStorage} from './storage.js';
 
 /** Where a person authorises the App. */
 export const AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
-
-/** The token, with when it stops working. */
-export const APP_TOKEN_KEY = 'content-tools:github-app-token';
 
 /** The half-finished flow: what we sent, and where we were. */
 export const APP_FLOW_KEY = 'content-tools:github-app-flow';

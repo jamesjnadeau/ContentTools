@@ -97,6 +97,49 @@ export function closureOf(entry) {
 const toRepoPath = file => relative(ROOT, file).split(/[\\/]/).join(posix.sep);
 
 /**
+ * Everything an entry reaches ONLY by `import(...)`: its full closure
+ * minus its static one.
+ *
+ * The lazy half needs a budget as much as the eager half does, and for
+ * `dist/cms.js` a glob was enough because its lazy chunk has a directory
+ * to itself. `dist/edit.js`'s does not -- the in-page surface is emitted
+ * into `dist/chunks/` beside the shared library, so a glob there would
+ * charge it the editor and the parser as well, which is exactly the
+ * mis-attribution `closureOf` exists to end.
+ *
+ * What this number states is the cost of PRESSING Edit: the bytes a
+ * reader never fetches and an author fetches once. A set difference says
+ * exactly that and a second walk would not -- a chunk the entry already
+ * imported statically is already in the page, so charging it here would
+ * report a download that does not happen. The mirror of that is also
+ * true and also intended: a chunk this entry reaches lazily and ANOTHER
+ * entry reaches statically is counted in both, because they are
+ * properties of two separate downloads rather than addends of a package
+ * total.
+ *
+ * Throws when the difference is empty, for the reason `closureOf` throws
+ * for a missing entry: a budget measured over nothing passes trivially,
+ * and an entry whose dynamic import has quietly been inlined is precisely
+ * what this line is here to catch.
+ */
+export function lazyClosureOf(entry) {
+    const eager = new Set(closureOf(entry));
+    const all = walk([resolve(ROOT, entry)], file => new Set([
+        ...specifiers(file, STATIC_IMPORT),
+        ...specifiers(file, DYNAMIC_IMPORT)
+    ]));
+
+    const lazy = [...all].map(toRepoPath).filter(path => !eager.has(path));
+    if (!lazy.length) {
+        throw new Error(
+            `chunk-closure: ${entry} imports nothing dynamically -- either ` +
+            'the lazy chunk was inlined into the entry, or this budget is ' +
+            'measuring an empty set and passing for that reason.');
+    }
+    return lazy;
+}
+
+/**
  * Chunk files no entry reaches, statically or dynamically.
  *
  * This is what makes the regex above acceptable. Every chunk must be

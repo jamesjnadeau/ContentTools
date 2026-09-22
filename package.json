@@ -36,7 +36,7 @@
     "build:playground": "node scripts/build-playground.mjs",
     "dev": "node scripts/build.mjs && node test/golden/server.mjs",
     "test:visual": "playwright test --config test/golden/playwright.config.mjs visual.spec.mjs",
-    "test": "npm run lint && npm run typecheck && npm run test:unit && npm run test:golden && npm run test:golden:dist && npm run test:styles && npm run test:element:dist && npm run test:element:golden && npm run test:markdown:dist && npm run test:cms:dist && npm run test:shell:dist && npm run test:proxy:dist && npm run test:chunks && npm run test:visual && npm run test:size",
+    "test": "npm run lint && npm run typecheck && npm run test:unit && npm run test:golden && npm run test:golden:dist && npm run test:styles && npm run test:element:dist && npm run test:element:golden && npm run test:markdown:dist && npm run test:cms:dist && npm run test:shell:dist && npm run test:proxy:dist && npm run test:edit:dist && npm run test:chunks && npm run test:visual && npm run test:size",
     "test:unit": "vitest run --config vitest.config.mjs",
     "build:esm": "vite build --mode esm",
     "build:min": "vite build --mode min",
@@ -52,7 +52,8 @@
     "test:shell:dist": "playwright test --config test/golden/playwright.config.mjs shell-dist.spec.mjs",
     "test:chunks": "playwright test --config test/golden/playwright.config.mjs chunk-closure.spec.mjs",
     "test:size": "npm run build && size-limit",
-    "test:proxy:dist": "playwright test --config test/golden/playwright.config.mjs proxy-dist.spec.mjs"
+    "test:proxy:dist": "playwright test --config test/golden/playwright.config.mjs proxy-dist.spec.mjs",
+    "test:edit:dist": "playwright test --config test/golden/playwright.config.mjs edit-dist.spec.mjs"
   },
   "repository": {
     "type": "git",
@@ -97,6 +98,10 @@
       "types": "./dist/src/shell/index.d.ts",
       "default": "./dist/shell.js"
     },
+    "./edit": {
+      "types": "./dist/src/edit/index.d.ts",
+      "default": "./dist/edit.js"
+    },
     "./global": "./dist/content-tools.js",
     "./style.css": "./dist/content-tools.css",
     "./style.min.css": "./dist/content-tools.min.css",
@@ -110,7 +115,8 @@
     "./src/**",
     "./vendor-src/**",
     "./dist/element.js",
-    "./dist/shell.js"
+    "./dist/shell.js",
+    "./dist/edit.js"
   ],
   "types": "dist/src/index.d.ts",
   "dependencies": {

@@ -13,7 +13,7 @@
  * write, approve and publish in one session has quietly removed the
  * review gate that is the entire premise of this workflow.
  */
-import {h, list} from '../render.js';
+import {h, list} from '../../core/render.js';
 import {entryLabel, statusLabel} from './labels.js';
 import {formatRoute} from '../routes.js';
 import {STATUSES, statusOf} from '../../cms/status.js';

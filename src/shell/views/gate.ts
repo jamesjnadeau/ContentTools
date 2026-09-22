@@ -22,7 +22,7 @@
  * `.ct-cms__gate a` is taken to be GitHub's token page, and
  * `.ct-cms__gate-form button` to be the one thing that submits a token.
  */
-import {h} from '../render.js';
+import {h} from '../../core/render.js';
 import {alertRegion, showAlert} from './alert.js';
 import type {Described} from '../errors.js';
 

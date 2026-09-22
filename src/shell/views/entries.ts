@@ -15,7 +15,7 @@
  * product decision and nothing else is. The words themselves live in
  * `labels.ts` since M5-7, where the review list says them too.
  */
-import {h, list} from '../render.js';
+import {h, list} from '../../core/render.js';
 import {refuseCreate} from './create.js';
 import {entryLabel, statusLabel} from './labels.js';
 import {formatRoute} from '../routes.js';

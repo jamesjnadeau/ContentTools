@@ -6,7 +6,7 @@ import dts from 'vite-plugin-dts';
  *
  *   (default)  dist/content-tools.js       IIFE, five browser globals, readable
  *   min        dist/content-tools.min.js   the same, minified
- *   esm        dist/index.js, element.js, markdown.js, shell.js
+ *   esm        dist/index.js, element.js, markdown.js, shell.js, edit.js
  *                                          ESM, sharing one library chunk
  *   cms        dist/cms.js                 the git-backed half, standalone
  *   proxy      dist/proxy.js               the OAuth code exchange, for a server
@@ -130,7 +130,7 @@ export default defineConfig(({mode}) => {
     }
 
     if (mode === 'esm') {
-        /* FOUR entries, ONE copy of the library.
+        /* FIVE entries, ONE copy of the library.
          *
          * `dist/index.js` stops being a single standalone file and that is
          * an accepted, visible change to a published artifact. The
@@ -168,7 +168,18 @@ export default defineConfig(({mode}) => {
                            inert in duplicate. That is the same property
                            that lets dist/cms.js be built separately at
                            all. */
-                        shell: resolve(__dirname, 'src/shell/index.js')
+                        shell: resolve(__dirname, 'src/shell/index.js'),
+                        /* The script a site puts on its OWN pages, and the
+                           only entry here whose size is paid by people who
+                           are not editing anything. Its body is the
+                           decision and nothing else; everything it needs
+                           to actually edit is behind a dynamic import, so
+                           it lands in `chunks/` and a reader never fetches
+                           it. Same build as the rest for the same reason
+                           the shell is: it reaches the editor, and a
+                           second copy of the library is a second
+                           EditorApp. */
+                        edit: resolve(__dirname, 'src/edit/index.js')
                     },
                     formats: ['es']
                 },

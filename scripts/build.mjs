@@ -136,7 +136,8 @@ if (/(^|\n)\s*import[\s{'"]/.test(proxy)) {
  * the rmSync above somehow missed.
  */
 const ENTRIES = ['dist/index.js', 'dist/element.js', 'dist/markdown.js',
-                 'dist/shell.js', 'dist/cms.js', 'dist/proxy.js'];
+                 'dist/shell.js', 'dist/cms.js', 'dist/proxy.js',
+                 'dist/edit.js'];
 const orphans = orphanChunks(ENTRIES, ['dist/chunks', 'dist/cms-chunks']);
 if (orphans.length) {
     throw new Error(

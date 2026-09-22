@@ -38,7 +38,7 @@
  * `test:size` builds first. Measuring a stale `dist/` reported a pass for
  * a commit CI then failed.
  */
-import {closureOf} from './scripts/chunk-closure.mjs';
+import {closureOf, lazyClosureOf} from './scripts/chunk-closure.mjs';
 
 export default [
     {
@@ -228,10 +228,67 @@ export default [
            through `dist/cms.js` and so is counted twice across the
            package. A deployment that stays on personal access tokens
            pays for it and cannot not -- the config decides which adapter
-           is built, and a config is read at runtime. */
+           is built, and a config is read at runtime.
+
+           220 kB -> 222 kB for a change that added NO code to the shell
+           at all: the in-page script arrived as a fifth entry of this
+           build, and it shares `src/cms/config.ts` and
+           `src/core/render.ts` with the shell -- so Rollup hoists both
+           into a chunk the shell now imports rather than inlining. Most
+           of the 1.4 kB is gzip: a dictionary built over one 158 kB file
+           compresses better than two files compressed apart, and this
+           entry is measured as the bytes we publish. It is the cost of
+           the two surfaces sharing one answer to what an entry is, and
+           it is the right thing to pay -- two copies of that mapping are
+           two places that can disagree about which entry a page is
+           showing. */
         name: 'shell entry + its chunks',
         path: closureOf('dist/shell.js'),
-        limit: '220 kB',
+        limit: '222 kB',
+        gzip: true
+    },
+    {
+        /* The script a site puts on EVERY page, and the only number here
+           that is paid by people who are not using this software.
+
+           A blog's readers outnumber its authors by a very long way, so
+           this file is the decision and nothing else: a query flag, two
+           storage keys, and a dynamic import for everything behind it.
+           Its static closure is therefore the whole cost to a reader,
+           and it is the number to defend -- a jump here means something
+           heavy has become a STATIC import of the loader, which is the
+           one mistake this entry's whole shape exists to prevent. The
+           budget is the alarm, because nothing else would ring: the site
+           would keep working perfectly, a little slower, for everybody. */
+        name: 'edit entry (every page)',
+        path: closureOf('dist/edit.js'),
+        limit: '1.5 kB',
+        gzip: true
+    },
+    {
+        /* What pressing Edit costs: everything `dist/edit.js` reaches
+           only through `import(...)`.
+
+           Measured as a set difference rather than a glob because this
+           chunk shares `dist/chunks/` with the library -- see
+           `lazyClosureOf`. At this sub-phase it is the frame alone: the
+           config loader, the page-to-entry mapping and the bar, with no
+           editor and no markdown parser behind them yet. The next
+           commit mounts an editor and this number goes up by roughly
+           what `element` and `markdown` cost, exactly as the shell's
+           did; that rise is the editor arriving, and it should be
+           visible as its own line rather than folded into a total.
+
+           43.6 kB of the 52 is `yaml`, reached through `loadConfig`'s
+           own dynamic import -- the same parser `dist/cms.js` budgets
+           separately, and the same bargain: a site whose config is JSON
+           never fetches it, and one whose config is YAML fetches it once
+           per author rather than once per reader. The frame itself --
+           the bar, the page-to-entry mapping and the config schema -- is
+           the other 8.5 kB. */
+        name: 'edit lazy surface',
+        path: lazyClosureOf('dist/edit.js'),
+        limit: '53 kB',
         gzip: true
     },
     {

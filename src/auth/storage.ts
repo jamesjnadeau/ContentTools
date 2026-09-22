@@ -7,6 +7,23 @@
  * would only show on the machines where it matters.
  */
 
+/**
+ * Where each adapter keeps its token.
+ *
+ * Here rather than in the adapter that uses each one, because a THIRD
+ * reader arrived: the in-page script decides whether to load its editing
+ * surface at all by asking whether this tab already holds a token, and it
+ * has to ask WITHOUT importing an adapter -- the whole point of that
+ * script's top level is that a reader of the site downloads almost none
+ * of it. A key spelled in two places is a key that can be spelled
+ * differently, and the symptom is an author who signs in and is then
+ * never offered the editor, on a page where nothing has gone wrong.
+ */
+export const TOKEN_KEY = 'content-tools:github-token';
+
+/** The App's token, with when it stops working. */
+export const APP_TOKEN_KEY = 'content-tools:github-app-token';
+
 /** The little of `Storage` an adapter needs, so a test can hand over a Map. */
 export interface TokenStorage {
     getItem(key: string): string | null;

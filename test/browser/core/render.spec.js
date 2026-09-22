@@ -1,4 +1,4 @@
-import {apply, h, list} from '../../../src/shell/render.js';
+import {apply, h, list} from '../../../src/core/render.js';
 
 /* The sixty lines that stand in for a view library.
  *

@@ -21,7 +21,7 @@
  * the key passes through untouched. Falling back to `string` would let a
  * structured field be flattened to text and written back that way.
  */
-import {h} from '../render.js';
+import {h} from '../../core/render.js';
 import type {Field} from '../../cms/config.js';
 
 export interface Widget {

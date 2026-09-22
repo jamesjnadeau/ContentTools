@@ -11,7 +11,7 @@
  * this view re-renders on every keystroke because the preview is what it
  * is for.
  */
-import {h} from '../render.js';
+import {h} from '../../core/render.js';
 import {entryPath, expandSlug, slugify} from '../../cms/config.js';
 import type {Collection, FolderCollection} from '../../cms/config.js';
 
