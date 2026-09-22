@@ -10,7 +10,7 @@
  */
 import {h} from '../../core/render.js';
 import {alertRegion, showAlert} from './alert.js';
-import type {Described} from '../errors.js';
+import type {Described} from '../../entry/errors.js';
 
 export interface StatusState {
     error: Described | null;

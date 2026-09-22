@@ -13,7 +13,7 @@
  * exactly like success.
  */
 import {h} from '../../core/render.js';
-import type {Described} from '../errors.js';
+import type {Described} from '../../entry/errors.js';
 
 /** The permanent, empty region. Built once; filled by `showAlert`. */
 export function alertRegion(doc: Document): HTMLElement {

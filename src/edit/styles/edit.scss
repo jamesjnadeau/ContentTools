@@ -35,6 +35,7 @@
 @use "../../styles/settings" as *;
 
 $edit-border-color: #d0d0d0;
+$edit-panel-background: #f7f7f7;
 
 :host {
     // Also resets `display` to inline and `position` to static, which is
@@ -92,4 +93,225 @@ $edit-border-color: #d0d0d0;
 // the bar is one line that changes twice.
 .ct-edit--loading .ct-edit__hint {
     font-style: italic;
+}
+
+// --- the editing controls -------------------------------------------------
+//
+// Only ever shown in the `editing` state. Everything below is hidden by
+// `update` in every other one, and `[hidden][hidden]` is written wherever
+// a `display` is set AND ONLY THERE: an author rule outranks the UA
+// stylesheet's `[hidden] { display: none }` at any specificity, and this
+// bar's whole job is to sit on somebody else's page. That cost a whole
+// sub-phase under /admin, where two `display: flex` rules left the frame
+// and the gate drawn on top of each other while `el.hidden` read back
+// perfectly true.
+//
+// Three more were written -- on the buttons, the pull link and the form --
+// and deleted: none of those three sets a `display`, so the UA rule is
+// unopposed and the guard was the second spelling of a rule nothing broke.
+// Add one back in the same commit that gives one of them a `display`.
+//
+// The purely visual rules below (the greys, the gaps, the one-column
+// grid) are not mutation-tested, in keeping with every other view in this
+// project. What is pinned is the rules that decide whether something can
+// be SEEN or REACHED: a panel that scrolls instead of running off the
+// viewport, a row that takes no space while it is empty, a label that is
+// not said twice, and a focus ring on a page where this bar is the only
+// keyboard affordance there is.
+
+// The panel can hold a nine-field form on a page whose body it is covering,
+// so it is bounded and scrolls rather than running off the bottom of the
+// viewport. `top: 12px` plus `bottom: 12px` worth of gutter is the room
+// there is.
+.ct-edit {
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+}
+
+.ct-edit__actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0 0;
+
+    &[hidden][hidden] {
+        display: none;
+    }
+}
+
+.ct-edit__submit,
+.ct-edit__details {
+    background: $edit-panel-background;
+    border: 1px solid $edit-border-color;
+    border-radius: 2px;
+    color: $text-color;
+    cursor: pointer;
+    padding: 4px 10px;
+    @include type-text($font-size: 12px, $line-height: 16px);
+
+    &:focus-visible {
+        outline: 2px solid $edit-action-color;
+        outline-offset: 1px;
+    }
+
+    // Greyed rather than hidden while a submit is in flight. A button that
+    // vanishes under the pointer is worse than one that refuses, and this
+    // one also carries the word that says what is happening.
+    &:disabled {
+        color: $muted-action-color;
+        cursor: default;
+    }
+}
+
+// Submit is the one thing on this bar that writes, so it is the one thing
+// that looks like a button rather than a control.
+.ct-edit__submit {
+    background: $edit-action-color;
+    border-color: $edit-action-color;
+    color: white;
+    font-weight: bold;
+
+    &:disabled {
+        background: $edit-panel-background;
+        border-color: $edit-border-color;
+    }
+}
+
+.ct-edit__pull {
+    color: $edit-action-color;
+    @include type-text($font-size: 12px, $line-height: 16px);
+}
+
+// What the last submit produced. Not coloured by itself -- `refused` below
+// is what decides that, carried from the failure's KIND rather than read
+// out of its words.
+.ct-edit__note {
+    margin: 8px 0 0;
+    @include type-text($font-size: 12px, $line-height: 16px);
+
+    &:empty {
+        display: none;
+    }
+}
+
+.ct-edit__note--refused {
+    color: $cancel-action-color;
+}
+
+// The markdown a refused submit would have written, shown verbatim and
+// selectable. Monospaced because it is the file rather than prose, and
+// short because it sits under everything else in a bar that is already
+// scrolling -- it is there to be copied out of, not read.
+.ct-edit__conflict {
+    box-sizing: border-box;
+    border: 1px solid $edit-border-color;
+    display: block;
+    height: 120px;
+    margin: 8px 0 0;
+    resize: vertical;
+    white-space: pre;
+    width: 100%;
+
+    &[hidden][hidden] {
+        display: none;
+    }
+}
+
+// --- the frontmatter form -------------------------------------------------
+//
+// The same markup the shell renders, under a second set of rules. Not a
+// second copy of the shell's: a 320px panel floating over somebody's
+// published page and a two-column pane under /admin are not the same
+// shape, and a grid of 240px columns in here is one column with a
+// scrollbar under it.
+
+.ct-fields {
+    border-top: 1px solid $edit-border-color;
+    margin: 8px 0 0;
+    padding: 8px 0 0;
+}
+
+// Nothing renders it: the Details button above says the same word, and is
+// what a screen-reader user is told the state of. A heading as well would
+// be the same label twice in eight lines of chrome.
+.ct-fields__heading {
+    display: none;
+}
+
+.ct-fields__note {
+    color: $muted-action-color;
+    margin: 0 0 8px;
+    @include type-text($font-size: 12px, $line-height: 16px);
+
+    &:empty {
+        display: none;
+    }
+}
+
+// One column, always. See the header of this section.
+.ct-fields__rows {
+    display: grid;
+    gap: 8px;
+}
+
+.ct-field__label {
+    display: block;
+    font-weight: bold;
+    margin: 0 0 2px;
+    @include type-text($font-size: 12px, $line-height: 16px);
+}
+
+.ct-field__input {
+    border: 1px solid $edit-border-color;
+    box-sizing: border-box;
+    display: block;
+    padding: 4px 6px;
+    width: 100%;
+    @include type-text($font-size: 12px, $line-height: 16px);
+
+    &:focus-visible {
+        outline: 2px solid $edit-action-color;
+        outline-offset: -1px;
+    }
+
+    // The read-only control the `unknown` widget renders. Greyed so it
+    // reads as "not yours to edit" before anybody clicks into it.
+    &[readonly] {
+        background: $edit-panel-background;
+        color: $muted-action-color;
+    }
+}
+
+textarea.ct-field__input {
+    min-height: 48px;
+    resize: vertical;
+}
+
+// Never stretched: a full-width checkbox is a tick mark adrift in an
+// otherwise empty row with its label a panel-width away.
+.ct-field__check {
+    display: block;
+    margin: 2px 0;
+}
+
+.ct-field__hint {
+    color: $muted-action-color;
+    margin: 2px 0 0;
+    @include type-text($font-size: 11px, $line-height: 15px);
+}
+
+// Carries `role="alert"` and is empty until `validate()` fills it.
+.ct-field__error {
+    color: $cancel-action-color;
+    margin: 2px 0 0;
+    @include type-text($font-size: 11px, $line-height: 15px);
+}
+
+.ct-field__preview {
+    border: 1px solid $edit-border-color;
+    display: block;
+    margin: 4px 0 0;
+    max-height: 80px;
+    max-width: 100%;
 }

@@ -25,8 +25,11 @@
 import {h} from '../core/render.js';
 import {buildWidget, DEFAULT_WIDGETS} from './widgets.js';
 import type {Widget, WidgetFactory} from './widgets.js';
-import type {Field} from '../cms/config.js';
+import {fieldsFor} from '../cms/config.js';
+import type {Collection, Field} from '../cms/config.js';
+import {isMergeable} from './frontmatter.js';
 import type {FieldValues} from './frontmatter.js';
+import type {MarkdownDocument} from '../markdown/document.js';
 
 export interface FieldsState {
     /** Changes when a different entry is loaded. */
@@ -55,13 +58,64 @@ export interface FieldsView {
     errors(): string[];
 }
 
+const NOT_A_MAPPING =
+    'This entry\u2019s frontmatter is not a set of keys, so it cannot be edited here. '
+    + 'It will be saved exactly as it is.';
+const UNREADABLE =
+    'This entry\u2019s frontmatter could not be read as YAML, so it cannot be edited '
+    + 'here. It will be saved exactly as it is, for you to fix in the repository.';
+
+/**
+ * What the form shows for this entry, and whether it may be used at all.
+ *
+ * Shared by both surfaces, and the REFUSALS are why. The fields come
+ * from the config and the values from the file, and either can be
+ * absent without the other mattering -- but a block the parser could
+ * not read is the case that matters: merging a form into content nobody
+ * has read replaces somebody's broken-but-recoverable frontmatter with
+ * whatever the form happened to hold. Two surfaces deciding that
+ * separately is one of them deciding it wrong.
+ */
+export function formState(
+        collection: Collection, slug: string, doc: MarkdownDocument): FieldsState {
+    const front = doc.frontmatter();
+    const data = front ? front.data : null;
+
+    /* `valid` and not `data === null`, because those are opposite
+       instructions that look identical: an empty block parses to null
+       and is a file with no keys yet, which a form may add to. See
+       `Frontmatter.valid`. */
+    let refusal: string | null = null;
+    if (front && !front.valid) {
+        refusal = UNREADABLE;
+    } else if (!isMergeable(data)) {
+        refusal = NOT_A_MAPPING;
+    }
+
+    return {
+        /* What tells the form one entry from the next -- and NOT the
+           `Entry` object, because a save replaces that with a copy
+           re-pinned to the new commit, and keying on it would rebuild
+           every control under whoever was typing on every press of
+           Submit. */
+        key: `${collection.name}/${slug}`,
+        fields: fieldsFor(collection, slug),
+        data,
+        refusal
+    };
+}
+
 /** The registry as a GETTER: see `buildEntry`. */
 export type WidgetSource = () => Readonly<Record<string, WidgetFactory>>;
 
 export function buildFields(doc: Document, registry: WidgetSource = () => DEFAULT_WIDGETS
         ): FieldsView {
     const rows = h(doc, 'div', {class: 'ct-fields__rows'});
-    const note = h(doc, 'p', {class: 'ct-cms__note'});
+    /* `ct-fields__note`, not the shell's `ct-cms__note` it was written
+       as: this markup is built once and styled by two sheets, so a class
+       named after one surface is a rule the other has to define under a
+       name that means nothing there. */
+    const note = h(doc, 'p', {class: 'ct-fields__note'});
     const node = h(doc, 'section', {class: 'ct-fields'}, [
         h(doc, 'h3', {class: 'ct-fields__heading'}, ['Details']),
         note,

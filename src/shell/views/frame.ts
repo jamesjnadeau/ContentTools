@@ -26,7 +26,7 @@ import type {ReviewHandlers, ReviewState, ReviewView} from './review.js';
 import type {WidgetSource} from '../../entry/fields.js';
 import {formatRoute} from '../routes.js';
 import type {Route} from '../routes.js';
-import type {Described} from '../errors.js';
+import type {Described} from '../../entry/errors.js';
 import type {ListedEntry} from '../merge.js';
 import type {CmsConfig} from '../../cms/config.js';
 

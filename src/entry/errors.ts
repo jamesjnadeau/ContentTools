@@ -1,12 +1,22 @@
-/* Every failure the shell can show, as one pure function.
+/* Every failure either surface can show, as one pure function.
  *
  * Pure because the mapping is the part worth testing and the rendering is
- * not: given an error, what does a person read, and what may the shell do
- * about it. A `switch` smeared across the views would be tested nowhere.
+ * not: given an error, what does a person read, and what may the caller
+ * do about it. A `switch` smeared across the views would be tested
+ * nowhere.
+ *
+ * Beside `session.ts` rather than inside the shell, because the in-page
+ * script submits the same entry against the same repository and gets the
+ * same refusals. The two surfaces answer them differently -- the shell
+ * has a gate to return to and a config panel to show, the bar has one
+ * line and a link to /admin -- and that is what `kind` is for. What must
+ * not differ is the CLASSIFICATION: a conflict that one surface treats
+ * as somebody-pushed-first and the other as an ordinary 422 is one of
+ * them throwing away the author's work.
  *
  * The rule this serves, inherited from the CMS half's dist suite: errors
- * land on the PAGE, not the console. A shell that swallows a failure shows
- * an editor that silently never saves, and `shell-dist.spec.mjs` asserts
+ * land on the PAGE, not the console. A surface that swallows a failure
+ * shows an editor that silently never saves, and both dist suites assert
  * zero console errors for exactly that reason.
  *
  * THIS MODULE IMPORTS NOTHING, AND THE EMPTY IMPORT LIST IS THE POINT.
@@ -26,7 +36,7 @@
  * impossible rather than merely discouraged.
  */
 
-/** How the SHELL reacts. Never rendered; `title` and `detail` are. */
+/** How the SURFACE reacts. Never rendered; `title` and `detail` are. */
 export type ErrorKind =
     | 'config'        // the deployment is wrong; there is nothing to sign in to
     | 'unauthorized'  // forget the token and go back to the gate
@@ -270,6 +280,30 @@ export function deletedNotice(pull: number): Described {
         title: `Deletion opened as pull request #${pull}.`,
         detail: 'The entry stays on the site, and in this list, until somebody '
               + 'reviews and merges that pull request.',
+        kind: 'notice',
+        path: ''
+    };
+}
+
+/**
+ * A form that was not filled in.
+ *
+ * Here rather than at either call site because both surfaces ask the
+ * same question of the same widgets and must refuse in the same words --
+ * and because the refusal is not an error object anywhere: `validate()`
+ * returns strings, and it is also what puts each message under its own
+ * control, so a caller that refuses AFTER computing the save would mark
+ * the fields and commit anyway.
+ *
+ * A notice, not a failure. A required field left empty is somebody
+ * halfway through, not something that went wrong.
+ */
+export function fieldsNeeded(messages: readonly string[]): Described {
+    return {
+        title: messages.length === 1
+            ? 'One field needs filling in.'
+            : `${messages.length} fields need filling in.`,
+        detail: messages.join(' '),
         kind: 'notice',
         path: ''
     };

@@ -253,3 +253,113 @@ test('the mount says nothing in the console either', async ({page}) => {
 
     expect(complaints).toEqual([]);
 });
+
+/* --- the write half ---------------------------------------------------- */
+
+const ENTRY = 'content/blog/first-post.md';
+const BRANCH = 'cms/blog/first-post';
+
+/** Bring the editor up over the post, with a token and a fake GitHub. */
+async function editing(page) {
+    const fake = await signedIn(page);
+    await page.goto(`${PAGE}?cms-edit`);
+    await expect(panel(page)).toHaveClass(/ct-edit--editing/);
+    return fake;
+}
+
+/** Press Submit and wait for the bar to say what happened. */
+async function submit(page) {
+    await panel(page).locator('.ct-edit__submit').click();
+    await expect(panel(page).locator('.ct-edit__note')).not.toBeEmpty();
+}
+
+test('the form behind Details holds what the file says', async ({page}) => {
+    /* The widgets are the shell's, built from the same `src/entry/`
+       modules and styled by a second sheet. Only a built artifact can
+       say whether that sheet reached this shadow root at all -- the
+       source suite adopts it from the same import either way. */
+    await editing(page);
+
+    const fields = panel(page).locator('.ct-fields');
+    await expect(fields).toBeHidden();
+
+    await panel(page).locator('.ct-edit__details').click();
+    await expect(fields).toBeVisible();
+    await expect(fields.locator('.ct-field__input').first())
+        .toHaveValue('A first post');
+});
+
+test('an edit on the page becomes a pull request with a small diff',
+     async ({page}) => {
+    /* The assertion the whole surface exists for, through the built
+       file: somebody types into the site's own published page and what
+       arrives at GitHub is one branch, one pull request, and a diff
+       confined to the block they touched. */
+    const fake = await editing(page);
+
+    const paragraph = page.locator('article.post p.ce-element').first();
+    await paragraph.click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' Edited in the page.');
+
+    await submit(page);
+
+    await expect(panel(page).locator('.ct-edit__note'))
+        .toHaveText(/^Submitted as [0-9a-f]{7}\.$/);
+    /* One branch and one pull request, and the base branch untouched:
+       a published page edits itself into a review, never into the
+       site. */
+    expect(fake.pulls()).toHaveLength(1);
+    expect(fake.read(ENTRY, 'main')).toBe(SEED);
+    expect(fake.read(ENTRY, BRANCH)).toBe(
+        SEED.replace('BRANCH has it.', 'BRANCH has it. Edited in the page.'));
+});
+
+test('the bar links the pull request it opened', async ({page}) => {
+    /* Where the author goes next. A new tab with no handle back to the
+       document they are still editing in. */
+    await editing(page);
+    const paragraph = page.locator('article.post p.ce-element').first();
+    await paragraph.click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' Edited.');
+    await submit(page);
+
+    const pull = panel(page).locator('.ct-edit__pull');
+    await expect(pull).toHaveText(/^Pull request #\d+$/);
+    await expect(pull).toHaveAttribute('target', '_blank');
+    await expect(pull).toHaveAttribute('rel', /noopener/);
+});
+
+test('a submit that changed nothing says so, and commits nothing',
+     async ({page}) => {
+    const fake = await editing(page);
+
+    await submit(page);
+
+    await expect(panel(page).locator('.ct-edit__note'))
+        .toContainText('Nothing to save.');
+    expect(fake.pulls()).toHaveLength(0);
+});
+
+test('the write half says nothing in the console either', async ({page}) => {
+    /* The rule the other two dist suites already assert, carried
+       through a real commit: errors land on the page. */
+    const complaints = [];
+    page.on('console', message => {
+        if ((message.type() === 'error' || message.type() === 'warning')
+            && !message.text().startsWith('Failed to load resource')) {
+            complaints.push(message.text());
+        }
+    });
+    page.on('pageerror', error => complaints.push(String(error)));
+
+    await editing(page);
+    const paragraph = page.locator('article.post p.ce-element').first();
+    await paragraph.click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' Edited.');
+    await submit(page);
+
+    expect(complaints).toEqual([]);
+});

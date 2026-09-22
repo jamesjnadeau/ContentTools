@@ -64,8 +64,10 @@ import {MarkdownDocument} from '../markdown/document.js';
 
 import {mergeEntries} from './merge.js';
 import type {ListedEntry} from './merge.js';
-import {cannotPush, deletedNotice, describeError, NOTHING_TO_SAVE} from './errors.js';
-import type {Described} from './errors.js';
+import {
+    cannotPush, deletedNotice, describeError, fieldsNeeded, NOTHING_TO_SAVE
+} from '../entry/errors.js';
+import type {Described} from '../entry/errors.js';
 import {formatRoute, HOME, parseRoute} from './routes.js';
 import type {Route} from './routes.js';
 import {shellStyleSheet} from './styles.js';
@@ -79,8 +81,9 @@ import type {Gate} from './views/gate.js';
 import {buildStatus} from './views/status.js';
 import type {Status} from './views/status.js';
 import type {EntryState} from './views/entry.js';
+import {formState} from '../entry/fields.js';
 import type {FieldsState} from '../entry/fields.js';
-import {fieldDefaults, isMergeable} from '../entry/frontmatter.js';
+import {fieldDefaults} from '../entry/frontmatter.js';
 /* The open entry itself -- the editor over it, what a save would write,
    and the commit -- lives outside the shell, because the in-page editing
    surface opens the same entry on the site's own page and has to reach
@@ -92,22 +95,9 @@ import type {WidgetFactory} from '../entry/widgets.js';
 
 export {EDITOR_SLOT, EDITOR_TAG, ContentToolsEditor};
 
-/**
- * What a frontmatter block has to be before a form may write over it.
- *
- * A block whose YAML did not parse is preserved verbatim and the form is
- * refused, because merging into content nobody has read replaces a
- * person's broken-but-recoverable frontmatter with whatever the form
- * happened to hold. A block that parsed to something that is not a
- * mapping -- a bare list, a scalar -- is the same answer for the same
- * reason.
- */
-const NOT_A_MAPPING =
-    'This entry\u2019s frontmatter is not a set of keys, so it cannot be edited here. '
-    + 'It will be saved exactly as it is.';
-const UNREADABLE =
-    'This entry\u2019s frontmatter could not be read as YAML, so it cannot be edited '
-    + 'here. It will be saved exactly as it is, for you to fix in the repository.';
+/* What a frontmatter block has to be before a form may write over it is
+   `formState`'s to decide now, for both surfaces at once -- see
+   `src/entry/fields.ts`. */
 
 /** The registered tag name. Declared here, re-exported by ./index.ts. */
 export const TAG_NAME = 'content-tools-cms';
@@ -1073,40 +1063,14 @@ export class ContentToolsCms extends HTMLElement {
            earlier in `_openEntry` and throws a `ConfigError` when the
            config has no such collection, so this never runs for one. */
         const found = findCollection(config, collection) as Collection;
-        const front = doc.frontmatter();
-        const data = front ? front.data : null;
-
-        /* `valid` and not `data === null`, because those are opposite
-           instructions that look identical: an empty block parses to
-           null and is a file with no keys yet, which a form may add to.
-           See `Frontmatter.valid`. */
-        let refusal: string | null = null;
-        if (front && !front.valid) {
-            refusal = UNREADABLE;
-        } else if (!isMergeable(data)) {
-            refusal = NOT_A_MAPPING;
-        }
-
-        this._form = {
-            /* What tells the form one entry from the next -- and NOT
-               the `Entry` object, because a save replaces that with a
-               copy re-pinned to the new commit, and keying on it would
-               rebuild every control under whoever was typing on every
-               press of Submit.
-
-               Its CONTENT survives mutation: any non-empty string
-               passes the whole suite today, because every entry-to-
-               entry move goes through `_closeEntry` and a closed form
-               rebuilds whatever it is handed next. Recorded rather than
-               simplified to a constant -- it becomes load-bearing the
-               first time the shell opens a different entry without
-               closing the one before it, and there a constant key shows
-               the previous file's answers over the new file's body. */
-            key: `${collection}/${slug}`,
-            fields: fieldsFor(found, slug),
-            data,
-            refusal
-        };
+        /* The derivation is shared with the in-page surface -- both of
+           them open the same file against the same config, and the
+           refusals in particular must not be decided twice. The key's
+           CONTENT survives mutation here: any non-empty string passes
+           the whole suite today, because every entry-to-entry move goes
+           through `_closeEntry` and a closed form rebuilds whatever it
+           is handed next. */
+        this._form = formState(found, slug, doc);
     }
 
     /**
@@ -1319,14 +1283,7 @@ export class ContentToolsCms extends HTMLElement {
                person who would find out is a reader. */
             const errors = this._frame.entry.errors();
             if (errors.length > 0) {
-                this._setState({error: {
-                    title: errors.length === 1
-                        ? 'One field needs filling in.'
-                        : `${errors.length} fields need filling in.`,
-                    detail: errors.join(' '),
-                    kind: 'notice',
-                    path: ''
-                }});
+                this._setState({error: fieldsNeeded(errors)});
                 return;
             }
 

@@ -325,7 +325,14 @@ describe('open, mounting', function() {
         ...CONFIG,
         collections: [
             {name: 'blog', folder: 'content/blog',
-             page: '/blog/{{slug}}/', body: 'article.post'}
+             page: '/blog/{{slug}}/', body: 'article.post',
+             /* Declared, so the bar builds a real form over the seed's
+                frontmatter. Without it every test below would exercise
+                the no-fields branch and the byte-preservation rule --
+                the one this whole surface rests on -- would never be
+                asked of a save that has a form to merge. */
+             fields: [{name: 'title', label: 'Title', widget: 'string',
+                       required: true}]}
         ]
     };
 
@@ -499,6 +506,33 @@ describe('open, mounting', function() {
         expect(document.querySelector('content-tools-editor')).toBe(null);
     });
 
+    it('puts nothing in the console when the bar is pressed with no editor up',
+       async function() {
+        /* The bar is on every page of the site, and its controls are
+           built with it: `hidden` does not stop a click reaching a
+           button, and nothing has filled the holder those handlers
+           reach through. A TypeError here would be an error in the
+           console of somebody else's published page, over a feature
+           only an author uses. */
+        const it = sitePage({url: 'https://site.test/about/'});
+        const {bar} = await mount(it);
+        const root = bar.node.shadowRoot;
+
+        const errors = [];
+        const caught = event => errors.push(event.message);
+        addEventListener('error', caught);
+        try {
+            root.querySelector('.ct-edit__details').click();
+            root.querySelector('.ct-edit__submit').click();
+        } finally {
+            removeEventListener('error', caught);
+        }
+
+        expect(errors).toEqual([]);
+        expect(root.querySelector('.ct-edit').className)
+            .toContain('ct-edit--not-an-entry');
+    });
+
     it('reads the media folder in the same round trip', async function() {
         /* The names it already holds are what an upload is staged
            against, and a collision has to be settled when the image is
@@ -616,5 +650,390 @@ describe('open, mounting', function() {
             `link[data-content-tools="${CONTENT_STYLES_MARK}"]`);
         expect(links).toHaveLength(1);
         expect(links[0].href).toBe(href);
+    });
+});
+
+describe('open, submitting', function() {
+
+    /* The same site as above, and the same seed. Kept separate from
+       `open, mounting` because everything here happens AFTER the mount:
+       what the two controls do, and what the page is told about it. */
+    const MOUNT_CONFIG = {
+        ...CONFIG,
+        collections: [
+            {name: 'blog', folder: 'content/blog',
+             page: '/blog/{{slug}}/', body: 'article.post',
+             fields: [{name: 'title', label: 'Title', widget: 'string',
+                       required: true}]}
+        ]
+    };
+
+    const ENTRY = 'content/blog/hello.md';
+    const BRANCH = 'cms/blog/hello';
+    /* A comment and a second key, both of which a YAML round trip
+       loses. They are what a byte-for-byte assertion is FOR: `title:
+       Hello` alone survives being re-emitted. */
+    const SOURCE = '---\n# the post\ntitle: Hello\nlayout: post\n---\n\n'
+        + 'First paragraph.\n\nSecond paragraph.\n';
+
+    const TEMPLATE = '<main class="layout">'
+        + '<article class="post"><p>What the site built.</p></article>'
+        + '</main>';
+
+    /** A page of the site, in the REAL document. See `sitePage` above. */
+    function sitePage(options = {}) {
+        const {config = MOUNT_CONFIG, files = {[ENTRY]: SOURCE}} = options;
+
+        const host = document.createElement('div');
+        host.innerHTML = TEMPLATE;
+        document.body.appendChild(host);
+        planted.push(host);
+
+        const fake = createFakeGitHub({files});
+        sessionStorage.setItem(TOKEN_KEY, 'github_pat_test');
+
+        /* Swappable AFTER the mount, which the page's own `options`
+           are not: `CmsRepo` is handed the function at construction,
+           so a test that reassigns `options.fetch` to break a save is
+           reassigning something nobody reads again. */
+        const it = {
+            fake,
+            /** Answer every write with this, until a test says otherwise. */
+            refuse: null,
+            /** A promise every write waits on, so one can be caught mid-air. */
+            hold: null,
+            where: {document, location: {href: 'https://site.test/blog/hello/'}}
+        };
+        it.options = {
+            fetch: async (input, init) => {
+                const at = typeof input === 'string'
+                    ? input : String(input.url ?? input);
+                if (at === DEFAULT_CONFIG_URL) {
+                    return new Response(JSON.stringify(config));
+                }
+                const writing = init && init.method && init.method !== 'GET';
+                if (writing && it.hold) {
+                    await it.hold;
+                }
+                if (writing && it.refuse) {
+                    return it.refuse();
+                }
+                return fake.fetch(input, init);
+            }
+        };
+        return it;
+    }
+
+    /** Open one, and remember it so `afterEach` can close it. */
+    async function mount(it) {
+        const surface = await open(it.where, it.options);
+        opened.push(surface);
+        return surface;
+    }
+
+    const inBar = (bar, selector) => bar.node.shadowRoot.querySelector(selector);
+    const note = bar => inBar(bar, '.ct-edit__note').textContent;
+
+    /**
+     * Rewrite one block, as typing into it would.
+     *
+     * Through the ContentEdit element rather than by assigning
+     * `textContent`: the editor keeps its own tree, and a DOM poke
+     * behind its back leaves `lastModified()` untouched -- so `save()`
+     * reports nothing changed and every assertion afterwards is about
+     * an edit that never happened.
+     */
+    function retype(session, text, index = 1) {
+        const block = session.editor.editorApp.regions().body.children[index];
+        block.content = new HTMLString.String(text);
+        block.updateInnerHTML();
+        block.taint();
+    }
+
+    /** Press Submit and wait for the bar to say what happened. */
+    async function submit(bar) {
+        inBar(bar, '.ct-edit__submit').click();
+        await until(() => note(bar) !== '', 'the bar to report the submit');
+    }
+
+    it('commits to a branch and opens a pull request', async function() {
+        const it = sitePage();
+        const {bar, session} = await mount(it);
+        retype(session, 'Goodbye.');
+
+        await submit(bar);
+
+        expect(note(bar)).toMatch(/^Submitted as [0-9a-f]{7}\.$/);
+        expect(it.fake.read(ENTRY, BRANCH)).toContain('Goodbye.');
+        /* And nothing on the base branch, which is the premise of the
+           whole tool: a published page edits itself into a pull
+           request, not into the site. */
+        expect(it.fake.read(ENTRY, 'main')).toBe(SOURCE);
+    });
+
+    it('links the pull request it opened', async function() {
+        const it = sitePage();
+        const {bar, session} = await mount(it);
+        retype(session, 'Goodbye.');
+
+        await submit(bar);
+
+        const pull = inBar(bar, '.ct-edit__pull');
+        expect(pull.textContent).toMatch(/^Pull request #\d+$/);
+        expect(pull.getAttribute('href')).toContain('/pull/');
+    });
+
+    it('adds to the same pull request on a second submit', async function() {
+        /* One branch and one pull request per entry. A second one for
+           the same file is two reviews of one change. */
+        const it = sitePage();
+        const {bar, session} = await mount(it);
+        retype(session, 'Goodbye.');
+        await submit(bar);
+        const first = inBar(bar, '.ct-edit__pull').textContent;
+
+        retype(session, 'Farewell.');
+        await submit(bar);
+
+        expect(inBar(bar, '.ct-edit__pull').textContent).toBe(first);
+        expect(it.fake.read(ENTRY, BRANCH)).toContain('Farewell.');
+        expect(it.fake.pulls()).toHaveLength(1);
+    });
+
+    it('leaves the diff to the one block that was edited', async function() {
+        /* The assertion the whole milestone is for. A pull request whose
+           diff is the whole file is unreviewable, which defeats the
+           point of submitting one. */
+        const it = sitePage();
+        const {bar, session} = await mount(it);
+        retype(session, 'Goodbye.');
+
+        await submit(bar);
+
+        expect(it.fake.read(ENTRY, BRANCH)).toBe(
+            SOURCE.replace('Second paragraph.', 'Goodbye.'));
+    });
+
+    it('says so, without alarm, when nothing was changed', async function() {
+        /* Pressing Submit on an entry you opened and did not change is
+           an ordinary thing to do. Answering it in the colour of a
+           refusal is how people learn to read past the colour. */
+        const it = sitePage();
+        const {bar} = await mount(it);
+
+        await submit(bar);
+
+        expect(note(bar)).toContain('Nothing to save.');
+        expect(inBar(bar, '.ct-edit__note').classList
+            .contains('ct-edit__note--refused')).toBe(false);
+        expect(it.fake.pulls()).toHaveLength(0);
+    });
+
+    it('keeps the unwritten markdown when somebody else got there first',
+       async function() {
+        const it = sitePage();
+        const {bar, session} = await mount(it);
+        retype(session, 'Goodbye.');
+        await submit(bar);
+
+        // A reviewer pushes to the entry's branch while the page is open.
+        it.fake.pushOther(BRANCH, {[ENTRY]: SOURCE.replace('First', 'Theirs')});
+        retype(session, 'Mine.');
+        await submit(bar);
+
+        expect(note(bar)).toContain('Somebody else changed this entry');
+        const conflict = inBar(bar, '.ct-edit__conflict');
+        expect(conflict.value).toContain('Mine.');
+        /* And nothing of theirs was lost. The only way forward throws
+           our work away, so the box above is the copy of it. */
+        expect(it.fake.read(ENTRY, BRANCH)).toContain('Theirs');
+    });
+
+    it('refuses a submit that would write a file the site cannot render',
+       async function() {
+        /* `validate()` is also what puts each message under its own
+           control, so a refusal computed AFTER the save would mark the
+           fields and commit anyway -- and the person who found out
+           would be a reader. */
+        const it = sitePage();
+        const {bar, session} = await mount(it);
+        retype(session, 'Goodbye.');
+        inBar(bar, '.ct-field__input').value = '';
+
+        await submit(bar);
+
+        expect(note(bar)).toContain('One field needs filling in.');
+        expect(it.fake.pulls()).toHaveLength(0);
+        // And the field says which, under itself.
+        expect(inBar(bar, '.ct-field__error').textContent).not.toBe('');
+    });
+
+    it('writes what the form holds into the frontmatter', async function() {
+        const it = sitePage();
+        const {bar} = await mount(it);
+        inBar(bar, '.ct-field__input').value = 'Hello again';
+
+        await submit(bar);
+
+        const written = it.fake.read(ENTRY, BRANCH);
+        expect(written).toContain('title: Hello again');
+        /* The key the config never declared is still there. A `layout:`
+           that vanishes because somebody saved a post is a page that
+           stops rendering, days later. */
+        expect(written).toContain('layout: post');
+    });
+
+    it('leaves the frontmatter byte for byte when only the body changed',
+       async function() {
+        /* The rule the whole surface rests on: `update` is given no
+           options object at all unless a value actually changed, and
+           that is the only thing preserving the comment and the key
+           order above. */
+        const it = sitePage();
+        const {bar, session} = await mount(it);
+        retype(session, 'Goodbye.');
+
+        await submit(bar);
+
+        expect(it.fake.read(ENTRY, BRANCH))
+            .toContain('---\n# the post\ntitle: Hello\nlayout: post\n---');
+    });
+
+    it('puts a failure in the bar rather than the console', async function() {
+        /* The rule both other dist suites already assert: errors land
+           on the page. A surface that swallows one shows an editor
+           that silently never saves. */
+        const it = sitePage();
+        const {bar, session} = await mount(it);
+        retype(session, 'Goodbye.');
+        it.refuse = () => new Response('{"message":"nope"}', {status: 500});
+
+        await submit(bar);
+
+        expect(note(bar)).toContain('GitHub returned 500');
+        expect(inBar(bar, '.ct-edit__note').classList
+            .contains('ct-edit__note--refused')).toBe(true);
+    });
+
+    it('lets go of the button whatever the submit did', async function() {
+        /* Leaving it disabled after a failure locks out the one person
+           who most needs to try again. */
+        const it = sitePage();
+        const {bar, session} = await mount(it);
+        retype(session, 'Goodbye.');
+        it.refuse = () => Promise.reject(new TypeError('offline'));
+
+        await submit(bar);
+
+        expect(inBar(bar, '.ct-edit__submit').disabled).toBe(false);
+    });
+
+    it('opens and closes the frontmatter form from the bar', async function() {
+        const it = sitePage();
+        const {bar} = await mount(it);
+        const fields = inBar(bar, '.ct-fields');
+        expect(getComputedStyle(fields).display).toBe('none');
+
+        inBar(bar, '.ct-edit__details').click();
+        expect(getComputedStyle(fields).display).not.toBe('none');
+        expect(inBar(bar, '.ct-field__input').value).toBe('Hello');
+
+        inBar(bar, '.ct-edit__details').click();
+        expect(getComputedStyle(fields).display).toBe('none');
+    });
+
+    it('keeps what was typed into the form across a submit', async function() {
+        /* The form IS the answers -- there is no copy of them anywhere
+           else -- so a rebuild between a keystroke and the next submit
+           is a field the author filled in and the file never got. */
+        const it = sitePage();
+        const {bar, session} = await mount(it);
+        inBar(bar, '.ct-edit__details').click();
+        const input = inBar(bar, '.ct-field__input');
+        input.value = 'Hello again';
+
+        retype(session, 'Goodbye.');
+        await submit(bar);
+
+        expect(inBar(bar, '.ct-field__input')).toBe(input);
+        expect(input.value).toBe('Hello again');
+        // And the form is still open, because nobody closed it.
+        expect(getComputedStyle(inBar(bar, '.ct-fields')).display).not.toBe('none');
+    });
+
+    it('says so on the button, and clears the last answer, while it writes',
+       async function() {
+        /* The one state every other test here waits past. Three things
+           have to be true at once: the button refuses a second press --
+           a second commit on the same parent IS the conflict -- and
+           neither the last refusal nor the markdown it kept is still on
+           screen, because both are answers to a question that is being
+           asked again. */
+        const it = sitePage();
+        const {bar, session} = await mount(it);
+        retype(session, 'Goodbye.');
+        await submit(bar);
+        /* A conflict rather than any other refusal, because it is the
+           one that leaves something on screen as well as saying
+           something: the markdown it kept. */
+        it.fake.pushOther(BRANCH, {[ENTRY]: SOURCE.replace('First', 'Theirs')});
+        retype(session, 'Mine.');
+        await submit(bar);
+        expect(inBar(bar, '.ct-edit__conflict').value).toContain('Mine.');
+
+        let release;
+        it.hold = new Promise(resolve => { release = resolve; });
+        inBar(bar, '.ct-edit__submit').click();
+        await until(() => inBar(bar, '.ct-edit__submit').disabled,
+                    'the button to refuse a second press');
+
+        expect(inBar(bar, '.ct-edit__submit').textContent).toBe('Submitting\u2026');
+        expect(note(bar)).toBe('');
+        expect(inBar(bar, '.ct-edit__note').classList
+            .contains('ct-edit__note--refused')).toBe(false);
+
+        expect(inBar(bar, '.ct-edit__conflict').value).toBe('');
+
+        release();
+        await until(() => note(bar) !== '', 'the submit to report');
+        expect(inBar(bar, '.ct-edit__submit').disabled).toBe(false);
+    });
+
+    it('says nothing to save for an entry already under review', async function() {
+        /* The OTHER door to the same answer, and the reason the words
+           are a shared constant. With no pull request open `saveEntry`
+           throws `NothingToSaveError`; with one open it returns
+           `changed: false` instead -- branch bookkeeping that means
+           nothing to the person who pressed the button twice. */
+        const it = sitePage();
+        const {bar, session} = await mount(it);
+        retype(session, 'Goodbye.');
+        await submit(bar);
+        expect(it.fake.pulls()).toHaveLength(1);
+        const before = it.fake.history(BRANCH).length;
+
+        await submit(bar);
+
+        expect(note(bar)).toContain('Nothing to save.');
+        expect(inBar(bar, '.ct-edit__note').classList
+            .contains('ct-edit__note--refused')).toBe(false);
+        expect(it.fake.history(BRANCH)).toHaveLength(before);
+    });
+
+    it('keeps the markdown only for the failure that loses it', async function() {
+        /* A conflict is the one where the work is still in hand and the
+           only way forward throws it away. Showing the same box after a
+           500 -- where nothing was lost and pressing Submit again is
+           the answer -- teaches an author that the box means nothing. */
+        const it = sitePage();
+        const {bar, session} = await mount(it);
+        retype(session, 'Goodbye.');
+        it.refuse = () => new Response('{"message":"nope"}', {status: 500});
+
+        await submit(bar);
+
+        const conflict = inBar(bar, '.ct-edit__conflict');
+        expect(conflict.value).toBe('');
+        expect(getComputedStyle(conflict).display).toBe('none');
     });
 });

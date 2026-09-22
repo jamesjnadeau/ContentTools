@@ -43,6 +43,8 @@ import {ContentToolsEditor, TAG_NAME as EDITOR_TAG}
     from '../element/content-tools-editor.js';
 import {buildBar} from './chrome.js';
 import type {Bar, BarState, Located} from './chrome.js';
+import {PageEdit} from './editing.js';
+import {formState} from '../entry/fields.js';
 
 /**
  * Where the config lives, when the page does not say.
@@ -81,9 +83,11 @@ export interface OpenOptions {
     readonly contentStyles?: string;
 }
 
-/** An open surface: the bar, and the editor if one went up. */
+/** An open surface: the bar, and the open entry if one went up. */
 export interface Surface {
     readonly bar: Bar;
+    /** What Submit and the form act on, or null when no editor went up. */
+    readonly editing: PageEdit | null;
     readonly session: EntrySession | null;
 }
 
@@ -98,7 +102,26 @@ export interface Surface {
 export async function open(
         where: Window, options: OpenOptions = {}): Promise<Surface> {
     const doc = where.document;
-    const bar = buildBar(doc);
+    /* The bar is built BEFORE there is anything for its two controls to
+       act on, and it has to be: it is also what says why there is not
+       -- a config that will not parse, a page that is not an entry. So
+       the handlers reach through a holder, filled in below once there
+       is something to fill it with, and until then they do nothing.
+       That is not hypothetical for Details: it is built with the rest
+       of the bar, and `hidden` does not stop a click reaching a button.
+
+       Submit's `?.` is the same guard for a press that cannot arrive
+       -- `update` disables the button in every state but `editing`,
+       and a disabled button fires no click. It is the second spelling
+       of one rule rather than a live branch, kept for the case that
+       makes it live: a Submit that is ever enabled while this holder
+       is empty, which is what a `disabled` line lost in a refactor
+       looks like. */
+    const live: {editing: PageEdit | null} = {editing: null};
+    const bar = buildBar(doc, {
+        submit: () => live.editing?.submit(),
+        showFields: open => live.editing?.show(open)
+    });
     doc.body.appendChild(bar.node);
 
     let located: BarState;
@@ -106,12 +129,12 @@ export async function open(
         located = await resolve(where, options);
     } catch (error) {
         bar.update(failure(error));
-        return {bar, session: null};
+        return {bar, editing: null, session: null};
     }
 
     bar.update(located);
     if (located.kind !== 'ready') {
-        return {bar, session: null};
+        return {bar, editing: null, session: null};
     }
 
     /* The three fields every state from here on shares, lifted out of the
@@ -122,16 +145,21 @@ export async function open(
     };
 
     try {
-        return {
-            bar,
-            session: await start(where, bar, located.config, seen, options)
-        };
+        const editing = await start(where, bar, located.config, seen, options);
+        /* Filled BEFORE the bar is told it is editing, so there is no
+           moment where the controls are live and the holder is empty.
+           `start` deliberately does not render for this reason: it
+           mounts, and the two lines that make the mount reachable are
+           here, together, where the order is visible. */
+        live.editing = editing;
+        editing?.render();
+        return {bar, editing, session: editing ? editing.session : null};
     } catch (error) {
         /* The element is still named while the bar says what went wrong.
            A read that failed did not un-find the body, and somebody
            looking at a 404 still wants to know the selector was right. */
         bar.update({kind: 'failed', ...seen, hint: said(error)});
-        return {bar, session: null};
+        return {bar, editing: null, session: null};
     }
 }
 
@@ -156,14 +184,13 @@ export async function resolve(
 /**
  * Open the entry and put an editor over its body.
  *
- * Nothing is committed and nothing can be: Submit is the next step. What
- * this proves is the part that has to be right first -- that the bytes on
- * the branch, rendered by us, land inside the site's own element with the
- * site's own template and stylesheet around them.
+ * What this proves is the part that has to be right first -- that the
+ * bytes on the branch, rendered by us, land inside the site's own
+ * element with the site's own template and stylesheet around them.
  */
 async function start(
         where: Window, bar: Bar, config: CmsConfig, seen: Located,
-        options: OpenOptions): Promise<EntrySession | null> {
+        options: OpenOptions): Promise<PageEdit | null> {
     /* Only ever READ. The in-page script must not offer to sign anybody
        in: a credential field that appears on a published blog post is
        indistinguishable from the thing every phishing guide warns about,
@@ -193,16 +220,19 @@ async function start(
     linkContentStyles(where.document, options.contentStyles);
     defineEditor();
 
+    const doc = MarkdownDocument.parse(entry.content ?? '');
     const session = new EntrySession({
         document: where.document,
         entry,
-        doc: MarkdownDocument.parse(entry.content ?? ''),
+        doc,
         store: new MediaStore({config, taken: folder.map(file => file.name)}),
-        /* No frontmatter form on the page yet, and `null` is exactly how
-           a session is told there is none -- it then reaches `update`
-           with no options object at all, which is what preserves the
-           block byte for byte. The panel is the next step. */
-        values: () => null,
+        /* The BAR's form, asked at the moment of the comparison. It
+           answers null for a collection with no fields and for a block
+           the form refused, and null is exactly how a session is told
+           there is none -- it then reaches `update` with no options
+           object at all, which is what preserves the block byte for
+           byte. */
+        values: () => bar.values(),
         /* THE site's own element, edited where it stands. */
         region: seen.body
     });
@@ -214,8 +244,19 @@ async function start(
     where.document.body.appendChild(session.editor);
     session.start();
 
-    bar.update({kind: 'editing', ...seen});
-    return session;
+    /* Built and NOT rendered -- see the call site. */
+    const editing = new PageEdit({
+        bar,
+        session,
+        repo,
+        seen,
+        /* Non-null for the reason `located` gives one line at a time:
+           an entry in hand names a collection this config holds,
+           because both mappings resolve the name against it. */
+        fields: formState(findCollection(config, seen.entry.collection)!,
+                          seen.entry.slug, doc)
+    });
+    return editing;
 }
 
 /**

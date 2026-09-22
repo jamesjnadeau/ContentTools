@@ -412,6 +412,19 @@ $panel-background: #f7f7f7;
     @include type-text($font-size: 14px, $line-height: 18px);
 }
 
+// Why the form cannot be used: frontmatter that is not a mapping, or a
+// block YAML would not read. Same words and same shape as the notes the
+// shell's own views carry, and a separate class because the markup they
+// are on is shared with the in-page bar -- see `buildFields`.
+.ct-fields__note {
+    color: $muted-action-color;
+    margin: 0 0 8px;
+
+    &:empty {
+        display: none;
+    }
+}
+
 // Two across where there is room. `auto-fit` rather than a media query
 // because what decides the width here is the nav beside the pane, not the
 // viewport -- and a shadow root has nothing to ask about its own width.

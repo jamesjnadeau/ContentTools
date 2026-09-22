@@ -1,4 +1,4 @@
-import {describeError} from '../../../src/shell/errors.js';
+import {describeError} from '../../../src/entry/errors.js';
 import {ConfigError} from '../../../src/cms/config.js';
 import {GitHubError, ConflictError} from '../../../src/cms/github.js';
 import {NotAuthenticatedError} from '../../../src/auth/pat.js';

@@ -24,7 +24,7 @@
  */
 import {h} from '../../core/render.js';
 import {alertRegion, showAlert} from './alert.js';
-import type {Described} from '../errors.js';
+import type {Described} from '../../entry/errors.js';
 
 /** Where GitHub's own token page lives. */
 export const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new';

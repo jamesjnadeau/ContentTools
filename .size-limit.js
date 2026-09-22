@@ -293,6 +293,14 @@ export default [
            under /admin downloads, because it is the same editor reading
            the same bytes.
 
+           202 kB -> 207 kB for the frontmatter form and Submit: nine
+           widgets, the form view, the merge, the described failures and
+           this surface's own rules for all of it. Small because almost
+           none of it is new code -- the widgets, `describeError` and
+           the byte-preserving merge are `src/entry/`, shared with the
+           shell rather than written twice, so what arrived here is one
+           controller and one stylesheet.
+
            What matters is which side of the `import()` it is on. The
            budget above -- `edit entry (every page)`, 1.5 kB -- is the
            one a reader pays, and it did not move. This one is paid once
@@ -301,7 +309,7 @@ export default [
            had stopped being a decision. */
         name: 'edit lazy surface',
         path: lazyClosureOf('dist/edit.js'),
-        limit: '202 kB',
+        limit: '207 kB',
         gzip: true
     },
     {
