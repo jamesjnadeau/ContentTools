@@ -17,7 +17,7 @@ import {h} from '../render.js';
 import {buildWidget, DEFAULT_WIDGETS} from '../widgets/index.js';
 import type {Widget, WidgetFactory} from '../widgets/index.js';
 import type {Field} from '../../cms/config.js';
-import type {FieldValues} from '../frontmatter.js';
+import type {FieldValues} from '../../entry/frontmatter.js';
 
 export interface FieldsState {
     /** Changes when a different entry is loaded. */

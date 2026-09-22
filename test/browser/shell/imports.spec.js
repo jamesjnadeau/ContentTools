@@ -3,7 +3,8 @@
  * Three silent failures live here, and none of them produces an error at
  * the point of the mistake:
  *
- * 1. A `src/shell/` file importing another ENTRY of the same Vite build.
+ * 1. A `src/shell/` or `src/entry/` file importing another ENTRY of the
+ *    same Vite build.
  *    Rollup turns an entry that another entry imports into a facade and
  *    hoists its body into a shared chunk. For `src/element/index.ts` that
  *    body includes `customElements.define`, and `package.json` lists
@@ -25,8 +26,8 @@
  *    contract ends at `ct-saved`; one import the other way and the editor
  *    entry starts carrying a CMS.
  *
- * 3. A bare package in `src/shell/`. "Vanilla, no new runtime dependency"
- *    is a decision, and a decision nobody checks is a preference.
+ * 3. A bare package in either. "Vanilla, no new runtime dependency" is a
+ *    decision, and a decision nobody checks is a preference.
  *
  * The technique is test/browser/cms/leaf.spec.js's, including its
  * file-count assertion -- a glob that matches nothing looks exactly like a
@@ -36,10 +37,23 @@ const SHELL = import.meta.glob('../../../src/shell/**/*.ts', {
     query: '?raw', eager: true, import: 'default'
 });
 
+/* `src/entry/` -- one open entry, shared by the shell and by the in-page
+   editing surface -- is held to the SAME two rules as the shell, because
+   it sits in the same build and is imported by two entries rather than
+   one. It is also in BELOW, which is the rule that keeps the sharing
+   one-directional: the shell may reach down into it, and it may never
+   reach back up. */
+const ENTRY = import.meta.glob('../../../src/entry/**/*.ts', {
+    query: '?raw', eager: true, import: 'default'
+});
+
+const ABOVE = {...SHELL, ...ENTRY};
+
 const BELOW = import.meta.glob(
     ['../../../src/cms/**/*.ts', '../../../src/auth/**/*.ts',
      '../../../src/markdown/**/*.ts', '../../../src/element/**/*.ts',
-     '../../../src/core/**/*.ts', '../../../src/scripts/**/*.ts'],
+     '../../../src/core/**/*.ts', '../../../src/scripts/**/*.ts',
+     '../../../src/entry/**/*.ts'],
     {query: '?raw', eager: true, import: 'default'});
 
 /* Static imports and re-exports, dynamic imports, and bare side-effect
@@ -75,25 +89,26 @@ function resolveFrom(importer, specifier) {
 
 describe('the shell imports one way only', () => {
     it('has source files to check', () => {
-        /* Both globs. If either silently matched nothing -- a renamed
+        /* All three globs. If any silently matched nothing -- a renamed
            directory, a changed extension -- every assertion below would
            pass while checking no code at all. */
         expect(Object.keys(SHELL).length).toBeGreaterThan(0);
+        expect(Object.keys(ENTRY).length).toBeGreaterThan(0);
         expect(Object.keys(BELOW).length).toBeGreaterThan(0);
     });
 
     it('never reaches for a sibling build ENTRY, only the class modules', () => {
         /* The other three entries of the `esm` build, as vite.config.mjs
-           lists them. `src/shell/index.ts` is the fourth and is this
-           glob's own, so a file importing IT is caught by the count
-           below being wrong rather than by this. */
+           lists them. `src/shell/index.ts` is the fourth and is one of
+           these globs' own, so a file importing IT is caught by the
+           count below being wrong rather than by this. */
         const ENTRIES = [
             /\/src\/element\/index(\.js)?$/,
             /\/src\/markdown\/index(\.js)?$/,
             /\/src\/index(\.js)?$/
         ];
         const violations = [];
-        for (const [path, source] of Object.entries(SHELL)) {
+        for (const [path, source] of Object.entries(ABOVE)) {
             for (const specifier of specifiersOf(source)) {
                 if (!specifier.startsWith('.')) { continue; }
                 const resolved = resolveFrom(path, specifier);
@@ -120,11 +135,11 @@ describe('the shell imports one way only', () => {
 
     it('takes no third-party dependency at all', () => {
         /* Not an allowlist, unlike the CMS half's -- which permits `yaml`
-           because `loadConfig` genuinely needs a parser. The shell's
-           answer is zero, so the check is a count rather than a set, and
-           adding the first one is a deliberate edit to this line. */
+           because `loadConfig` genuinely needs a parser. The answer here
+           is zero, so the check is a count rather than a set, and adding
+           the first one is a deliberate edit to this line. */
         const bare = [];
-        for (const [path, source] of Object.entries(SHELL)) {
+        for (const [path, source] of Object.entries(ABOVE)) {
             for (const specifier of specifiersOf(source)) {
                 if (!specifier.startsWith('.')) {
                     bare.push(`${path} -> ${specifier}`);

@@ -1,6 +1,6 @@
 import {
     frontmatterChanged, isMergeable, mergeFrontmatter
-} from '../../../src/shell/frontmatter.js';
+} from '../../../src/entry/frontmatter.js';
 
 /* Whether a save touches the frontmatter block at all, and what it writes
  * when it does.

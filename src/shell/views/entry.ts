@@ -19,7 +19,7 @@ import type {FieldsState, FieldsView, WidgetSource} from './fields.js';
 import {statusOf} from '../../cms/status.js';
 import type {Entry} from '../../cms/repo.js';
 import type {EditorialStatus} from '../../cms/status.js';
-import type {FieldValues} from '../frontmatter.js';
+import type {FieldValues} from '../../entry/frontmatter.js';
 
 const STATUS_LABELS: Record<EditorialStatus, string> = {
     'draft': 'Draft',
