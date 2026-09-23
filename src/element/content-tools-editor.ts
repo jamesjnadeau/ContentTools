@@ -74,7 +74,8 @@ const DEFAULT_FIXTURE_TEST = (domElement: Element) =>
     domElement.hasAttribute('data-fixture');
 
 const SETTABLE_PROPERTIES = ['tools', 'fixtureTest', 'stylePalette',
-                             'imageUploader', 'regionElements', 'profile'];
+                             'imageUploader', 'regionElements', 'profile',
+                             'unsavedTest'];
 
 export class ContentToolsEditor extends HTMLElement {
 
@@ -99,6 +100,7 @@ export class ContentToolsEditor extends HTMLElement {
     declare _slot: HTMLSlotElement;
     declare _stylePalette: any[] | undefined;
     declare _tools: string[][] | null;
+    declare _unsavedTest: (() => boolean) | null;
 
     static get observedAttributes(): string[] {
         // `state` and `busy` are written BY the element and deliberately not
@@ -140,6 +142,7 @@ export class ContentToolsEditor extends HTMLElement {
         this._profile = null;
         this._regionElements = null;
         this._fixtureTest = null;
+        this._unsavedTest = null;
         // `undefined` means "never set", which is different from an explicit
         // null; globals.ts writes only the keys that are not undefined.
         this._stylePalette = undefined;
@@ -351,6 +354,18 @@ export class ContentToolsEditor extends HTMLElement {
         this._fixtureTest = value;
         if (this._booted) {
             this._app._fixtureTest = value || DEFAULT_FIXTURE_TEST;
+        }
+    }
+
+    /** Whether leaving would lose work, for a host that saves. */
+    get unsavedTest(): (() => boolean) | null {
+        return this._unsavedTest;
+    }
+
+    set unsavedTest(value: (() => boolean) | null) {
+        this._unsavedTest = value;
+        if (this._booted) {
+            this._app._unsavedTest = value;
         }
     }
 
@@ -647,6 +662,8 @@ export class ContentToolsEditor extends HTMLElement {
                 filterToolGroups(this._activeProfile(), this._tools)
                 );
         }
+
+        this._app._unsavedTest = this._unsavedTest;
 
         this._bridge = createEventBridge(this._app, this);
         this._booted = true;

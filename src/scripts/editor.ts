@@ -22,6 +22,7 @@ class _EditorApp extends ContentTools.ComponentUI {
     declare _domRegions: any;
     declare _emptyRegionsAllowed: any;
     declare _fixtureTest: any;
+    declare _unsavedTest: (() => boolean) | null;
     declare _handleBeforeUnload: any;
     declare _handleClipboardPaste: any;
     declare _handleAttach: any;
@@ -75,6 +76,10 @@ class _EditorApp extends ContentTools.ComponentUI {
         // The test to use to determine if region is a fixture (by default we
         // look for the data-fixture attribute).
         this._fixtureTest = domElement => domElement.hasAttribute('data-fixture');
+
+        // Whether leaving would lose work. Null asks the undo history, which
+        // knows nothing of a host's own saves.
+        this._unsavedTest = null;
 
         // The query (or set of DOM elements) that define the editable
         // regions/fixtures with the page.
@@ -1345,12 +1350,10 @@ class _EditorApp extends ContentTools.ComponentUI {
         // When unloading the page we check to see if the user is currently
         // editing and if so ask them to confirm the action.
         this._handleBeforeUnload = ev => {
-            if ((this._state === 'editing') && ContentTools.CANCEL_MESSAGE) {
-                if (this.history && this.history._snapshotIndex) {
-                    const cancelMessage = ContentEdit._(ContentTools.CANCEL_MESSAGE);
-                    (ev || rootContext().currentEvent()).returnValue = cancelMessage;
-                    return cancelMessage;
-                }
+            if (ContentTools.CANCEL_MESSAGE && this._unsaved()) {
+                const cancelMessage = ContentEdit._(ContentTools.CANCEL_MESSAGE);
+                (ev || rootContext().currentEvent()).returnValue = cancelMessage;
+                return cancelMessage;
             }
         };
 
@@ -1363,6 +1366,14 @@ class _EditorApp extends ContentTools.ComponentUI {
         };
 
         return rootContext().on('window', 'unload', this._handleUnload);
+    }
+
+    _unsaved() {
+        if (this._unsavedTest) {
+            return this._unsavedTest();
+        }
+        return (this._state === 'editing') &&
+            Boolean(this.history && this.history._snapshotIndex);
     }
 
     _allowEmptyRegions(callback) {

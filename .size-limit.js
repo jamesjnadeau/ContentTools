@@ -63,10 +63,15 @@ export default [
         /* The same chunk, plus the element and the inlined icon font
            (~9 kB of base64). The interesting number is the DIFFERENCE from
            the line above: if it ever approaches their sum, the chunk has
-           stopped being shared and there are two copies of the library. */
+           stopped being shared and there are two copies of the library.
+
+           81 -> 81.5 kB for `unsavedTest`: 81.09 kB measured, 87 bytes
+           over. A host that saves the content itself tells the editor's
+           beforeunload guard whether there is work to lose, which the
+           undo history cannot -- it went on asking after a submit. */
         name: 'ESM element entry + shared chunk',
         path: closureOf('dist/element.js'),
-        limit: '81 kB',
+        limit: '81.5 kB',
         gzip: true
     },
     {

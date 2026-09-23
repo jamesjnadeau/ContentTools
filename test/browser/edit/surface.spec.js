@@ -1137,6 +1137,62 @@ describe('open, submitting', function() {
         expect(it.fake.read(ENTRY, 'main')).toBe(SOURCE);
     });
 
+    /** Whether closing the tab now would ask first. */
+    function asksToLeave() {
+        /* A plain Event, because a BeforeUnloadEvent cannot be built by
+           hand -- and a plain Event's own `returnValue` is a boolean that
+           ignores the string the library writes. So the property is
+           shadowed with one that remembers what it was given. */
+        const ev = new Event('beforeunload', {cancelable: true});
+        let said = '';
+        Object.defineProperty(ev, 'returnValue', {
+            get: () => said,
+            set: value => { said = value; }
+        });
+        window.dispatchEvent(ev);
+        return ev.defaultPrevented || said !== '';
+    }
+
+    it('stops asking before the tab closes once the edit is submitted',
+       async function() {
+        /* The editor's own guard reads its undo history, which a submit
+           does not touch -- so it went on asking over work that was
+           safely committed, and an author told "you have unsaved
+           changes" about a submitted edit learns to click through the
+           one that is true. */
+        const it = sitePage();
+        const {bar, session} = await mount(it);
+        retype(session, 'Goodbye.');
+        /* Waited for, because the history snapshots on a timer after the
+           typing stops -- and a history with nothing in it is the one
+           state in which the old guard happened to give the right
+           answer. */
+        await until(() => session.editor.editorApp.history.index() > 0,
+                    'the undo history to record the edit');
+        expect(asksToLeave()).toBe(true);
+
+        await submit(bar);
+
+        expect(note(bar)).toMatch(/^Submitted as/);
+        expect(asksToLeave()).toBe(false);
+
+        // And it starts again with the next edit.
+        retype(session, 'Farewell.');
+        expect(asksToLeave()).toBe(true);
+    });
+
+    it('asks before the tab closes over edits the tick kept', async function() {
+        /* The tick keeps the edit and turns the tools off. The work is
+           still unsubmitted, so the tab must still ask -- the editor's
+           own guard only asks while it is editing. */
+        const it = sitePage();
+        const {session} = await mount(it);
+        retype(session, 'Goodbye.');
+        pressEdit(session, 'confirm');
+
+        expect(asksToLeave()).toBe(true);
+    });
+
     it('links the pull request it opened', async function() {
         const it = sitePage();
         const {bar, session} = await mount(it);

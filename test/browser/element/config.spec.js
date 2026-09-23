@@ -76,6 +76,36 @@ describe('properties', () => {
         el.stop(true);
     });
 
+    it('lets the host decide whether leaving loses work', () => {
+        /* The editor's own answer reads its undo history, which knows
+           nothing of a host's saves. Set before AND after connection,
+           because a host builds the element before it is connected. */
+        const asks = () => {
+            const ev = new Event('beforeunload', {cancelable: true});
+            let said = '';
+            Object.defineProperty(ev, 'returnValue', {
+                get: () => said,
+                set: value => { said = value; }
+            });
+            window.dispatchEvent(ev);
+            return said !== '';
+        };
+        let unsaved = true;
+        el = create();
+        el.unsavedTest = () => unsaved;
+        document.body.appendChild(el);
+
+        // Not editing, nothing in the history: only the host knows.
+        expect(asks()).toBe(true);
+        unsaved = false;
+        expect(asks()).toBe(false);
+
+        el.unsavedTest = () => true;
+        expect(asks()).toBe(true);
+        el.unsavedTest = null;
+        expect(asks()).toBe(false);
+    });
+
     it('sets and restores the image uploader', async () => {
         const before = ContentTools.IMAGE_UPLOADER;
         const uploader = () => {};

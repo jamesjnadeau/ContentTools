@@ -231,6 +231,20 @@ export class EditingSession extends EntrySession {
            chrome of ours around the words, so the switch is how a person
            says yes. */
         editor.setAttribute('ignition', '');
+        /* The tab asks before closing on the same question the bar's
+           Submit answers: does the markdown differ from what the
+           repository holds. The editor's own answer reads its undo
+           history, which a Submit does not touch -- so it kept asking
+           over committed work, and went quiet over edits the tick kept.
+           A failure to answer counts as work to lose: asking once too
+           often costs a click, not asking costs the edit. */
+        editor.unsavedTest = () => {
+            try {
+                return this.dirty();
+            } catch {
+                return true;
+            }
+        };
         /* Staged in memory and committed by `saveEntry`, so an entry and
            its images land in one commit. An uploader that commits on its
            own leaves an orphan blob behind every abandoned edit. */
