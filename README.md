@@ -15,7 +15,7 @@ request — with authors signing in either with their own token or through a
 GitHub App — and an entry's words are written on the site's own published
 page rather than in an admin screen.**
 
-**`2.0.0-rc.2`** is the current release, and it carries all six.
+**`2.0.0-rc.3`** is the current release, and it carries all six.
 
 It is a release candidate rather than `2.0.0` for one reason, and it is not
 a code one: the three checks below are still owed by hand. `rc.0` should not
@@ -36,7 +36,7 @@ somebody's git history should have written to one before it calls itself
 final.
 
 Not yet on npm. `npm pack` produces the artifact; the tag is
-`v2.0.0-rc.2`.
+`2.0.0-rc.3`.
 
 | | |
 |---|---|
@@ -330,7 +330,7 @@ a decision rather than a gap. A preview needs the site's own templates and
 stylesheet to be worth anything, and Milestone 6 got them the only way that
 is actually true: by editing the real page.
 
-What is left is not code. `2.0.0-rc.2` carries every milestone, but the
+What is left is not code. `2.0.0-rc.3` carries every milestone, but the
 package has never been published to npm, and three things are owed by hand
 rather than by test — they are listed in [docs/auth.md](docs/auth.md) and
 the plan: the write half of the round trip against a real repository, a real
