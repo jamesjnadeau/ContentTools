@@ -45,6 +45,11 @@ export {
     editUrlIsStale,
     entryForUrl,
     declaredEntry,
+    newPagePath,
+    newPageForUrl,
+    declaredNewPage,
+    startersForUrl,
+    declaredStarters,
     bodySelector
 } from './preview.js';
 export type {PageEntry} from './preview.js';

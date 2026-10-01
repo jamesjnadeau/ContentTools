@@ -10,7 +10,8 @@
 
 import {
     pagePath, previewOrigin, editUrl, editUrlIsStale, entryForUrl,
-    declaredEntry, bodySelector
+    declaredEntry, bodySelector, newPagePath, newPageForUrl, declaredNewPage,
+    startersForUrl, declaredStarters
 } from '../../../src/cms/preview.js';
 import {parseConfig, findCollection} from '../../../src/cms/config.js';
 
@@ -291,5 +292,169 @@ describe('bodySelector', function() {
     it('is null when neither says', function() {
         const c = config();
         return expect(bodySelector(findCollection(c, 'notes'), page(''))).toBe(null);
+    });
+});
+
+describe('starter pages', function() {
+
+    /* A site served under a base, with two collections that start from
+       the same front page and one that cannot be added to. */
+    const cfg = parseConfig({
+        backend: {repo: 'owner/site'},
+        media: {folder: 'static/images', publicPath: '/images'},
+        site: {base: '/prefix'},
+        collections: [
+            {name: 'blog', folder: 'content/blog', create: true,
+             page: '/blog/{{slug}}/', body: 'main',
+             starter: ['/blog/', '/'], newPage: '/blog/new/'},
+            {name: 'notes', folder: 'content/notes', create: true,
+             body: 'main', starter: '/', newPage: '/notes/new/'},
+            {name: 'locked', folder: 'content/locked', create: false,
+             page: '/locked/{{slug}}/', body: 'main'}
+        ]
+    });
+    const blogC = findCollection(cfg, 'blog');
+    const lockedC = findCollection(cfg, 'locked');
+
+    it('says where a collection\'s new page is, base included', function() {
+        expect(newPagePath(cfg, blogC)).toBe('/prefix/blog/new/');
+        expect(newPagePath(cfg, lockedC)).toBeNull();
+    });
+
+    it('says nothing for a file collection', function() {
+        const c = config();
+        expect(newPagePath(c, findCollection(c, 'pages'))).toBeNull();
+    });
+
+    it('maps the new page\'s URL back to its collection', function() {
+        for (const url of ['https://site.test/prefix/blog/new/', 'https://site.test/prefix/blog/new',
+            'https://site.test/prefix/blog/new/index.html', 'https://site.test/prefix/blog/new/?x=1#y']) {
+            expect(newPageForUrl(cfg, url).name).toBe('blog');
+        }
+        expect(newPageForUrl(cfg, 'https://site.test/blog/new/')).toBeNull();   // outside the base
+    });
+
+    it('does not take an ordinary page for a new page', function() {
+        expect(newPageForUrl(cfg, 'https://site.test/prefix/blog/hello/')).toBeNull();
+        expect(newPageForUrl(cfg, 'https://site.test/prefix/')).toBeNull();
+        expect(newPageForUrl(cfg, 'https://site.test/prefix/blog/%zz')).toBeNull();
+    });
+
+    it('does not read the new page as an entry called new', function() {
+        expect(entryForUrl(cfg, 'https://site.test/prefix/blog/new/')).toBeNull();
+        expect(entryForUrl(cfg, 'https://site.test/prefix/blog/hello/'))
+            .toEqual({collection: 'blog', slug: 'hello'});
+    });
+
+    it('lists every collection a page starts, in config order', function() {
+        expect(startersForUrl(cfg, 'https://site.test/prefix/').map(c => c.name)).toEqual(['blog', 'notes']);
+        expect(startersForUrl(cfg, 'https://site.test/prefix/blog/index.html').map(c => c.name)).toEqual(['blog']);
+        expect(startersForUrl(cfg, 'https://site.test/prefix/blog/hello/')).toEqual([]);
+        // the link carries the base, so a starter outside it would lead elsewhere
+        expect(startersForUrl(cfg, 'https://site.test/')).toEqual([]);
+    });
+
+    it('does not read a starter page as an entry', function() {
+        const c = parseConfig({
+            backend: {repo: 'owner/site'},
+            media: {folder: 'static/images', publicPath: '/images'},
+            site: {base: '/prefix'},
+            collections: [
+                {name: 'pages', folder: 'content/pages', create: true,
+                 page: '/{{slug}}/', body: 'main',
+                 starter: '/blog/', newPage: '/new/'}
+            ]
+        });
+        expect(entryForUrl(c, 'https://site.test/prefix/blog/')).toBeNull();
+        expect(entryForUrl(c, 'https://site.test/prefix/new/')).toBeNull();
+        expect(entryForUrl(c, 'https://site.test/prefix/about/'))
+            .toEqual({collection: 'pages', slug: 'about'});
+    });
+
+    describe('when the pages are files', function() {
+
+        /* A static site that emits `new-post.html` rather than a
+           directory: the path ends in a file name, so there is no
+           trailing slash to settle and no `index.html` to strip. */
+        const files = parseConfig({
+            backend: {repo: 'owner/site'},
+            media: {folder: 'static/images', publicPath: '/images'},
+            site: {base: '/ContentTools-test'},
+            collections: [
+                {name: 'posts', folder: 'content/posts', create: true,
+                 page: '/playground/{{slug}}.html', body: 'main',
+                 starter: '/playground/blog.html',
+                 newPage: '/playground/new-post.html'}
+            ]
+        });
+        const posts = findCollection(files, 'posts');
+
+        it('keeps the file name in the new page\'s path', function() {
+            expect(newPagePath(files, posts)).toBe('/ContentTools-test/playground/new-post.html');
+        });
+
+        it('maps the file back to its collection', function() {
+            for (const url of [
+                'https://site.test/ContentTools-test/playground/new-post.html',
+                'https://site.test/ContentTools-test/playground/new-post.html?x=1#y']) {
+                expect(newPageForUrl(files, url).name).toBe('posts');
+            }
+            expect(newPageForUrl(files, 'https://site.test/playground/new-post.html')).toBeNull();
+            expect(newPageForUrl(files, 'https://site.test/ContentTools-test/playground/new-post'))
+                .toBeNull();
+        });
+
+        it('maps the starter file to what it starts', function() {
+            expect(startersForUrl(files, 'https://site.test/ContentTools-test/playground/blog.html')
+                .map(c => c.name)).toEqual(['posts']);
+            expect(startersForUrl(files, 'https://site.test/ContentTools-test/playground/other.html'))
+                .toEqual([]);
+        });
+
+        it('reads neither file as an entry', function() {
+            expect(entryForUrl(files, 'https://site.test/ContentTools-test/playground/new-post.html'))
+                .toBeNull();
+            expect(entryForUrl(files, 'https://site.test/ContentTools-test/playground/blog.html'))
+                .toBeNull();
+            expect(entryForUrl(files, 'https://site.test/ContentTools-test/playground/hello.html'))
+                .toEqual({collection: 'posts', slug: 'hello'});
+        });
+    });
+
+    it('lets the markup say a page is the new page', function() {
+        expect(declaredNewPage(cfg, page('<meta name="cms:new-page" content="notes">')).name).toBe('notes');
+    });
+
+    it('takes a declared new page for a collection with no newPage key', function() {
+        const c = config({collections: [
+            {name: 'notes', folder: 'content/notes', create: true, body: 'main'}]});
+        expect(declaredNewPage(c, page('<meta name="cms:new-page" content="notes">')).name).toBe('notes');
+    });
+
+    it('ignores a declared new page for a collection that cannot be added to', function() {
+        for (const name of ['locked', 'nowhere', '']) {
+            expect(declaredNewPage(cfg, page(`<meta name="cms:new-page" content="${name}">`))).toBeNull();
+        }
+        expect(declaredNewPage(cfg, page(''))).toBeNull();
+    });
+
+    it('ignores a declared new page for a file collection', function() {
+        const c = config();
+        expect(declaredNewPage(c, page('<meta name="cms:new-page" content="pages">'))).toBeNull();
+    });
+
+    it('lets the markup say what a page starts', function() {
+        expect(declaredStarters(cfg, page('<meta name="cms:starter" content="notes  blog">')).map(c => c.name))
+            .toEqual(['notes', 'blog']);
+    });
+
+    it('drops a declared starter with no new page to send anybody to', function() {
+        expect(declaredStarters(cfg, page('<meta name="cms:starter" content="locked nowhere">'))).toEqual([]);
+        expect(declaredStarters(cfg, page(''))).toEqual([]);
+    });
+
+    it('lists a declared starter once however often it is named', function() {
+        expect(declaredStarters(cfg, page('<meta name="cms:starter" content="blog blog">')).map(c => c.name))
+            .toEqual(['blog']);
     });
 });

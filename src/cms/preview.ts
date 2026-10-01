@@ -18,7 +18,7 @@
  * what discovers there is no such file, and a 404 from the repository is a
  * better answer than a guess made from a path.
  */
-import type {CmsConfig, Collection} from './config.js';
+import type {CmsConfig, Collection, FolderCollection} from './config.js';
 import {expandTokens, findCollection} from './config.js';
 
 /** A collection name and a slug: what identifies one entry. */
@@ -105,6 +105,15 @@ export function entryForUrl(config: CmsConfig, url: string): PageEntry | null {
         return null;
     }
 
+    /* A page the config names LITERALLY is that page and not whatever a
+       `{{slug}}` template would make of it. With `page: /blog/{{slug}}/`
+       and `newPage: /blog/new/`, the second matches the first with the
+       slug `new`, and an author on the new page would be told they were
+       editing an entry that does not exist. */
+    if (isNamedPage(config, path)) {
+        return null;
+    }
+
     for (const collection of config.collections) {
         if (collection.kind === 'file') {
             const file = collection.files.find(
@@ -161,6 +170,92 @@ export function declaredEntry(config: CmsConfig, doc: Document): PageEntry | nul
 }
 
 /**
+ * Where a collection's new page is served, `site.base` included, or null
+ * when it has none.
+ *
+ * Null for a file collection too, which has no entries to start: its
+ * files are fixed, and the config parser refuses the key there.
+ */
+export function newPagePath(config: CmsConfig, collection: Collection): string | null {
+    return collection.kind === 'folder' && collection.newPage !== null
+        ? `${config.site.base}${collection.newPage}`
+        : null;
+}
+
+/**
+ * The collection this URL is the new page of, or null.
+ *
+ * Compared through `pathOf` and `canonical` like every other page, so the
+ * page is recognised with or without its trailing slash and with
+ * `index.html` on it. A file-shaped `newPage` (`/new-post.html`) needs no
+ * special case: `canonical` leaves the file name alone on both sides.
+ */
+export function newPageForUrl(config: CmsConfig, url: string): FolderCollection | null {
+    const path = pathOf(url, config.site.base, true);
+    return path === null
+        ? null
+        : folderCollections(config).find(
+            c => c.newPage !== null && canonical(c.newPage) === path) ?? null;
+}
+
+/**
+ * The collection this page DECLARES it is the new page of, from
+ * `<meta name="cms:new-page" content="blog">`.
+ *
+ * Beats `newPageForUrl` for the reason `cms:entry` beats `entryForUrl`.
+ * The meta is itself the declaration, so the collection needs `create`
+ * but not a `newPage` key. One that cannot be added to is a mistake in a
+ * template, and answering null is what makes that visible.
+ */
+export function declaredNewPage(config: CmsConfig, doc: Document): FolderCollection | null {
+    const name = doc.querySelector('meta[name="cms:new-page"]')
+        ?.getAttribute('content')?.trim();
+    if (!name) {
+        return null;
+    }
+    const found = findCollection(config, name);
+    return found !== null && found.kind === 'folder' && found.create ? found : null;
+}
+
+/**
+ * The collections this URL is a starter page for, in config order.
+ *
+ * A list, because one page can offer a link for each of several
+ * collections: a site's front page may start both a post and a note.
+ */
+export function startersForUrl(config: CmsConfig, url: string): FolderCollection[] {
+    const path = pathOf(url, config.site.base, true);
+    return path === null
+        ? []
+        : folderCollections(config).filter(
+            c => c.newPage !== null && c.starter.some(s => canonical(s) === path));
+}
+
+/**
+ * The collections this page DECLARES it starts, from
+ * `<meta name="cms:starter" content="blog notes">`, in the order written.
+ *
+ * Only collections `newPagePath` answers for are kept: a starter link
+ * goes to the collection's new page, and one with no new page would be a
+ * link to nowhere. Here the meta cannot stand in for `newPage`, because
+ * it names the page that offers the link and not the page it leads to.
+ */
+export function declaredStarters(config: CmsConfig, doc: Document): FolderCollection[] {
+    const names = doc.querySelector('meta[name="cms:starter"]')
+        ?.getAttribute('content')?.split(/\s+/) ?? [];
+    const found: FolderCollection[] = [];
+    for (const name of names) {
+        const collection = findCollection(config, name);
+        if (collection !== null && collection.kind === 'folder'
+            && newPagePath(config, collection) !== null
+            && !found.includes(collection)) {
+            found.push(collection);
+        }
+    }
+    return found;
+}
+
+/**
  * The selector for the element holding an entry's rendered body.
  *
  * `data-cms-body` in the page's own markup wins over the config, for the
@@ -183,8 +278,12 @@ export function bodySelector(collection: Collection, doc: Document): string | nu
  * served at two prefixes and this one is: the test site answers at `/`
  * and at `/ContentTools-test/` on the same host. A page reached by either
  * has to map to the same entry.
+ *
+ * `requireBase` is for the starter and new pages, which are not looked up
+ * but LINKED to: a link carries `site.base`, so a starter seen outside
+ * the base would lead somewhere other than the new page it stands for.
  */
-function pathOf(url: string, base: string): string | null {
+function pathOf(url: string, base: string, requireBase = false): string | null {
     let path: string;
     try {
         /* The second argument is what lets a bare path be passed as
@@ -196,6 +295,8 @@ function pathOf(url: string, base: string): string | null {
 
     if (base !== '' && (path === base || path.startsWith(`${base}/`))) {
         path = path.slice(base.length);
+    } else if (base !== '' && requireBase) {
+        return null;
     }
 
     /* A static host serves `/blog/hello/` from `/blog/hello/index.html`,
@@ -235,6 +336,19 @@ function pathOf(url: string, base: string): string | null {
 function canonical(path: string): string {
     const rooted = path.startsWith('/') ? path : `/${path}`;
     return rooted.replace(/\/+$/, '');
+}
+
+/** Every collection that can have a `newPage` or a `starter`. */
+function folderCollections(config: CmsConfig): FolderCollection[] {
+    return config.collections.filter(
+        (c): c is FolderCollection => c.kind === 'folder');
+}
+
+/** Whether `path` (already through `pathOf`) is some collection's new or starter page. */
+function isNamedPage(config: CmsConfig, path: string): boolean {
+    return folderCollections(config).some(
+        c => (c.newPage !== null && canonical(c.newPage) === path)
+            || c.starter.some(s => canonical(s) === path));
 }
 
 /**
