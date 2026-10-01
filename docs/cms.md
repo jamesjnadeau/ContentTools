@@ -69,6 +69,8 @@ collections:
     slug: "{{year}}-{{slug}}"   # default: "{{slug}}"
     page: /blog/{{slug}}/       # where an entry is published
     body: main                  # the element holding its rendered body
+    starter: /blog/             # pages that offer to start a new entry (or a list)
+    newPage: /blog/new/         # the blank page the site builds for it
     fields:
       - {name: title, widget: string}
   - name: pages
@@ -157,6 +159,38 @@ absent from the live site, and the preview built for their pull request
 renders the very branch the editor commits to. Without it `editUrl` falls
 back to the live page, which shows the published text — so the shell warns
 rather than linking silently.
+
+### Where new content is started
+
+`starter` and `newPage` say where an author begins a new entry from a page of
+the site itself, rather than from the admin screens. Both are optional, both
+are for folder collections only, and both are paths relative to `site.base`,
+written rooted and kept as written.
+
+```yaml
+collections:
+  - name: blog
+    folder: content/blog
+    create: true
+    page: /blog/{{slug}}/
+    body: article.post
+    starter: /blog/          # or a list of pages
+    newPage: /blog/new/      # a blank page the site builds
+```
+
+`newPage` is **one literal page per collection**: a page the site's build
+emits, blank, for the in-page editor to fill. It is a path and not a
+template, so a `{{` in it is a `ConfigError`. It needs `create: true`, since
+a page that starts entries is pointless where nobody may add them, and a
+`body`, since the editor fills that element in just as it does for `page`.
+Two collections cannot share a `newPage`; the page could not know which
+entry its form creates.
+
+`starter` is the page, or list of pages, that offer a link to the
+collection's `newPage`. It means nothing without one, and a starter cannot be
+the `newPage` itself. Several collections **may** share a starter: a page
+that lists every kind of thing an author can start simply offers one link
+for each.
 
 Every rule here is checked at parse time with a `ConfigError` naming the
 path, for the reason `slug` is: a `page` with no `{{slug}}` claims to be

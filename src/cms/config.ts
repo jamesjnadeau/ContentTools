@@ -182,6 +182,28 @@ export interface FolderCollection {
      */
     readonly page: string | null;
     readonly body: string | null;
+    /**
+     * The one literal page a site builds for starting a new entry of this
+     * collection, e.g. `/blog/new/`, relative to `site.base`; null when
+     * the collection has none.
+     *
+     * As written, and a path rather than a template: it is a single page
+     * the site's own build emits, so there is no `{{slug}}` for it to
+     * vary over, and the entry that would be published at this same
+     * address is refused when somebody names it. The forms the URL can
+     * take once served (`index.html`, a missing trailing slash) are the
+     * mapping's concern, not this field's.
+     */
+    readonly newPage: string | null;
+    /**
+     * The pages that offer to start an entry of this collection, as
+     * written; empty when none do. Several collections may name the same
+     * page, since one page can offer a link for each.
+     *
+     * Meaningless without `newPage`, which is where the link goes, so
+     * parsing refuses the one without the other.
+     */
+    readonly starter: readonly string[];
 }
 
 /** A fixed set of named files, each edited in place. */
@@ -563,7 +585,9 @@ function parseSite(raw: unknown): SiteConfig {
 }
 
 /**
- * `body` is required once anything in the collection names a `page`.
+ * `body` is required once anything in the collection names a `page`
+ * (or, for a folder collection, a `newPage`, which is edited in place
+ * the same way).
  *
  * Refused here rather than defaulted to something like `main`, because a
  * default that is wrong is worse than an absent one: the in-page editor
@@ -572,13 +596,57 @@ function parseSite(raw: unknown): SiteConfig {
  * wipe the navigation off the screen the first time somebody pressed
  * Edit. Nothing is committed by that, but nothing tells them why either.
  */
-function requireBody(hasPage: boolean, body: string | null, path: string): void {
-    if (hasPage && body === null) {
+function requireBody(
+    asker: 'page' | 'newPage' | null, body: string | null, path: string
+): void {
+    if (asker !== null && body === null) {
         throw new ConfigError(
             `${path}.body`,
-            'is required alongside `page`: in-page editing has to be told'
+            `is required alongside \`${asker}\`: in-page editing has to be told`
             + ' which element holds the rendered body');
     }
+}
+
+/**
+ * A rooted path as written, for `newPage` and `starter`.
+ *
+ * Rooted for the reason `pageTemplate` gives. NOT normalised: these are
+ * compared against each other as spelled, and the forms a served URL takes
+ * are the mapping's job.
+ */
+function rootedPath(raw: unknown, path: string): string {
+    const value = str(raw, path);
+    if (!value.startsWith('/')) {
+        throw new ConfigError(
+            path, `"${value}" is not rooted; a page path must start with "/"`);
+    }
+    return value;
+}
+
+/** A `newPage`: one literal page, so no tokens. */
+function newPagePath(raw: unknown, path: string): string | null {
+    if (raw === undefined || raw === null) {
+        return null;
+    }
+    const value = rootedPath(raw, path);
+    if (value.includes('{{')) {
+        throw new ConfigError(
+            path,
+            `"${value}" has a "{{": a new page is one literal page the site`
+            + ' builds, not a template');
+    }
+    return value;
+}
+
+/** A `starter`: one page or a list of them; empty when absent. */
+function starterPaths(raw: unknown, path: string): readonly string[] {
+    if (raw === undefined || raw === null) {
+        return Object.freeze([]);
+    }
+    if (!Array.isArray(raw)) {
+        return Object.freeze([rootedPath(raw, path)]);
+    }
+    return Object.freeze(raw.map((item, i) => rootedPath(item, `${path}[${i}]`)));
 }
 
 function parseCollection(raw: unknown, path: string): Collection {
@@ -603,6 +671,18 @@ function parseCollection(raw: unknown, path: string): Collection {
     }
 
     if (hasFiles) {
+        /* A fixed set of files has no "next entry" to start, so these two
+           would be read by nothing. Said out loud for the reason `page` on
+           a folder is: a key that is quietly ignored looks like a key that
+           works. */
+        for (const key of ['newPage', 'starter']) {
+            if (input[key] !== undefined && input[key] !== null) {
+                throw new ConfigError(
+                    `${path}.${key}`,
+                    'is only for a `folder` collection: a collection of fixed'
+                    + ' `files` has no new entries to start');
+            }
+        }
         const files = array(input.files, `${path}.files`).map((rawFile, i) => {
             const at = `${path}.files[${i}]`;
             const file = object(rawFile, at);
@@ -618,22 +698,51 @@ function parseCollection(raw: unknown, path: string): Collection {
         if (files.length === 0) {
             throw new ConfigError(`${path}.files`, 'is empty');
         }
-        requireBody(files.some(f => f.page !== null), body, path);
+        requireBody(files.some(f => f.page !== null) ? 'page' : null, body, path);
         return Object.freeze({
             kind: 'file' as const, name, label, files: Object.freeze(files), body
         });
     }
 
     const page = pageTemplate(input.page, `${path}.page`, true);
-    requireBody(page !== null, body, path);
+    const newPage = newPagePath(input.newPage, `${path}.newPage`);
+    requireBody(page !== null ? 'page' : newPage !== null ? 'newPage' : null, body, path);
+
+    const create = optionalBool(input.create, `${path}.create`, false);
+    if (newPage !== null && !create) {
+        throw new ConfigError(
+            `${path}.newPage`,
+            'needs `create: true`: a page that starts new entries is'
+            + ' pointless in a collection nobody may add to');
+    }
+
+    const starter = starterPaths(input.starter, `${path}.starter`);
+    if (starter.length > 0 && newPage === null) {
+        throw new ConfigError(
+            `${path}.starter`,
+            'has nowhere to link to: a starter page offers a link to the'
+            + ' collection\'s `newPage`, and this collection has none');
+    }
+    /* A link on the new page to the new page would offer to start what
+       the author is already starting. */
+    const own = starter.indexOf(newPage ?? '');
+    if (own !== -1) {
+        throw new ConfigError(
+            `${path}.starter[${own}]`,
+            `"${newPage}" is this collection's own \`newPage\`, which cannot`
+            + ' offer a link to itself');
+    }
+
     return Object.freeze({
         kind: 'folder' as const,
         name,
         label,
         page,
         body,
+        newPage,
+        starter,
         folder: trimSlashes(str(input.folder, `${path}.folder`)),
-        create: optionalBool(input.create, `${path}.create`, false),
+        create,
         delete: optionalBool(input.delete, `${path}.delete`, false),
         /* A leading dot is the natural way to write this and means the same
            thing, so accept it rather than rejecting a config that is right
@@ -679,6 +788,24 @@ export function parseConfig(input: CmsConfigInput): CmsConfig {
         }
         seen.add(collection.name);
     }
+
+    /* Across collections, so it can only run once every one has parsed.
+       Two collections on one new page could not both be started from it:
+       the page would have to guess which entry its form creates. */
+    const newPages = new Map<string, string>();
+    collections.forEach((collection, i) => {
+        if (collection.kind !== 'folder' || collection.newPage === null) {
+            return;
+        }
+        const first = newPages.get(collection.newPage);
+        if (first !== undefined) {
+            throw new ConfigError(
+                `collections[${i}].newPage`,
+                `"${collection.newPage}" is already the new page of "${first}";`
+                + ' one page starts one collection');
+        }
+        newPages.set(collection.newPage, collection.name);
+    });
 
     return Object.freeze({
         backend: Object.freeze({

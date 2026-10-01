@@ -1013,3 +1013,139 @@ describe('the page template', function() {
         });
     });
 });
+
+/* Where a NEW entry is started from. Two keys, and every rule here is one
+   an author cannot see from the config file alone: a `starter` with no
+   `newPage` is a link to nowhere, and a `newPage` in a collection nobody
+   may add to is a page that can only fail. */
+describe('starter pages', function() {
+
+    /** `minimal()` with its first collection extended, and `more` appended. */
+    function withNew(extra, more = []) {
+        const config = minimal();
+        config.collections = [
+            {
+                name: 'blog', folder: 'content/blog',
+                create: true, page: '/blog/{{slug}}/', body: 'main', ...extra
+            },
+            ...more
+        ];
+        return config;
+    }
+
+    it('reads newPage and starter off a folder collection', function() {
+        const c = parseConfig(withNew({newPage: '/blog/new/', starter: '/blog/'})).collections[0];
+        expect(c.newPage).toBe('/blog/new/');
+        expect(c.starter).toEqual(['/blog/']);
+    });
+
+    it('takes a list of starters', function() {
+        const c = parseConfig(withNew({newPage: '/blog/new/', starter: ['/blog/', '/']})).collections[0];
+        expect(c.starter).toEqual(['/blog/', '/']);
+    });
+
+    it('defaults to no new page and no starters', function() {
+        const c = parseConfig(withNew({})).collections[0];
+        expect(c.newPage).toBeNull();
+        expect(c.starter).toEqual([]);
+    });
+
+    it('lets two collections share a starter page', function() {
+        const config = parseConfig(withNew(
+            {newPage: '/blog/new/', starter: '/'},
+            [{
+                name: 'news', folder: 'content/news', create: true,
+                page: '/news/{{slug}}/', body: 'main',
+                newPage: '/news/new/', starter: '/'
+            }]));
+        expect(config.collections[0].starter).toEqual(['/']);
+        expect(config.collections[1].starter).toEqual(['/']);
+    });
+
+    describe('refuses, naming where', function() {
+
+        it('a newPage that is not rooted', function() {
+            const error = errorFrom(withNew({newPage: 'blog/new/'}));
+            expect(error.path).toBe('collections[0].newPage');
+            expect(error.message).toContain('must start with "/"');
+        });
+
+        it('a newPage that is a template', function() {
+            const error = errorFrom(withNew({newPage: '/blog/{{slug}}/'}));
+            expect(error.path).toBe('collections[0].newPage');
+            expect(error.message).toContain('{{');
+        });
+
+        it('a newPage that is not a string', function() {
+            expect(errorFrom(withNew({newPage: 7})).path).toBe('collections[0].newPage');
+        });
+
+        it('a newPage without create: true', function() {
+            const error = errorFrom(withNew({newPage: '/blog/new/', create: false}));
+            expect(error.path).toBe('collections[0].newPage');
+            expect(error.message).toContain('create: true');
+        });
+
+        it('a newPage with no page and no body', function() {
+            /* `withNew` supplies both, so they are overridden away: with
+               `page` set the rule would be about `page`, not `newPage`. */
+            const error = errorFrom(withNew(
+                {newPage: '/blog/new/', page: undefined, body: undefined}));
+            expect(error.path).toBe('collections[0].body');
+            expect(error.message).toContain('newPage');
+        });
+
+        it('a newPage with a page but no body, blaming page instead', function() {
+            const error = errorFrom(withNew({newPage: '/blog/new/', body: undefined}));
+            expect(error.path).toBe('collections[0].body');
+            expect(error.message).toContain('`page`');
+        });
+
+        it('a starter with no newPage', function() {
+            const error = errorFrom(withNew({starter: '/blog/'}));
+            expect(error.path).toBe('collections[0].starter');
+            expect(error.message).toContain('newPage');
+        });
+
+        it('a starter that is not rooted, naming which', function() {
+            const error = errorFrom(withNew({newPage: '/blog/new/', starter: ['/blog/', 'x']}));
+            expect(error.path).toBe('collections[0].starter[1]');
+            expect(error.message).toContain('must start with "/"');
+        });
+
+        it('a starter that is its own newPage', function() {
+            const error = errorFrom(withNew({newPage: '/blog/new/', starter: '/blog/new/'}));
+            expect(error.path).toBe('collections[0].starter[0]');
+            expect(error.message).toContain('newPage');
+        });
+
+        it('a newPage another collection already has', function() {
+            const error = errorFrom(withNew(
+                {newPage: '/new/'},
+                [{
+                    name: 'news', folder: 'content/news', create: true,
+                    page: '/news/{{slug}}/', body: 'main', newPage: '/new/'
+                }]));
+            expect(error.path).toBe('collections[1].newPage');
+            expect(error.message).toContain('blog');
+        });
+
+        it('a newPage on a file collection', function() {
+            const error = errorFrom(minimal({collections: [{
+                name: 'pages', body: 'main', newPage: '/new/',
+                files: [{name: 'about', file: 'content/about.md'}]
+            }]}));
+            expect(error.path).toBe('collections[0].newPage');
+            expect(error.message).toContain('folder');
+        });
+
+        it('a starter on a file collection', function() {
+            const error = errorFrom(minimal({collections: [{
+                name: 'pages', body: 'main', starter: '/',
+                files: [{name: 'about', file: 'content/about.md'}]
+            }]}));
+            expect(error.path).toBe('collections[0].starter');
+            expect(error.message).toContain('folder');
+        });
+    });
+});
