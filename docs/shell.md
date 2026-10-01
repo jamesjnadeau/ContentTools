@@ -300,9 +300,10 @@ Where **New entry** goes depends on the collection. A collection with a
 new tab and carrying this tab's session like **Edit on the site** does: the
 author names and writes the entry on the page itself. A collection without
 one keeps the naming screen in `/admin`, which is what the rest of this
-section describes. The link's `href` is the plain page with no token, so
-copying it or opening it in a background tab is safe; only an unmodified
-click hands the session across. The `#/c/<collection>/new` route itself is
+section describes. The link's `href` is the page with the edit flag
+(`?cms-edit`) and no token, so copying it or opening it in a background tab
+is safe and still lands on a bar that says how to sign in; only an
+unmodified click hands the session across. The `#/c/<collection>/new` route itself is
 unchanged, so a hand-typed or bookmarked address still names an entry in
 `/admin` even when the collection has a new page.
 

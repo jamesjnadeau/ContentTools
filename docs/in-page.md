@@ -139,8 +139,10 @@ names is already safe from that — `page:` steps round every literal
 `newPage` and `starter` — so it is the page only its own markup names that
 the order is for.
 
-A `cms:new-page` naming a collection that does not have `create: true` maps
-to nothing, as above. A `cms:starter` naming one with no `newPage` is
+A `cms:new-page` naming a collection that does not have `create: true` is
+passed over rather than mapped to nothing: the page falls through to the
+remaining steps, a starter and then an entry by address, so it is read as
+whatever the config says it is. A `cms:starter` naming one with no `newPage` is
 skipped: a starter is a link, and there is nowhere for that one to go.
 
 ## The bar
@@ -261,8 +263,9 @@ from the same template an entry gets.
 1. **The starter page offers a link.** On a page the collection names with
    `starter:` — the blog's index, the front page, wherever an author would
    look — the bar says **New Blog entry**. It is an ordinary link to the
-   collection's `newPage`, so it can be middle-clicked, and nothing is read
-   from the repository to show it.
+   collection's `newPage` with the edit flag on it (`/blog/new/?cms-edit`), so
+   it can be middle-clicked or copied and the page it opens still puts its
+   bar up. Nothing is read from the repository to show it.
 2. **The new page asks for a name.** *What is it called?* — and under the
    field, as it is typed, the file the name makes: `Saved as
    content/blog/my-first-post.md`. The name becomes the filename and the
@@ -283,7 +286,8 @@ from the same template an entry gets.
 
 From the moment the entry is named the tab asks before it closes: nothing
 has been written anywhere yet, and the name is work. The red cross gives
-the page back with the site's own placeholder in it.
+the page back with the site's own placeholder in it. The name cannot be
+changed in place after that; reload the page to choose another.
 
 ### What the new page's template must contain
 
@@ -365,7 +369,10 @@ which is also what a copied link or a middle-clicked one gets, because
 the `href` deliberately carries no secret.
 
 The new page says the same with its last words changed — *then come back to
-write it* — and says it **instead of** asking for a name. Somebody who
+write it* — and says it **instead of** asking for a name. The starter
+link's `href` carries the flag for that reason: a link followed without
+the session still reaches a bar that says how to sign in, not a page where
+nothing seems to have loaded. Somebody who
 cannot save should not be invited to write.
 
 ## Deploying it

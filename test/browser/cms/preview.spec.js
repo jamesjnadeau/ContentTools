@@ -328,7 +328,8 @@ describe('starter pages', function() {
 
     it('maps the new page\'s URL back to its collection', function() {
         for (const url of ['https://site.test/prefix/blog/new/', 'https://site.test/prefix/blog/new',
-            'https://site.test/prefix/blog/new/index.html', 'https://site.test/prefix/blog/new/?x=1#y']) {
+            'https://site.test/prefix/blog/new/index.html', 'https://site.test/prefix/blog/new/?x=1#y',
+            'https://site.test/prefix/blog/new/?cms-edit', '/prefix/blog/new/?x=1&cms-edit']) {
             expect(newPageForUrl(cfg, url).name).toBe('blog');
         }
         expect(newPageForUrl(cfg, 'https://site.test/blog/new/')).toBeNull();   // outside the base

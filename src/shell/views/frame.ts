@@ -30,6 +30,7 @@ import type {Described} from '../../entry/errors.js';
 import type {ListedEntry} from '../merge.js';
 import type {CmsConfig} from '../../cms/config.js';
 import {newPagePath} from '../../cms/preview.js';
+import {withEditFlag} from '../../auth/handoff.js';
 
 export interface FrameHandlers
         extends EntriesHandlers, EntryHandlers, CreateHandlers, MediaHandlers, ReviewHandlers {
@@ -112,11 +113,15 @@ function collectionView(
        in the main pane is rebuilt per render, which is fine for a heading
        and a sentence; a LIST needs its nodes kept, or focus and scroll
        position are thrown away every time a badge changes. */
+    /* The flag, always, as on "Edit on the site": the page this opens
+       is only a bar if it was asked for, and a copied or middle-clicked
+       link carries no token to ask with. */
+    const newPage = newPagePath(state.config, collection);
     entries.update({
         collection,
         entries: state.entries,
         truncated: state.truncated,
-        newPage: newPagePath(state.config, collection)
+        newPage: newPage === null ? null : withEditFlag(newPage)
     });
     return [entries.node];
 }

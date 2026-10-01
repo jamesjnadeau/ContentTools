@@ -47,6 +47,7 @@ import {CmsRepo} from '../cms/repo.js';
 import type {Entry} from '../cms/repo.js';
 import {MediaStore} from '../cms/media.js';
 import {adapterFor} from '../auth/adapter.js';
+import {withEditFlag} from '../auth/handoff.js';
 import {MarkdownDocument} from '../markdown/document.js';
 import {EditingSession} from './session.js';
 /* The CLASS module, never `../element/index.js` -- that is a build ENTRY
@@ -295,8 +296,11 @@ export async function resolve(
             links: starters.map(collection => ({
                 label: collection.label,
                 /* Non-null: both lists keep only collections that have
-                   a new page, because a link is all a starter is. */
-                href: newPagePath(config, collection)!
+                   a new page, because a link is all a starter is. The
+                   flag so that a middle click or a copied address opens
+                   a page that puts its bar up and says how to sign in,
+                   rather than one where nothing seems to have loaded. */
+                href: withEditFlag(newPagePath(config, collection)!)
             }))
         };
     }
@@ -405,11 +409,14 @@ function invite(
             /* Known from the config alone, so nothing is read to say
                it. An entry published at this page's address would
                replace this page, and the site would have nowhere left
-               to start the next one. Guarded on there BEING an address:
-               a new page that only its markup declares has none, and
-               two nulls are not the same place. */
-            const own = newPagePath(config, collection);
-            if (own !== null && pagePath(config, collection, slug) === own) {
+               to start the next one. Asked of the same mapping the
+               page was recognised by, not by comparing the two spellings
+               the config happens to use: `/blog/{{slug}}` and
+               `/blog/new/` are one page. Guarded on there BEING an
+               address: a collection with no `page` has none, and
+               nothing is not the new page. */
+            const at = pagePath(config, collection, slug);
+            if (at !== null && newPageForUrl(config, at) !== null) {
                 refuse(OWN_ADDRESS);
                 return;
             }

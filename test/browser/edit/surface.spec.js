@@ -360,7 +360,7 @@ describe('resolve', function() {
                 '<article></article>', STARTER_CONFIG, 'https://site.test/blog/'));
 
             expect(state).toEqual({
-                kind: 'starter', links: [{label: 'Blog', href: '/blog/new/'}]
+                kind: 'starter', links: [{label: 'Blog', href: '/blog/new/?cms-edit'}]
             });
         });
 
@@ -420,7 +420,7 @@ describe('resolve', function() {
                 STARTER_CONFIG, 'https://site.test/'));
 
             expect(starter).toEqual({
-                kind: 'starter', links: [{label: 'Blog', href: '/blog/new/'}]
+                kind: 'starter', links: [{label: 'Blog', href: '/blog/new/?cms-edit'}]
             });
 
             const fresh = await resolveOn(page(
@@ -451,7 +451,7 @@ describe('resolve', function() {
                 STARTER_CONFIG, 'https://site.test/blog/archive/'));
 
             expect(starter).toEqual({
-                kind: 'starter', links: [{label: 'Blog', href: '/blog/new/'}]
+                kind: 'starter', links: [{label: 'Blog', href: '/blog/new/?cms-edit'}]
             });
         });
     });
@@ -533,7 +533,10 @@ describe('open', function() {
         expect(said(surface.bar).className).toBe('ct-edit ct-edit--starter');
         const links = surface.bar.node.shadowRoot.querySelectorAll('.ct-edit__new');
         expect(links.length).toBe(1);
-        expect(links[0].getAttribute('href')).toBe('/blog/new/');
+        /* The flag rides in the href: a copied link or a middle click
+           reaches the new page with no token, and without the flag that
+           page would load nothing at all. */
+        expect(links[0].getAttribute('href')).toBe('/blog/new/?cms-edit');
         expect(links[0].textContent).toBe('New Blog entry');
         expect(surface.session).toBeNull();
         expect(surface.editing).toBeNull();
@@ -1922,6 +1925,29 @@ describe('open, on the new page', function() {
         expect(it.asked.length).toBe(before);
         expect(surface.session).toBeNull();
         expect(inBar(bar, '.ct-edit__begin').disabled).toBe(false);
+    });
+
+    it('refuses the new page\'s own address however the config spells the two',
+       async function() {
+        /* `page` without a trailing slash and `newPage` with one name
+           the same page, and the mapping treats them as one. Compared as
+           strings they differ, and the entry called "New" would be
+           published where the author is standing. */
+        const it = blankPage({
+            config: {...NEW_CONFIG, collections: [
+                {...NEW_CONFIG.collections[0], page: '/blog/{{slug}}'}
+            ]}
+        });
+        const surface = await openOn(it);
+        const {bar} = surface;
+        const before = it.asked.length;
+        name(bar, 'New');
+        begin(bar);
+
+        expect(refusal(bar))
+            .toBe("That name would be published at this page's own address. Choose another.");
+        expect(it.asked.length).toBe(before);
+        expect(surface.session).toBeNull();
     });
 
     it('takes any name on a new page that has no address in the config',

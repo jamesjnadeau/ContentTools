@@ -451,7 +451,7 @@ describe('New entry', function() {
         const shadow = await open('#/c/blog');
         const add = shadow.querySelector('.ct-cms__button--add');
         expect([add.getAttribute('href'), add.target, add.rel])
-            .toEqual(['/blog/new/', '_blank', 'noopener noreferrer']);
+            .toEqual(['/blog/new/?cms-edit', '_blank', 'noopener noreferrer']);
 
         const ev = click(add);
 
@@ -459,7 +459,9 @@ describe('New entry', function() {
         expect(opened.length).toBe(1);
         const [url, target, features] = opened[0];
         const [page, fragment] = url.split('#');
-        expect(page).toBe('/blog/new/');
+        /* The flag stays in the query and the session rides in the
+           fragment after it; the two do not get in each other's way. */
+        expect(page).toBe('/blog/new/?cms-edit');
         expect([target, features]).toEqual(['_blank', 'noopener']);
         return expect(readHandoff(fragment).handoff)
             .toEqual({key: TOKEN_KEY, value: 'github_pat_test'});

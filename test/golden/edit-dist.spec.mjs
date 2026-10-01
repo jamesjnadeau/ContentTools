@@ -642,7 +642,7 @@ test('a starter page links the new page', async ({page}) => {
        there, so the starter does nothing but point. */
     const link = panel(page).locator('.ct-edit__new');
     await expect(link).toHaveText('New Blog entry');
-    await expect(link).toHaveAttribute('href', NEW_PAGE);
+    await expect(link).toHaveAttribute('href', `${NEW_PAGE}?cms-edit`);
     await expect(link).not.toHaveAttribute('target', /./);
 });
 
@@ -671,6 +671,22 @@ test('first-post is still an entry, and new-post is not one', async ({page}) => 
     await expect(panel(page).locator('.ct-edit__begin')).toBeHidden();
 });
 
+test('the starter link\'s own address is enough to reach the new page', async ({page}) => {
+    /* Signed out, arriving by the flag, then following the link exactly
+       as a copied or middle-clicked one would be followed: nothing typed
+       by hand on the new page. Without the flag in the href that page
+       loads nothing at all. */
+    await page.goto(`${STARTER}?cms-edit`);
+    const href = await panel(page).locator('.ct-edit__new').getAttribute('href');
+
+    await page.goto(href);
+    await expect(panel(page).locator('.ct-edit__title')).toHaveText('New Blog entry');
+    await expect(panel(page).locator('.ct-edit__hint'))
+        .toHaveText('Sign in through the admin screens in this tab, then '
+            + 'come back to write it.');
+    await expect(panel(page).locator('.ct-edit__name')).toBeHidden();
+});
+
 test('naming, writing and submitting ends in a pull request', async ({page}) => {
     const fake = await signedIn(page);
     /* The token has to survive the same-tab navigation below, which is
@@ -680,7 +696,7 @@ test('naming, writing and submitting ends in a pull request', async ({page}) => 
 
     await page.goto(STARTER);
     await panel(page).locator('.ct-edit__new').click();
-    await expect(page).toHaveURL(/new-post\.html$/);
+    await expect(page).toHaveURL(/new-post\.html\?cms-edit$/);
 
     await panel(page).locator('.ct-edit__name').fill('Second post');
     await expect(panel(page).locator('.ct-edit__preview'))
