@@ -18,6 +18,7 @@
  */
 import {h} from '../../core/render.js';
 import {formatRoute} from '../routes.js';
+import {isPlainPrimaryClick} from './click.js';
 import {buildFields} from '../../entry/fields.js';
 import type {FieldsState, FieldsView, WidgetSource} from '../../entry/fields.js';
 import {statusOf} from '../../cms/status.js';
@@ -166,15 +167,11 @@ export function buildEntry(
         target: '_blank',
         rel: 'noopener noreferrer',
         onclick: (ev: MouseEvent) => {
-            /* A modified click belongs to the browser, not to us. Ctrl,
-               meta and shift are how a person says background tab, new
-               window, and a middle click says it without a modifier at
-               all -- taking those over would turn every one of them into
-               a foreground tab. They open the plain href and the page
-               asks them to sign in, which is the same degradation a
+            /* A modified click belongs to the browser, not to us (see
+               `isPlainPrimaryClick`). They open the plain href and the
+               page asks them to sign in, which is the same degradation a
                copied link gets and is why the flag is in the href. */
-            if (ev.button !== 0 || ev.metaKey || ev.ctrlKey
-                || ev.shiftKey || ev.altKey) {
+            if (!isPlainPrimaryClick(ev)) {
                 return;
             }
             const href = edit.getAttribute('href');

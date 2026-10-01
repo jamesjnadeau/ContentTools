@@ -1,7 +1,9 @@
 import {
-    alertText, createFakeGitHub, forgetToken, mountShell, shellFetch, signIn, until
+    alertText, CONFIG_URL, CONFIG_YAML, createFakeGitHub, forgetToken, mountShell,
+    shellFetch, signIn, until
 } from './helpers.js';
 import {DIRECTORY_LIMIT} from '../../../src/cms/github.js';
+import {readHandoff} from '../../../src/auth/handoff.js';
 import {TOKEN_KEY} from '../../../src/auth/pat.js';
 
 /* The entry list, end to end through the shell against an in-memory GitHub.
@@ -379,3 +381,131 @@ function held(fake) {
     };
     return gate;
 }
+
+describe('New entry', function() {
+
+    /* The shared config with a new page on the blog, and a second
+       creatable collection that has none, so one mount shows both
+       answers and a navigation between them shows the link changing
+       its mind. */
+    const YAML = CONFIG_YAML.replace(
+        '    page: /blog/{{slug}}/\n',
+        '    page: /blog/{{slug}}/\n    newPage: /blog/new/\n'
+    ) + `  - name: notes
+    label: Notes
+    folder: content/notes
+    create: true
+    page: /notes/{{slug}}/
+    body: article .content
+    fields:
+      - {name: title, label: Title}
+`;
+
+    let mounted = null;
+    let opened = [];
+    let realOpen = null;
+
+    beforeEach(function() {
+        forgetToken();
+        opened = [];
+        realOpen = window.open;
+        /* Catches what the shell hands `window.open`, and opens nothing --
+           the same net `entry.spec.js` casts for "Edit on the site". */
+        window.open = (...args) => {
+            opened.push(args);
+            return null;
+        };
+    });
+
+    afterEach(function() {
+        window.open = realOpen;
+        if (mounted) {
+            mounted.el.remove();
+            mounted = null;
+        }
+        forgetToken();
+        history.replaceState(null, '', location.pathname + location.search);
+    });
+
+    async function open(hash) {
+        history.replaceState(null, '', hash);
+        const fake = createFakeGitHub({files: SEED});
+        mounted = await mountShell({
+            fake, fetch: shellFetch(fake, {[CONFIG_URL]: YAML})
+        });
+        await signIn(mounted.el);
+        const {shadow} = mounted;
+        await until(() => shadow.querySelector('.ct-cms__button--add') !== null
+            && shown(shadow.querySelector('.ct-cms__button--add')), 'the New entry link');
+        return shadow;
+    }
+
+    /** Click the link, and say whether the shell took the click. */
+    function click(add, init = {}) {
+        const ev = new MouseEvent('click', {bubbles: true, cancelable: true, ...init});
+        add.dispatchEvent(ev);
+        return ev;
+    }
+
+    it('opens the site\'s new page, carrying the session', async function() {
+        const shadow = await open('#/c/blog');
+        const add = shadow.querySelector('.ct-cms__button--add');
+        expect([add.getAttribute('href'), add.target, add.rel])
+            .toEqual(['/blog/new/', '_blank', 'noopener noreferrer']);
+
+        const ev = click(add);
+
+        expect(ev.defaultPrevented).toBe(true);
+        expect(opened.length).toBe(1);
+        const [url, target, features] = opened[0];
+        const [page, fragment] = url.split('#');
+        expect(page).toBe('/blog/new/');
+        expect([target, features]).toEqual(['_blank', 'noopener']);
+        return expect(readHandoff(fragment).handoff)
+            .toEqual({key: TOKEN_KEY, value: 'github_pat_test'});
+    });
+
+    it.each([
+        ['⌘-click', {metaKey: true}],
+        ['ctrl-click', {ctrlKey: true}],
+        ['shift-click', {shiftKey: true}],
+        ['alt-click', {altKey: true}],
+        ['a middle click', {button: 1}]
+    ])('leaves %s to the browser, carrying no token', async function(_name, init) {
+        /* Both halves matter: that `window.open` was not called, and that
+           the default was not prevented -- otherwise nothing opens at
+           all, and a person who asked for a background tab gets none. */
+        const shadow = await open('#/c/blog');
+        const ev = click(shadow.querySelector('.ct-cms__button--add'), init);
+
+        expect(opened).toEqual([]);
+        expect(ev.defaultPrevented).toBe(false);
+    });
+
+    it('keeps the naming screen for a collection with no new page', async function() {
+        const shadow = await open('#/c/notes');
+        const add = shadow.querySelector('.ct-cms__button--add');
+
+        expect(add.getAttribute('href')).toBe('#/c/notes/new');
+        expect(add.hasAttribute('target')).toBe(false);
+        expect(add.hasAttribute('rel')).toBe(false);
+    });
+
+    it('drops the target again when the next collection has no new page', async function() {
+        const shadow = await open('#/c/blog');
+        const add = shadow.querySelector('.ct-cms__button--add');
+        expect(add.target).toBe('_blank');
+
+        location.hash = '#/c/notes';
+        await until(() => shadow.querySelector('.ct-cms__heading')?.textContent === 'Notes',
+                    'the Notes collection');
+
+        expect(add.getAttribute('href')).toBe('#/c/notes/new');
+        expect(add.hasAttribute('target')).toBe(false);
+        expect(add.hasAttribute('rel')).toBe(false);
+        /* And a click is the in-admin route's again, not a stale handler
+           opening the blog's new page. */
+        click(add);
+        expect(opened).toEqual([]);
+    });
+});

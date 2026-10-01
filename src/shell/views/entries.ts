@@ -18,6 +18,7 @@
 import {h, list} from '../../core/render.js';
 import {refuseCreate} from '../../entry/create.js';
 import {entryLabel, statusLabel} from './labels.js';
+import {isPlainPrimaryClick} from './click.js';
 import {formatRoute} from '../routes.js';
 import type {ListedEntry} from '../merge.js';
 import type {Collection} from '../../cms/config.js';
@@ -28,6 +29,21 @@ export interface EntriesState {
     entries: readonly ListedEntry[] | null;
     /** The directory was longer than the API will list in one request. */
     truncated: boolean;
+    /**
+     * The site's own page for starting an entry in this collection, with
+     * `site.base` applied, or null when the collection has none and "New
+     * entry" is the naming screen in `/admin`.
+     */
+    newPage: string | null;
+}
+
+export interface EntriesHandlers {
+    /**
+     * Open `href` on the site, handing this tab's token across -- the same
+     * handoff "Edit on the site" uses, for the same reason: the new page
+     * is on another origin and cannot see this tab's session.
+     */
+    openOnSite(href: string): void;
 }
 
 export interface Entries {
@@ -86,12 +102,35 @@ function fill(el: HTMLElement, collection: Collection, entry: ListedEntry): void
     }
 }
 
-export function buildEntries(doc: Document): Entries {
+export function buildEntries(doc: Document, handlers: EntriesHandlers): Entries {
     const heading = h(doc, 'h2', {class: 'ct-cms__heading'});
+    /* The site's new page for the collection on view, or null. Read by
+       the click handler below rather than recomputed from the href, so a
+       link pointing at the naming route can never be mistaken for one
+       that leaves the shell. */
+    let newPage: string | null = null;
     /* A real link, like the nav's, rather than a button: a new entry is a
        place -- it has an address, it survives a reload, and somebody can
-       hand it to a colleague. It is also how a keyboard reaches it. */
-    const add = h(doc, 'a', {class: 'ct-cms__button ct-cms__button--add'}, ['New entry']);
+       hand it to a colleague. It is also how a keyboard reaches it.
+
+       Where it goes depends on the collection. With a `newPage` it is the
+       site's own page, in a new tab like "Edit on the site" and for the
+       same reason -- the two surfaces write the same file and an author
+       moves between them. The href carries no token; an unmodified
+       primary click is taken over to send it in the fragment, and every
+       other click is left to the browser (see `isPlainPrimaryClick`).
+       Without one it is the naming route, a hash change this shell
+       handles itself. */
+    const add = h(doc, 'a', {
+        class: 'ct-cms__button ct-cms__button--add',
+        onclick: (ev: MouseEvent) => {
+            if (newPage === null || !isPlainPrimaryClick(ev)) {
+                return;
+            }
+            ev.preventDefault();
+            handlers.openOnSite(newPage);
+        }
+    }, ['New entry']);
     const note = h(doc, 'p', {class: 'ct-cms__note'});
     const rows = h(doc, 'ul', {class: 'ct-cms__entry-list'});
     const node = h(doc, 'div', {class: 'ct-cms__entries'}, [
@@ -120,8 +159,9 @@ export function buildEntries(doc: Document): Entries {
                offer what the route turns away. */
             const creatable = refuseCreate(state.collection) === null;
             add.hidden = !creatable;
+            newPage = creatable ? state.newPage : null;
             if (creatable) {
-                add.setAttribute('href', formatRoute({
+                add.setAttribute('href', newPage ?? formatRoute({
                     kind: 'new', collection: state.collection.name
                 }));
             } else {
@@ -129,6 +169,20 @@ export function buildEntries(doc: Document): Entries {
                    a link to the current page, and a screen reader in
                    links mode still offers it. */
                 add.removeAttribute('href');
+            }
+            /* Set and removed together, whichever way the link points:
+               this element is kept across collections, so a `target`
+               left over from one with a new page would open the next
+               one's naming screen in a tab of its own. `rel` as well as
+               `target`, as on the pull request link: the opened tab gets
+               a handle on this one through `window.opener` otherwise, and
+               this one is holding a GitHub token. */
+            if (newPage !== null) {
+                add.setAttribute('target', '_blank');
+                add.setAttribute('rel', 'noopener noreferrer');
+            } else {
+                add.removeAttribute('target');
+                add.removeAttribute('rel');
             }
 
             const entries = state.entries;

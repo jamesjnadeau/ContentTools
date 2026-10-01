@@ -295,6 +295,17 @@ nine.
 
 ## Creating and deleting
 
+Where **New entry** goes depends on the collection. A collection with a
+`newPage` (see [cms.md](cms.md)) sends it to that page on the site, in a
+new tab and carrying this tab's session like **Edit on the site** does: the
+author names and writes the entry on the page itself. A collection without
+one keeps the naming screen in `/admin`, which is what the rest of this
+section describes. The link's `href` is the plain page with no token, so
+copying it or opening it in a background tab is safe; only an unmodified
+click hands the session across. The `#/c/<collection>/new` route itself is
+unchanged, so a hand-typed or bookmarked address still names an entry in
+`/admin` even when the collection has a new page.
+
 **New entry** asks for a title and shows the filename it will produce as you
 type, expanded from the collection's `slug` template. A name already taken —
 on the base branch or by an open pull request — is refused before anything

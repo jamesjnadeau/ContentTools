@@ -14,7 +14,7 @@
 import {h, list} from '../../core/render.js';
 import {alertRegion, showAlert} from './alert.js';
 import {buildEntries} from './entries.js';
-import type {Entries} from './entries.js';
+import type {Entries, EntriesHandlers} from './entries.js';
 import {buildEntry} from './entry.js';
 import type {EntryHandlers, EntryState, EntryView} from './entry.js';
 import {buildCreate} from './create.js';
@@ -29,9 +29,10 @@ import type {Route} from '../routes.js';
 import type {Described} from '../../entry/errors.js';
 import type {ListedEntry} from '../merge.js';
 import type {CmsConfig} from '../../cms/config.js';
+import {newPagePath} from '../../cms/preview.js';
 
 export interface FrameHandlers
-        extends EntryHandlers, CreateHandlers, MediaHandlers, ReviewHandlers {
+        extends EntriesHandlers, EntryHandlers, CreateHandlers, MediaHandlers, ReviewHandlers {
     signOut(): void;
 }
 
@@ -114,7 +115,8 @@ function collectionView(
     entries.update({
         collection,
         entries: state.entries,
-        truncated: state.truncated
+        truncated: state.truncated,
+        newPage: newPagePath(state.config, collection)
     });
     return [entries.node];
 }
@@ -251,7 +253,7 @@ export function buildFrame(
         href: formatRoute({kind: 'review'})
     }, ['In review']);
     const view = h(doc, 'div', {class: 'ct-cms__view'});
-    const entries = buildEntries(doc);
+    const entries = buildEntries(doc, handlers);
     const entry = buildEntry(doc, handlers, widgets);
     const create = buildCreate(doc, handlers);
     const media = buildMedia(doc, handlers);
