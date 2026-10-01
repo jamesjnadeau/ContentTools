@@ -15,7 +15,7 @@ request — with authors signing in either with their own token or through a
 GitHub App — and an entry's words are written on the site's own published
 page rather than in an admin screen.**
 
-**`2.0.0-rc.3`** is the current release, and it carries all six.
+**`2.0.0-rc.4`** is the current release, and it carries all six.
 
 It is a release candidate rather than `2.0.0` for one reason, and it is not
 a code one: the three checks below are still owed by hand. `rc.0` should not
@@ -36,7 +36,7 @@ somebody's git history should have written to one before it calls itself
 final.
 
 Not yet on npm. `npm pack` produces the artifact; the tag is
-`2.0.0-rc.3`.
+`2.0.0-rc.4`.
 
 | | |
 |---|---|
@@ -167,6 +167,13 @@ because it is not a preview: it is the page. A reader pays 1.36 kB across
 two requests and nothing else; everything behind that decision is a dynamic
 import.
 
+An entry that does not exist yet has no page to press a pencil on, so a
+folder collection can name the pages that start one (`starter`) and the one
+page, built blank, on which it is named and written (`newPage`). A starter
+page's bar offers a link to it (**New Blog entry**, for a collection
+labelled Blog), and `/admin`'s **New entry** goes there too when the
+collection has a `newPage`.
+
 Editing one paragraph produces a one-line diff, because the markdown save
 splices the blocks nobody touched back in verbatim. That is the property the
 whole thing rests on: a pull request nobody can read is a review that does
@@ -209,7 +216,10 @@ the same page the dist suite drives — and the playground at
 `/playground/`: the editor, the custom-element version at `element.html`,
 markdown mode at `markdown.html`, the headless git layer at `cms.html`, and
 a stand-in for a site's own published page at `first-post.html`, which is
-where the in-page surface can be driven without deploying anything.
+where the in-page surface can be driven without deploying anything. Two
+more pages stand in for starting a new entry: `blog.html`, a starter page
+that links to the new page, and `new-post.html`, the new page, where a new
+entry is named and written.
 
 ### How this is tested
 
@@ -330,7 +340,7 @@ a decision rather than a gap. A preview needs the site's own templates and
 stylesheet to be worth anything, and Milestone 6 got them the only way that
 is actually true: by editing the real page.
 
-What is left is not code. `2.0.0-rc.3` carries every milestone, but the
+What is left is not code. `2.0.0-rc.4` carries every milestone, but the
 package has never been published to npm, and three things are owed by hand
 rather than by test — they are listed in [docs/auth.md](docs/auth.md) and
 the plan: the write half of the round trip against a real repository, a real
