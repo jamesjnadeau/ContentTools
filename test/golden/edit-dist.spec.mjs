@@ -617,3 +617,97 @@ test('dragging the toolbox moves it rather than stretching it',
     expect(Math.round(after.height)).toBe(Math.round(before.height));
     expect(Math.round(after.width)).toBe(Math.round(before.width));
 });
+
+/* --- a new entry --------------------------------------------------------
+ *
+ * The flow a site's own pages give an author: a page that is not an entry
+ * but starts one, a page that is not an entry but writes one, and a pull
+ * request at the end. `blog.html` and `new-post.html` are the playground's
+ * stand-ins for those two, named by `starter` and `newPage` in
+ * `site-config.yml`.
+ *
+ * Through the built file for the reason the rest of this one is: the
+ * naming form, the refusals and the mount all sit behind the same
+ * `import()` whose specifier only exists once Rollup has written it.
+ */
+
+const STARTER = '/playground/blog.html';
+const NEW_PAGE = '/playground/new-post.html';
+
+test('a starter page links the new page', async ({page}) => {
+    await signedIn(page);
+    await page.goto(STARTER);
+
+    /* A real link, to the new page, in the same tab: the name is typed
+       there, so the starter does nothing but point. */
+    const link = panel(page).locator('.ct-edit__new');
+    await expect(link).toHaveText('New Blog entry');
+    await expect(link).toHaveAttribute('href', NEW_PAGE);
+    await expect(link).not.toHaveAttribute('target', /./);
+});
+
+test('first-post is still an entry, and new-post is not one', async ({page}) => {
+    /* The collection's `page` template is `/playground/{{slug}}.html`,
+       so `new-post.html` would read as the entry `blog/new-post`. It is
+       named as the new page, and that wins -- or the bar would offer to
+       edit a file that does not exist. */
+    await page.goto(`${PAGE}?cms-edit`);
+    await expect(panel(page).locator('.ct-edit__title'))
+        .toHaveText('blog/first-post');
+    /* The naming form is always in the bar and hidden unless this is the
+       new page, so "no name field" is hidden rather than absent. */
+    await expect(panel(page).locator('.ct-edit__name')).toBeHidden();
+
+    await page.goto(`${NEW_PAGE}?cms-edit`);
+    await expect(panel(page).locator('.ct-edit__title'))
+        .toHaveText('New Blog entry');
+    await expect(panel(page).locator('.ct-edit__title'))
+        .not.toHaveText('blog/new-post');
+    /* Signed out: the way to sign in, and nowhere to type a name. */
+    await expect(panel(page).locator('.ct-edit__hint'))
+        .toHaveText('Sign in through the admin screens in this tab, then '
+            + 'come back to write it.');
+    await expect(panel(page).locator('.ct-edit__name')).toBeHidden();
+    await expect(panel(page).locator('.ct-edit__begin')).toBeHidden();
+});
+
+test('naming, writing and submitting ends in a pull request', async ({page}) => {
+    const fake = await signedIn(page);
+    /* The token has to survive the same-tab navigation below, which is
+       why `signedIn` seeds it with an init script rather than after a
+       `goto`. And the file must not exist yet, or this is an edit. */
+    expect(fake.read('content/blog/second-post.md', 'main')).toBeNull();
+
+    await page.goto(STARTER);
+    await panel(page).locator('.ct-edit__new').click();
+    await expect(page).toHaveURL(/new-post\.html$/);
+
+    await panel(page).locator('.ct-edit__name').fill('Second post');
+    await expect(panel(page).locator('.ct-edit__preview'))
+        .toHaveText('Saved as content/blog/second-post.md');
+    await panel(page).locator('.ct-edit__begin').click();
+
+    /* The page's own placeholder is replaced by an empty block to type
+       into, and no pencil is pressed: naming it was the asking. */
+    const paragraph = page.locator('article.post p.ce-element').first();
+    await expect(paragraph).toBeVisible();
+    await paragraph.click();
+    await page.keyboard.type('Written on the page.');
+
+    /* Details opens on its own, with the name already its title. Nothing
+       else in the playground's blog collection is required, so there is
+       nothing further to fill. */
+    await expect(panel(page).locator('.ct-fields')).toBeVisible();
+    await expect(panel(page).locator('.ct-fields .ct-field__input').first())
+        .toHaveValue('Second post');
+
+    await submit(page);
+
+    await expect(panel(page).locator('.ct-edit__note'))
+        .toHaveText(/^Submitted as [0-9a-f]{7}\.$/);
+    const file = fake.read('content/blog/second-post.md', 'cms/blog/second-post');
+    expect(file).toContain('title: Second post');
+    expect(file).toContain('Written on the page.');
+    expect(fake.read('content/blog/second-post.md', 'main')).toBeNull();
+    expect(fake.pulls()).toHaveLength(1);
+});

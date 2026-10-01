@@ -27,6 +27,14 @@ collections:
     # page wrapper instead and the editor replaces the site's layout with
     # a post -- which is why the bar names the element it found.
     body: article.post
+    # Where an author starts a new entry. A page that lists the posts
+    # carries a link; `newPage` is where the link goes and where the name
+    # is asked for and the words are written -- on the site's own layout,
+    # not on an admin screen. A real site writes `/blog/` and `/blog/new/`.
+    starter: /playground/blog.html
+    # The one page that is NOT an entry although `page` above would read
+    # it as `blog/new-post`. Naming it here is what stops that.
+    newPage: /playground/new-post.html
     fields:
       - {name: title, widget: string}
       - {name: date, widget: datetime}

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A new post &mdash; Example</title>
+
+<!-- Where this deployment's config lives. Without it the script looks in
+     `/cms-config.yml`, which is right for a site served at the root and
+     wrong for this one. -->
+<meta name="cms:config" content="/playground/site-config.yml">
+
+<style>
+    body { font: 16px/1.5 Georgia, serif; margin: 0; color: #222; }
+    header, footer { background: #f3f3f3; padding: 12px 24px; }
+    nav a { margin-right: 12px; }
+    .layout { max-width: 40em; margin: 0 auto; padding: 24px; }
+    .post h2 { font-size: 1.1em; }
+</style>
+</head>
+<body>
+
+<header>
+    <strong>Example</strong>
+    <nav><a href="./index.html">Home</a><a href="./cms.html">Admin</a></nav>
+</header>
+
+<div class="layout">
+    <!-- The template's own heading. The title the author types becomes the
+         entry's frontmatter, not this. -->
+    <h1>A new post</h1>
+
+    <!-- `newPage: /playground/new-post.html` in site-config.yml, with the
+         collection's `body: article.post`. The placeholder below is what
+         the page says until somebody names an entry; the editor replaces
+         it, and the red cross puts it back. -->
+    <article class="post">
+        <p>Nothing here yet.</p>
+    </article>
+</div>
+
+<footer>
+    <p>Reach this page from <a href="./blog.html?cms-edit">the blog</a>,
+    signed in. The bar asks what the new post is called, then opens an
+    empty post here to write in.</p>
+</footer>
+
+<!-- The one line a site adds. It goes on EVERY page, so what it costs a
+     reader is the whole argument for its shape. -->
+<script type="module" src="../dist/edit.js"></script>
+
+</body>
+</html>

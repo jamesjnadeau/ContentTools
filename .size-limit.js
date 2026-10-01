@@ -134,10 +134,18 @@ export default [
            readers that must agree about which entry a page is: the
            script on the site's own page, and the /admin listing that
            links to it. Two places that answer that question are two
-           places that can disagree. */
+           places that can disagree.
+
+           15.5 kB -> 16.5 kB with the starter and new page: 16.36 kB
+           measured, 858 bytes over. The `starter` and `newPage` keys
+           with the rules that refuse one without the other, and the
+           mappings that answer which URL is a starter and which is the
+           new page -- here for the same reason as the line above, since
+           the bar on the site's page and the /admin listing that links
+           to it have to agree on both. */
         name: 'cms entry',
         path: closureOf('dist/cms.js'),
-        limit: '15.5 kB',
+        limit: '16.5 kB',
         gzip: true
     },
     {
@@ -269,10 +277,16 @@ export default [
            The budget is lowered rather than left slack on purpose: a
            slack budget is not a budget, and the failure it now guards
            is a static import of the editor creeping back in, which
-           would show up here as +80 kB and nowhere else. */
+           would show up here as +80 kB and nowhere else.
+
+           145 kB -> 145.5 kB for the starter and new page: 145.22 kB
+           measured, 218 bytes over, and no shell code to speak of. It
+           is `dist/cms.js`'s two keys and two mappings again, inlined
+           here because /admin sends New entry to the site's new page
+           when a collection has one. */
         name: 'shell entry + its chunks',
         path: closureOf('dist/shell.js'),
-        limit: '145 kB',
+        limit: '145.5 kB',
         gzip: true
     },
     {
@@ -376,10 +390,16 @@ export default [
            211 kB -> 212 kB for a site's own tools: 211.19 kB measured,
            187 bytes over. The reader's side pays 30 bytes to read
            `window.contentToolsEdit`; this side carries the checks that
-           turn a misspelt tool name into a sentence on the bar. */
+           turn a misspelt tool name into a sentence on the bar.
+
+           212 kB -> 215 kB for the naming form: 214.59 kB measured,
+           2.59 kB over. The new page's name field with its live
+           filename preview and three refusals, the starter links, and
+           the blank document a name seeds. All of it is behind the same `import()`
+           as the rest, so the reader's 1.5 kB above is unmoved. */
         name: 'edit lazy surface',
         path: lazyClosureOf('dist/edit.js'),
-        limit: '212 kB',
+        limit: '215 kB',
         gzip: true
     },
     {
