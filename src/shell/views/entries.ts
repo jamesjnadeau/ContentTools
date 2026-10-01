@@ -16,7 +16,7 @@
  * `labels.ts` since M5-7, where the review list says them too.
  */
 import {h, list} from '../../core/render.js';
-import {refuseCreate} from './create.js';
+import {refuseCreate} from '../../entry/create.js';
 import {entryLabel, statusLabel} from './labels.js';
 import {formatRoute} from '../routes.js';
 import type {ListedEntry} from '../merge.js';

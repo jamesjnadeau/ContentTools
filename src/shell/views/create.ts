@@ -12,8 +12,8 @@
  * is for.
  */
 import {h} from '../../core/render.js';
-import {entryPath, expandSlug, slugify} from '../../cms/config.js';
-import type {Collection, FolderCollection} from '../../cms/config.js';
+import type {Collection} from '../../cms/config.js';
+import {previewPath, refuseCreate} from '../../entry/create.js';
 
 export interface CreateState {
     collection: Collection;
@@ -29,37 +29,6 @@ export interface CreateView {
 export interface CreateHandlers {
     /** Make the entry. The slug is re-derived there, not passed from here. */
     create(title: string): void;
-}
-
-/** Why this collection cannot be added to, or null. */
-export function refuseCreate(collection: Collection): string | null {
-    /* A file collection is a fixed list of pages somebody declared, so
-       adding to it means editing the config, not pressing a button. The
-       route is reachable by hand-typed URL, which is the only way anybody
-       gets here -- there is no link. */
-    if (collection.kind === 'file') {
-        return `${collection.label} is a fixed set of pages, so entries cannot be added to it.`;
-    }
-    if (!collection.create) {
-        return `${collection.label} does not allow new entries.`
-            + ' A deployment turns that on with `create: true` in its config.';
-    }
-    return null;
-}
-
-/**
- * The filename a title would get, or null when there is no usable name.
- *
- * `slugify` returning nothing is not an edge case to paper over: a title
- * written entirely in a script it cannot spell has no ASCII filename, and
- * inventing one would give somebody a page at a URL they did not choose
- * and cannot guess.
- */
-export function previewPath(collection: FolderCollection, title: string, at: Date): string | null {
-    if (slugify(title) === '') {
-        return null;
-    }
-    return entryPath(collection, expandSlug(collection, title, at));
 }
 
 export function buildCreate(doc: Document, handlers: CreateHandlers): CreateView {

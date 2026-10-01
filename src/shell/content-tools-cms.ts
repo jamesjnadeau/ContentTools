@@ -74,7 +74,7 @@ import type {Status} from './views/status.js';
 import type {EntryState} from './views/entry.js';
 import {formState} from '../entry/fields.js';
 import type {FieldsState} from '../entry/fields.js';
-import {fieldDefaults} from '../entry/frontmatter.js';
+import {blankDocument} from '../entry/create.js';
 /* The open entry itself -- the editor over it, what a save would write,
    and the commit -- lives outside the shell, because the in-page editing
    surface opens the same entry on the site's own page and has to reach
@@ -914,28 +914,8 @@ export class ContentToolsCms extends HTMLElement {
             if (entry.content !== null || entry.pull) {
                 throw new EntryExistsError(route.collection, slug, entry.path);
             }
-            this._mount(entry, this._blankDocument(fieldsFor(collection, slug)));
+            this._mount(entry, blankDocument(fieldsFor(collection, slug)));
         });
-    }
-
-    /**
-     * The document a new entry starts from.
-     *
-     * The defaults go into the SOURCE, not into the form beside it. A
-     * form seeded separately would be a second description of what the
-     * file holds, and the byte-preserving comparison -- which asks
-     * whether the form now says something the file does not -- would be
-     * comparing the form against a document that never had them.
-     */
-    private _blankDocument(fields: readonly Field[]): MarkdownDocument {
-        const blank = MarkdownDocument.parse('');
-        const defaults = fieldDefaults(fields);
-        /* No keys, no block. A collection whose fields declare no
-           defaults must not give every new entry an empty `---\n---`
-           for every later diff to carry. */
-        return Object.keys(defaults).length === 0
-            ? blank
-            : MarkdownDocument.parse(blank.update('', {frontmatter: defaults}));
     }
 
     /**
