@@ -105,15 +105,6 @@ export function entryForUrl(config: CmsConfig, url: string): PageEntry | null {
         return null;
     }
 
-    /* A page the config names LITERALLY is that page and not whatever a
-       `{{slug}}` template would make of it. With `page: /blog/{{slug}}/`
-       and `newPage: /blog/new/`, the second matches the first with the
-       slug `new`, and an author on the new page would be told they were
-       editing an entry that does not exist. */
-    if (isNamedPage(config, path)) {
-        return null;
-    }
-
     for (const collection of config.collections) {
         if (collection.kind === 'file') {
             const file = collection.files.find(
@@ -123,7 +114,14 @@ export function entryForUrl(config: CmsConfig, url: string): PageEntry | null {
             }
             continue;
         }
-        const slug = collection.page === null
+        /* A page the config names LITERALLY is that page and not whatever
+           a `{{slug}}` template would make of it. With `page:
+           /blog/{{slug}}/` and `newPage: /blog/new/`, the second matches
+           the first with the slug `new`, and an author on the new page
+           would be told they were editing an entry that does not exist.
+           Only the template needs this: a file entry above whose own
+           `page` is that path is the entry, not a template's guess. */
+        const slug = collection.page === null || isNamedPage(config, path)
             ? null
             : matchPage(collection.page, path);
         if (slug !== null) {

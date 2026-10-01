@@ -371,6 +371,42 @@ describe('starter pages', function() {
             .toEqual({collection: 'pages', slug: 'about'});
     });
 
+    it('keeps a file entry that is also a starter page an entry', function() {
+        /* The guard exists so a `{{slug}}` template does not claim a path
+           the config names literally. A file whose own `page` is that path
+           is not a template match, it is the entry. */
+        const c = parseConfig({
+            backend: {repo: 'owner/site'},
+            media: {folder: 'static/images', publicPath: '/images'},
+            site: {base: '/prefix'},
+            collections: [
+                {name: 'pages', body: '#content', files: [
+                    {name: 'home', file: 'src/home.md', page: '/'}]},
+                {name: 'blog', folder: 'content/blog', create: true,
+                 page: '/blog/{{slug}}/', body: 'main',
+                 starter: '/', newPage: '/blog/new/'}
+            ]
+        });
+        expect(entryForUrl(c, 'https://site.test/prefix/'))
+            .toEqual({collection: 'pages', slug: 'home'});
+        expect(startersForUrl(c, 'https://site.test/prefix/').map(x => x.name)).toEqual(['blog']);
+    });
+
+    it('needs nothing outside an empty base', function() {
+        const c = parseConfig({
+            backend: {repo: 'owner/site'},
+            media: {folder: 'static/images', publicPath: '/images'},
+            collections: [
+                {name: 'blog', folder: 'content/blog', create: true,
+                 page: '/blog/{{slug}}/', body: 'main',
+                 starter: '/', newPage: '/blog/new/'}
+            ]
+        });
+        expect(newPageForUrl(c, 'https://site.test/blog/new/').name).toBe('blog');
+        expect(startersForUrl(c, 'https://site.test/').map(x => x.name)).toEqual(['blog']);
+        expect(startersForUrl(c, 'https://site.test/index.html').map(x => x.name)).toEqual(['blog']);
+    });
+
     describe('when the pages are files', function() {
 
         /* A static site that emits `new-post.html` rather than a
