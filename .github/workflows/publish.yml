@@ -1,0 +1,47 @@
+name: Publish
+
+# Publishing is a GitHub release. Cut one from a tag that matches
+# package.json's version (2.0.0-rc.4 -> tag 2.0.0-rc.4) and this runs.
+on:
+  release:
+    types: [published]
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Lets `--provenance` sign the build with this run's identity.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Tag matches package.json
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$tag" ]; then
+            echo "Release tag '$GITHUB_REF_NAME' does not match package.json version '$version'" >&2
+            exit 1
+          fi
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      # Builds first, then checks the size budgets.
+      - run: npm run test:size
+
+      - name: Publish
+        # A prerelease (anything with a hyphen in its version) goes under
+        # `next`, so a plain `npm install` never picks up a release candidate.
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then tag=next; else tag=latest; fi
+          npm publish --provenance --tag "$tag"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
