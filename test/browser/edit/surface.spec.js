@@ -10,6 +10,11 @@ import {
     CONFIG_META, CONTENT_STYLES_MARK, DEFAULT_CONFIG_URL, open, resolve
 } from '../../../src/edit/surface.js';
 import {BAR_TAG} from '../../../src/edit/chrome.js';
+/* The class module, as the surface itself reaches it: the element's
+   `index.js` is a build entry and registers the tag on import, which
+   would hide a surface that forgot to. */
+import {TAG_NAME as EDITOR_TAG}
+    from '../../../src/element/content-tools-editor.js';
 import {TOKEN_KEY} from '../../../src/auth/pat.js';
 import {createFakeGitHub} from '../cms/fake-github.js';
 
@@ -109,6 +114,68 @@ afterEach(async function() {
 function pressEdit(session, button = 'edit') {
     session.editor.shadowRoot
         .querySelector(`.ct-ignition__button--${button}`).click();
+}
+
+/** Whatever `window.confirm` answers while `fn` runs. */
+async function confirming(answer, fn) {
+    const real = window.confirm;
+    window.confirm = () => answer;
+    try {
+        await fn();
+    } finally {
+        window.confirm = real;
+    }
+}
+
+const inBar = (bar, selector) => bar.node.shadowRoot.querySelector(selector);
+const note = bar => inBar(bar, '.ct-edit__note').textContent;
+
+/** The three things the bar says in every state. */
+const said = bar => ({
+    className: inBar(bar, '.ct-edit').className,
+    title: inBar(bar, '.ct-edit__title').textContent,
+    hint: inBar(bar, '.ct-edit__hint').textContent
+});
+
+/**
+ * Rewrite one block, as typing into it would.
+ *
+ * Through the ContentEdit element rather than by assigning
+ * `textContent`: the editor keeps its own tree, and a DOM poke
+ * behind its back leaves `lastModified()` untouched -- so `save()`
+ * reports nothing changed and every assertion afterwards is about
+ * an edit that never happened.
+ *
+ * The SECOND block unless told otherwise, which is the one the seeded
+ * entry's tests rewrite so the first is there to be found unchanged.
+ */
+function retype(session, text, index = 1) {
+    const block = session.editor.editorApp.regions().body.children[index];
+    block.content = new HTMLString.String(text);
+    block.updateInnerHTML();
+    block.taint();
+}
+
+/** Press Submit and wait for the bar to say what happened. */
+async function submit(bar) {
+    inBar(bar, '.ct-edit__submit').click();
+    await until(() => note(bar) !== '', 'the bar to report the submit');
+}
+
+/** Whether closing the tab now would ask first. */
+function asksToLeave() {
+    /* A plain Event, because a BeforeUnloadEvent cannot be built by
+       hand -- and a plain Event's own `returnValue` is a boolean that
+       ignores the string the library writes. So the property is
+       shadowed with one that remembers what it was given. */
+    const ev = new Event('beforeunload', {cancelable: true});
+    let said = '';
+    Object.defineProperty(ev, 'returnValue', {
+        get: () => said,
+        set: value => { said = value; }
+    });
+    window.dispatchEvent(ev);
+    return ev.defaultPrevented || said !== '';
 }
 
 describe('resolve', function() {
@@ -272,6 +339,122 @@ describe('resolve', function() {
         await expect(resolveOn(page('<article>x</article>', null)))
             .rejects.toThrow('404');
     });
+
+    describe('pages that start an entry', function() {
+
+        /* `/blog/` offers the link and `/blog/new/` is where it leads.
+           Neither is an entry, and the second one LOOKS like one to the
+           `page` template -- `new` is a perfectly good slug -- which is
+           the confusion most of what follows is about. */
+        const STARTER_CONFIG = {
+            ...CONFIG,
+            collections: [
+                {...CONFIG.collections[0], label: 'Blog', create: true,
+                 starter: '/blog/', newPage: '/blog/new/'},
+                CONFIG.collections[1]
+            ]
+        };
+
+        it('says a starter page starts something', async function() {
+            const state = await resolveOn(page(
+                '<article></article>', STARTER_CONFIG, 'https://site.test/blog/'));
+
+            expect(state).toEqual({
+                kind: 'starter', links: [{label: 'Blog', href: '/blog/new/'}]
+            });
+        });
+
+        it('says the new page is new, not an entry called new', async function() {
+            const state = await resolveOn(page(
+                '<article></article>', STARTER_CONFIG, 'https://site.test/blog/new/'));
+
+            expect([state.kind, state.collection.name, state.selector])
+                .toEqual(['new-page', 'blog', 'article']);
+            expect(state.body.tagName).toBe('ARTICLE');
+        });
+
+        it('blocks a new page with nothing to write in, and names the selector',
+           async function() {
+            /* The same finding as `no-body`, at the same moment: the
+               editor replaces that element's children, so a template
+               without it is found out here rather than by an author. */
+            const state = await resolveOn(page(
+                '<div></div>', STARTER_CONFIG, 'https://site.test/blog/new/'));
+
+            expect(state.kind).toBe('new-blocked');
+            expect(state.hint).toBe('Nothing on this page matches `article`.');
+        });
+
+        it('edits a page that declares an entry, even at a starter\'s address',
+           async function() {
+            /* A page that says what it is has been asked nothing about
+               its URL. A site whose index page is itself an entry keeps
+               editing it. */
+            const state = await resolveOn(page(
+                '<meta name="cms:entry" content="blog/hello"><article></article>',
+                STARTER_CONFIG, 'https://site.test/blog/'));
+
+            expect(state.kind).toBe('ready');
+            expect(state.entry).toEqual({collection: 'blog', slug: 'hello'});
+        });
+
+        it('reads a starter and a new page as ordinary pages when the config '
+           + 'no longer holds the collection', async function() {
+            // What a role-filtered config looks like: the collection is simply gone.
+            const without = {
+                ...STARTER_CONFIG,
+                collections: STARTER_CONFIG.collections.filter(c => c.name !== 'blog')
+            };
+
+            for (const url of ['https://site.test/blog/', 'https://site.test/blog/new/']) {
+                const state = await resolveOn(page('<article></article>', without, url));
+                expect(state.kind).toBe('not-an-entry');
+            }
+        });
+
+        it('takes the markup\'s word for both', async function() {
+            /* On addresses the config names for neither, so the only
+               thing that can have answered is the tag. */
+            const starter = await resolveOn(page(
+                '<meta name="cms:starter" content="blog"><article></article>',
+                STARTER_CONFIG, 'https://site.test/'));
+
+            expect(starter).toEqual({
+                kind: 'starter', links: [{label: 'Blog', href: '/blog/new/'}]
+            });
+
+            const fresh = await resolveOn(page(
+                '<meta name="cms:new-page" content="blog"><article></article>',
+                STARTER_CONFIG, 'https://site.test/write/'));
+
+            expect([fresh.kind, fresh.collection.name, fresh.selector])
+                .toEqual(['new-page', 'blog', 'article']);
+            expect(fresh.body.tagName).toBe('ARTICLE');
+        });
+
+        it('takes the markup\'s word over an address that reads as an entry\'s',
+           async function() {
+            /* A site that puts its new page, or a second index, under the
+               collection's own prefix without naming it in the config.
+               `/blog/{{slug}}/` fits both addresses, and without the tag
+               each would be an entry that could not be read -- so the tag
+               has to be asked before the template is. */
+            const fresh = await resolveOn(page(
+                '<meta name="cms:new-page" content="blog"><article></article>',
+                STARTER_CONFIG, 'https://site.test/blog/write/'));
+
+            expect([fresh.kind, fresh.collection.name])
+                .toEqual(['new-page', 'blog']);
+
+            const starter = await resolveOn(page(
+                '<meta name="cms:starter" content="blog"><article></article>',
+                STARTER_CONFIG, 'https://site.test/blog/archive/'));
+
+            expect(starter).toEqual({
+                kind: 'starter', links: [{label: 'Blog', href: '/blog/new/'}]
+            });
+        });
+    });
 });
 
 describe('open', function() {
@@ -332,6 +515,29 @@ describe('open', function() {
 
         expect(bar.node.shadowRoot.querySelector('.ct-edit__hint').textContent)
             .toContain('collections[0]');
+    });
+
+    it('shows the starter link on a starter page and mounts nothing',
+       async function() {
+        /* A real link to the new page and nothing else: no editor, and
+           not one request to GitHub, because nothing on a starter page
+           is read or written. Whether anybody is signed in is the new
+           page's question. */
+        const it = page('<article>x</article>', {
+            ...CONFIG,
+            collections: [{...CONFIG.collections[0], label: 'Blog', create: true,
+                           starter: '/blog/', newPage: '/blog/new/'}]
+        }, 'https://site.test/blog/');
+        const surface = await open(it.where, it.options);
+
+        expect(said(surface.bar).className).toBe('ct-edit ct-edit--starter');
+        const links = surface.bar.node.shadowRoot.querySelectorAll('.ct-edit__new');
+        expect(links.length).toBe(1);
+        expect(links[0].getAttribute('href')).toBe('/blog/new/');
+        expect(links[0].textContent).toBe('New Blog entry');
+        expect(surface.session).toBeNull();
+        expect(surface.editing).toBeNull();
+        expect(it.asked).toEqual([DEFAULT_CONFIG_URL]);
     });
 });
 
@@ -416,12 +622,6 @@ describe('open, mounting', function() {
         opened.push(surface);
         return surface;
     }
-
-    const said = bar => ({
-        className: bar.node.shadowRoot.querySelector('.ct-edit').className,
-        title: bar.node.shadowRoot.querySelector('.ct-edit__title').textContent,
-        hint: bar.node.shadowRoot.querySelector('.ct-edit__hint').textContent
-    });
 
     it('edits the site\'s own element where it stands', async function() {
         /* The whole reason `regionElements` exists. Moving this element
@@ -810,26 +1010,6 @@ describe('open, mounting', function() {
            tools away; the red cross discards it and hands the reader's
            own markup back. */
 
-        /** Whatever `window.confirm` answers while `fn` runs. */
-        async function confirming(answer, fn) {
-            const real = window.confirm;
-            window.confirm = () => answer;
-            try {
-                await fn();
-            } finally {
-                window.confirm = real;
-            }
-        }
-
-        /** Rewrite one block, as typing into it would. */
-        function retype(session, text, index = 0) {
-            const block = session.editor.editorApp
-                .regions().body.children[index];
-            block.content = new HTMLString.String(text);
-            block.updateInnerHTML();
-            block.taint();
-        }
-
         it('replaces the template\'s HTML with our render of the branch',
            async function() {
             /* The two are different documents even when they look the
@@ -873,7 +1053,7 @@ describe('open, mounting', function() {
             const it = sitePage();
             const {bar, session} = await mount(it);
             pressEdit(session);
-            retype(session, 'Rewritten.');
+            retype(session, 'Rewritten.', 0);
 
             pressEdit(session, 'confirm');
 
@@ -895,7 +1075,7 @@ describe('open, mounting', function() {
             const it = sitePage();
             const {session} = await mount(it);
             pressEdit(session);
-            retype(session, 'Rewritten.');
+            retype(session, 'Rewritten.', 0);
 
             await confirming(true, () => pressEdit(session, 'cancel'));
 
@@ -918,7 +1098,7 @@ describe('open, mounting', function() {
             const it = sitePage();
             const {session} = await mount(it);
             pressEdit(session);
-            retype(session, 'Rewritten.');
+            retype(session, 'Rewritten.', 0);
 
             await confirming(false, () => pressEdit(session, 'cancel'));
 
@@ -937,13 +1117,13 @@ describe('open, mounting', function() {
             const it = sitePage();
             const {session} = await mount(it);
             pressEdit(session);
-            retype(session, 'Rewritten.');
+            retype(session, 'Rewritten.', 0);
             pressEdit(session, 'confirm');
 
             pressEdit(session);
 
             expect(it.body().textContent).toContain('Rewritten.');
-            retype(session, 'Rewritten twice.');
+            retype(session, 'Rewritten twice.', 0);
             pressEdit(session, 'confirm');
             expect(session.pending().content).toContain('Rewritten twice.');
         });
@@ -962,11 +1142,11 @@ describe('open, mounting', function() {
             const it = sitePage();
             const {session} = await mount(it);
             pressEdit(session);
-            retype(session, 'Kept.');
+            retype(session, 'Kept.', 0);
             pressEdit(session, 'confirm');
 
             pressEdit(session);
-            retype(session, 'Discarded.');
+            retype(session, 'Discarded.', 0);
             await confirming(true, () => pressEdit(session, 'cancel'));
 
             expect(it.body().textContent).toContain('Kept.');
@@ -987,11 +1167,11 @@ describe('open, mounting', function() {
             const it = sitePage();
             const {session} = await mount(it);
             pressEdit(session);
-            retype(session, 'Kept.');
+            retype(session, 'Kept.', 0);
             pressEdit(session, 'confirm');
 
             pressEdit(session);
-            retype(session, 'Discarded.');
+            retype(session, 'Discarded.', 0);
             expect(session.pending().content).toContain('Discarded.');
             await confirming(true, () => pressEdit(session, 'cancel'));
 
@@ -1003,7 +1183,7 @@ describe('open, mounting', function() {
             const it = sitePage();
             const {session} = await mount(it);
             pressEdit(session);
-            retype(session, 'Rewritten.');
+            retype(session, 'Rewritten.', 0);
             await confirming(true, () => pressEdit(session, 'cancel'));
 
             pressEdit(session);
@@ -1097,31 +1277,6 @@ describe('open, submitting', function() {
         return surface;
     }
 
-    const inBar = (bar, selector) => bar.node.shadowRoot.querySelector(selector);
-    const note = bar => inBar(bar, '.ct-edit__note').textContent;
-
-    /**
-     * Rewrite one block, as typing into it would.
-     *
-     * Through the ContentEdit element rather than by assigning
-     * `textContent`: the editor keeps its own tree, and a DOM poke
-     * behind its back leaves `lastModified()` untouched -- so `save()`
-     * reports nothing changed and every assertion afterwards is about
-     * an edit that never happened.
-     */
-    function retype(session, text, index = 1) {
-        const block = session.editor.editorApp.regions().body.children[index];
-        block.content = new HTMLString.String(text);
-        block.updateInnerHTML();
-        block.taint();
-    }
-
-    /** Press Submit and wait for the bar to say what happened. */
-    async function submit(bar) {
-        inBar(bar, '.ct-edit__submit').click();
-        await until(() => note(bar) !== '', 'the bar to report the submit');
-    }
-
     it('commits to a branch and opens a pull request', async function() {
         const it = sitePage();
         const {bar, session} = await mount(it);
@@ -1136,22 +1291,6 @@ describe('open, submitting', function() {
            request, not into the site. */
         expect(it.fake.read(ENTRY, 'main')).toBe(SOURCE);
     });
-
-    /** Whether closing the tab now would ask first. */
-    function asksToLeave() {
-        /* A plain Event, because a BeforeUnloadEvent cannot be built by
-           hand -- and a plain Event's own `returnValue` is a boolean that
-           ignores the string the library writes. So the property is
-           shadowed with one that remembers what it was given. */
-        const ev = new Event('beforeunload', {cancelable: true});
-        let said = '';
-        Object.defineProperty(ev, 'returnValue', {
-            get: () => said,
-            set: value => { said = value; }
-        });
-        window.dispatchEvent(ev);
-        return ev.defaultPrevented || said !== '';
-    }
 
     it('stops asking before the tab closes once the edit is submitted',
        async function() {
@@ -1457,5 +1596,526 @@ describe('open, submitting', function() {
         const conflict = inBar(bar, '.ct-edit__conflict');
         expect(conflict.value).toBe('');
         expect(getComputedStyle(conflict).display).toBe('none');
+    });
+});
+
+describe('open, on the new page', function() {
+
+    /* The mounting site again, with its blog able to start an entry: a
+       page that offers the link and a page the link leads to. The
+       `title` field is what makes a name worth carrying into the file
+       -- it is required, and the author has just typed it. */
+    const NEW_CONFIG = {
+        ...CONFIG,
+        collections: [
+            {name: 'blog', label: 'Blog', folder: 'content/blog',
+             page: '/blog/{{slug}}/', body: 'article.post',
+             create: true, starter: '/blog/', newPage: '/blog/new/',
+             fields: [{name: 'title', label: 'Title', widget: 'string',
+                       required: true}]}
+        ]
+    };
+
+    /* What the site's template renders for a page with no entry behind
+       it: the element the config names, holding whatever the site wants
+       a reader who wandered in to see. */
+    const BLANK = '<main class="layout">'
+        + '<article class="post"><p id="placeholder">Nothing here yet.</p></article>'
+        + '</main>';
+
+    const SOURCE = '---\ntitle: Hello\n---\n\nFirst paragraph.\n';
+    const POST = 'content/blog/my-first-post.md';
+    const BRANCH = 'cms/blog/my-first-post';
+
+    /**
+     * The site's new page, in the REAL document. See `sitePage` above.
+     *
+     * `refuse` and `hold` reach EVERY request to GitHub here, reads
+     * included, where the submitting describe's reach only writes: what
+     * is under test on this page is the read that settles whether a
+     * name is free.
+     */
+    function blankPage(options = {}) {
+        const {
+            markup = BLANK,
+            config = NEW_CONFIG,
+            files = {},
+            token = 'github_pat_test',
+            url = 'https://site.test/blog/new/'
+        } = options;
+
+        const host = document.createElement('div');
+        host.innerHTML = markup;
+        document.body.appendChild(host);
+        planted.push(host);
+
+        const fake = createFakeGitHub({files});
+        if (token !== null) {
+            sessionStorage.setItem(TOKEN_KEY, token);
+        }
+
+        const it = {
+            fake,
+            /** Every URL but the config's that the surface fetched, in order. */
+            asked: [],
+            /** Answer every request with this, until a test says otherwise. */
+            refuse: null,
+            /** A promise every request waits on, so one can be caught mid-air. */
+            hold: null,
+            where: {document, location: {href: url}}
+        };
+        it.options = {
+            fetch: async (input, init) => {
+                const at = typeof input === 'string'
+                    ? input : String(input.url ?? input);
+                if (at === DEFAULT_CONFIG_URL) {
+                    return new Response(JSON.stringify(config));
+                }
+                it.asked.push(at);
+                if (it.hold) {
+                    await it.hold;
+                }
+                if (it.refuse) {
+                    return it.refuse();
+                }
+                return fake.fetch(input, init);
+            }
+        };
+        return it;
+    }
+
+    /**
+     * Open one, and remember it so `afterEach` can close it.
+     *
+     * The `Surface` itself and not a copy of its fields: `session` is
+     * null when this returns and is the mounted one after a name is
+     * given, so a test that destructured it here would be holding the
+     * answer from before the thing it is about.
+     */
+    async function openOn(it) {
+        const surface = await open(it.where, it.options);
+        opened.push(surface);
+        return surface;
+    }
+
+    /** Type a name, as a person does: the preview and the button follow. */
+    function name(bar, text) {
+        const field = inBar(bar, '.ct-edit__name');
+        field.value = text;
+        field.dispatchEvent(new Event('input'));
+    }
+
+    const begin = bar => inBar(bar, '.ct-edit__begin').click();
+    const refusal = bar => inBar(bar, '.ct-edit__refusal').textContent;
+    const region = () => document.querySelector('article.post');
+    const lastMessage = (it, branch) => it.fake.history(branch)[0].message;
+
+    /** Name it, press Start writing, and wait for the editor. */
+    async function write(surface, title = 'My first post') {
+        name(surface.bar, title);
+        begin(surface.bar);
+        await until(() => surface.session?.started(), 'the editor to start');
+    }
+
+    it('asks for a name, and puts no editor up yet', async function() {
+        const it = blankPage();
+        const surface = await openOn(it);
+
+        expect(said(surface.bar)).toEqual({
+            className: 'ct-edit ct-edit--naming',
+            title: 'New Blog entry',
+            hint: 'Name it, then write it on this page.'
+        });
+        expect(inBar(surface.bar, '.ct-edit__naming').hidden).toBe(false);
+        expect(surface.session).toBeNull();
+        expect(surface.editing).toBeNull();
+        expect(document.querySelector(EDITOR_TAG)).toBeNull();
+        /* And nothing was asked of the repository: until there is a
+           name there is no path, and no path is nothing to read. */
+        expect(it.asked).toEqual([]);
+    });
+
+    it('says to sign in, signed out, and offers no name field', async function() {
+        /* A name typed by somebody who cannot save it is work thrown
+           away at Submit. And there is no sign-in here to offer, for
+           the reason there is none on an entry's page. */
+        const surface = await openOn(blankPage({token: null}));
+
+        expect(said(surface.bar)).toEqual({
+            className: 'ct-edit ct-edit--new-blocked',
+            title: 'New Blog entry',
+            hint: 'Sign in through the admin screens in this tab, '
+                + 'then come back to write it.'
+        });
+        expect(inBar(surface.bar, '.ct-edit__naming').hidden).toBe(true);
+        expect(surface.session).toBeNull();
+        expect(document.querySelector(EDITOR_TAG)).toBeNull();
+    });
+
+    it('starts the editor over the blank body once it is named', async function() {
+        const surface = await openOn(blankPage());
+        name(surface.bar, 'My first post');
+        begin(surface.bar);
+        await until(() => surface.session?.started(), 'the editor to start');
+
+        expect(said(surface.bar).className).toBe('ct-edit ct-edit--editing');
+        expect(said(surface.bar).title).toBe('blog/my-first-post');
+        /* Started, with no pencil to press first: "Start writing" was
+           the consent the pencil asks for on a page that has a reader's
+           version to protect, and this one has none. */
+        expect(surface.session.editor.state).toBe('editing');
+        expect(surface.editing.session).toBe(surface.session);
+        expect(document.querySelectorAll(EDITOR_TAG).length).toBe(1);
+        expect(document.querySelector('#placeholder')).toBeNull();
+        expect(region().querySelectorAll('p').length).toBe(1);   // a paragraph to type in
+        /* The form opens itself here and nowhere else: the page under
+           the bar is blank, and the fields it asks for are empty. */
+        expect(inBar(surface.bar, '.ct-edit__details').hidden).toBe(false);
+        expect(getComputedStyle(inBar(surface.bar, '.ct-fields')).display)
+            .not.toBe('none');
+        expect(inBar(surface.bar, '.ct-edit__naming').hidden).toBe(true);
+    });
+
+    it('shows the tick and the cross, not the pencil, once writing has started',
+       async function() {
+        /* The editor's own `start()` starts the editor and leaves its
+           switch where it was -- only a press moves the switch. Started
+           that way the author is editing under a pencil, with no tick to
+           read the page by and no cross to back out with, and the cross
+           does nothing if they find it: its handler asks the SWITCH
+           whether anything is being edited. */
+        const surface = await openOn(blankPage());
+        await write(surface);
+
+        const ignition = surface.session.editor.shadowRoot
+            .querySelector('.ct-ignition');
+        expect(ignition.className).toContain('ct-ignition--editing');
+        expect(ignition.className).not.toContain('ct-ignition--ready');
+    });
+
+    it('seeds the title field with the name', async function() {
+        /* Typed once. The form's `title` is required, and asking for it
+           again a second after it was given is how a tool tells an
+           author it was not listening. */
+        const surface = await openOn(blankPage());
+        await write(surface);
+
+        expect(surface.bar.values().title).toBe('My first post');
+    });
+
+    it('creates the file on its own branch and opens a pull request',
+       async function() {
+        const it = blankPage();
+        const surface = await openOn(it);
+        await write(surface);
+        retype(surface.session, 'First words.', 0);
+
+        await submit(surface.bar);
+
+        expect(note(surface.bar)).toMatch(/^Submitted as [0-9a-f]{7}\.$/);
+        const saved = it.fake.read(POST, BRANCH);
+        expect(saved).toContain('title: My first post');
+        expect(saved).toContain('First words.');
+        /* Not on the site until somebody merges it, which is the
+           premise of the whole tool. */
+        expect(it.fake.read(POST, 'main')).toBeNull();
+        expect(it.fake.pulls().length).toBe(1);
+        expect(lastMessage(it, BRANCH)).toBe(`Create ${POST}`);
+    });
+
+    it('updates the same pull request on a second Submit', async function() {
+        /* Nothing remembers that the first one was a create: the session
+           re-pins the entry it just wrote, and an entry with content is
+           an update. A second create would be refused as a duplicate of
+           the author's own post. */
+        const it = blankPage();
+        const surface = await openOn(it);
+        await write(surface);
+        retype(surface.session, 'First words.', 0);
+        await submit(surface.bar);
+
+        retype(surface.session, 'Second words.', 0);
+        await submit(surface.bar);
+
+        expect(note(surface.bar)).toMatch(/^Submitted as [0-9a-f]{7}\.$/);
+        expect(it.fake.pulls().length).toBe(1);
+        expect(lastMessage(it, BRANCH)).toBe(`Update ${POST}`);
+        expect(it.fake.read(POST, BRANCH)).toContain('Second words.');
+        expect(it.fake.read(POST, 'main')).toBeNull();
+    });
+
+    it('refuses a name that is already published, and keeps the field',
+       async function() {
+        const it = blankPage({files: {'content/blog/hello.md': SOURCE}});
+        const surface = await openOn(it);
+        const {bar} = surface;
+        name(bar, 'Hello');
+        begin(bar);
+
+        await until(() => refusal(bar) !== '', 'a refusal');
+        expect(refusal(bar))
+            .toBe('content/blog/hello.md is already published. Choose another name.');
+        expect(inBar(bar, '.ct-edit__refusal').hidden).toBe(false);
+        expect(surface.session).toBeNull();
+        expect(document.querySelector(EDITOR_TAG)).toBeNull();
+        /* The name is still there to be changed by a word, the button
+           is live again, and the page is as the site built it. */
+        expect(inBar(bar, '.ct-edit__name').value).toBe('Hello');
+        expect(inBar(bar, '.ct-edit__name').disabled).toBe(false);
+        expect(inBar(bar, '.ct-edit__begin').disabled).toBe(false);
+        expect(document.querySelector('#placeholder')).not.toBeNull();
+    });
+
+    it('refuses a name that is already in review', async function() {
+        const it = blankPage();
+        const surface = await openOn(it);
+        const {bar} = surface;
+        const {number} = it.fake.openPull('blog', 'draft-post');
+        name(bar, 'Draft post');
+        begin(bar);
+
+        await until(() => refusal(bar) !== '', 'a refusal');
+        expect(refusal(bar)).toBe('content/blog/draft-post.md is already waiting '
+            + `in pull request #${number}. Choose another name.`);
+        expect(surface.session).toBeNull();
+        expect(inBar(bar, '.ct-edit__begin').disabled).toBe(false);
+    });
+
+    it('says in review, not published, for an entry whose file is on its '
+       + 'pull request\'s branch', async function() {
+        /* What "in review" actually looks like: somebody named this an
+           hour ago and submitted it, so the file EXISTS -- on the pull
+           request's branch, which is where an open entry is read from.
+           Telling the second author it is published would send them to
+           the site to look for a page that is not there. */
+        const it = blankPage();
+        const surface = await openOn(it);
+        const {bar} = surface;
+        const {number} = it.fake.openPull('blog', 'draft-post');
+        it.fake.pushOther('cms/blog/draft-post',
+                          {'content/blog/draft-post.md': SOURCE});
+        name(bar, 'Draft post');
+        begin(bar);
+
+        await until(() => refusal(bar) !== '', 'a refusal');
+        expect(refusal(bar)).toBe('content/blog/draft-post.md is already waiting '
+            + `in pull request #${number}. Choose another name.`);
+        expect(surface.session).toBeNull();
+    });
+
+    it('refuses the name that would be published at this page\'s own address, '
+       + 'without reading anything', async function() {
+        /* `/blog/new/` is where an entry called "New" would be
+           published, and it is this page: once merged, the address
+           would answer with the entry and the site would have nowhere
+           left to start one. Known from the config alone, so it is said
+           before the repository is asked anything. */
+        const it = blankPage();
+        const surface = await openOn(it);
+        const {bar} = surface;
+        const before = it.asked.length;
+        name(bar, 'New');
+        begin(bar);
+
+        expect(refusal(bar))
+            .toBe("That name would be published at this page's own address. Choose another.");
+        expect(it.asked.length).toBe(before);
+        expect(surface.session).toBeNull();
+        expect(inBar(bar, '.ct-edit__begin').disabled).toBe(false);
+    });
+
+    it('takes any name on a new page that has no address in the config',
+       async function() {
+        /* A site whose URLs the config cannot describe: no `page`, no
+           `newPage`, and the template says both things itself. Neither
+           address exists, and two addresses that do not exist are not
+           the same address -- compared bare, every name on this page
+           would be refused as the page's own. */
+        const it = blankPage({
+            config: {...NEW_CONFIG, collections: [
+                {name: 'blog', label: 'Blog', folder: 'content/blog',
+                 create: true, fields: NEW_CONFIG.collections[0].fields}
+            ]},
+            markup: '<meta name="cms:new-page" content="blog">'
+                + '<article class="post" data-cms-body>'
+                + '<p id="placeholder">Nothing here yet.</p></article>',
+            url: 'https://site.test/write/'
+        });
+        const surface = await openOn(it);
+        expect(said(surface.bar).className).toBe('ct-edit ct-edit--naming');
+
+        await write(surface);
+
+        expect(said(surface.bar).title).toBe('blog/my-first-post');
+        expect(region().querySelector('#placeholder')).toBeNull();
+    });
+
+    it('says why when the read fails, and lets the author try again',
+       async function() {
+        const it = blankPage();
+        const surface = await openOn(it);
+        const {bar} = surface;
+        it.refuse = () => new Response('{"message":"nope"}', {status: 500});
+        name(bar, 'My first post');
+        begin(bar);
+
+        await until(() => refusal(bar) !== '', 'a refusal');
+        expect(refusal(bar)).toContain('500');
+        expect(said(bar).className).toBe('ct-edit ct-edit--naming');
+        expect(inBar(bar, '.ct-edit__begin').disabled).toBe(false);
+        expect(surface.session).toBeNull();
+        expect(document.querySelector(EDITOR_TAG)).toBeNull();
+
+        /* Nothing about the failure is kept: the same name, pressed
+           again once the repository answers, is an ordinary start. */
+        it.refuse = null;
+        begin(bar);
+        /* Gone at once rather than when the read lands, so a failure
+           that has stopped being true is not read as this one's. */
+        expect(refusal(bar)).toBe('');
+        await until(() => surface.session?.started(), 'the editor to start');
+
+        expect(said(bar).title).toBe('blog/my-first-post');
+        expect(document.querySelectorAll(EDITOR_TAG).length).toBe(1);
+    });
+
+    it('says why under the name when the editor cannot be set up',
+       async function() {
+        /* A failure after the name was found free is still a failure of
+           this page, and the name field is where this page says things.
+           The site's own body is untouched: nothing was moved before the
+           thing that failed. */
+        const it = blankPage();
+        const surface = await open(it.where, {
+            ...it.options, extension: {allowTools: ['test-nowhere']}
+        });
+        opened.push(surface);
+        name(surface.bar, 'My first post');
+        begin(surface.bar);
+        await until(() => refusal(surface.bar) !== '', 'a refusal');
+
+        expect(refusal(surface.bar)).toContain('`test-nowhere`');
+        expect(said(surface.bar).className).toBe('ct-edit ct-edit--naming');
+        expect(surface.session).toBeNull();
+        expect(document.querySelector(EDITOR_TAG)).toBeNull();
+        expect(document.querySelector('#placeholder')).not.toBeNull();
+        expect(inBar(surface.bar, '.ct-edit__begin').disabled).toBe(false);
+    });
+
+    it('takes the editor back off the page when it will not start',
+       async function() {
+        /* One editor per document holds the lease, and a second one is
+           connected inert: it mounts and then refuses to start. Mounted
+           and not started is an editor nobody can press and a bar that
+           says nothing, so it comes back off and the reason goes under
+           the name -- and the entry that IS being written is not
+           disturbed by the one that could not be. */
+        const it = blankPage();
+        const first = await openOn(it);
+        await write(first, 'One');
+        const second = await openOn(it);
+        name(second.bar, 'Two');
+        begin(second.bar);
+        await until(() => refusal(second.bar) !== '', 'a refusal');
+
+        expect(refusal(second.bar)).toContain('another instance already holds the editor');
+        expect(said(second.bar).className).toBe('ct-edit ct-edit--naming');
+        expect(second.session).toBeNull();
+        expect(second.editing).toBeNull();
+        expect(document.querySelectorAll(EDITOR_TAG).length).toBe(1);
+        expect(inBar(second.bar, '.ct-edit__begin').disabled).toBe(false);
+        expect(first.session.started()).toBe(true);
+        expect(said(first.bar).title).toBe('blog/one');
+    });
+
+    it('mounts once however many times Start writing is pressed', async function() {
+        const it = blankPage();
+        const surface = await openOn(it);
+        const {bar} = surface;
+        let release;
+        it.hold = new Promise(resolve => { release = resolve; });
+        name(bar, 'My first post');
+        begin(bar);
+
+        /* The bar disables the button while the read is in the air, so
+           a second press cannot arrive through it. Enabled by hand
+           here, because that is what a `disabled` line lost in a
+           refactor looks like -- and what would follow is two editors
+           over one element, the second holding nothing. */
+        inBar(bar, '.ct-edit__begin').disabled = false;
+        begin(bar);
+
+        it.hold = null;
+        release();
+        await until(() => surface.session?.started(), 'the editor to start');
+
+        const reads = () => it.asked.filter(at => at.includes('my-first-post.md'));
+        expect(reads().length).toBe(1);
+        expect(document.querySelectorAll(EDITOR_TAG).length).toBe(1);
+
+        /* And once it is up, where the form is hidden rather than gone
+           and `hidden` does not stop a click reaching a button. */
+        const mounted = surface.session;
+        inBar(bar, '.ct-edit__begin').disabled = false;
+        begin(bar);
+
+        expect(said(bar).className).toBe('ct-edit ct-edit--editing');
+        expect(reads().length).toBe(1);
+        expect(surface.session).toBe(mounted);
+        expect(document.querySelectorAll(EDITOR_TAG).length).toBe(1);
+    });
+
+    it('refuses at Submit when somebody else created the file first, and '
+       + 'keeps the words', async function() {
+        /* The race the naming check cannot settle: two authors, one
+           name, and both were told it was free. The second Submit is
+           the only place left to find out, and what it must not do is
+           commit onto the first author's entry or lose the second's
+           work. */
+        const it = blankPage();
+        const surface = await openOn(it);
+        const {bar} = surface;
+        await write(surface);
+        retype(surface.session, 'First words.', 0);
+        it.fake.pushOther('main', {[POST]: 'theirs'});
+
+        await submit(bar);
+
+        expect(note(bar)).not.toContain('Submitted as');
+        /* In the words the admin screens use for the same refusal, and
+           naming the file, since the name is what has to change. */
+        expect(note(bar)).toContain('There is already an entry with that name.');
+        expect(note(bar)).toContain(POST);
+        /* Nothing of the second author's went anywhere near the first's
+           entry: no branch to review, and their file as they wrote it. */
+        expect(it.fake.pulls().length).toBe(0);
+        expect(it.fake.read(POST, 'main')).toBe('theirs');
+        expect(region().textContent).toContain('First words.');
+        expect(surface.session.started()).toBe(true);
+    });
+
+    it('asks before the tab closes, from the moment the entry is named',
+       async function() {
+        /* Nothing typed, and it is still work: the name is the one
+           thing about an entry nobody can change afterwards, and
+           leaving now throws it away. */
+        const surface = await openOn(blankPage());
+        expect(asksToLeave()).toBe(false);
+
+        await write(surface);
+
+        expect(asksToLeave()).toBe(true);
+    });
+
+    it('gives the page\'s own placeholder back when the red cross is pressed',
+       async function() {
+        const surface = await openOn(blankPage());
+        await write(surface);
+        expect(document.querySelector('#placeholder')).toBeNull();
+
+        await confirming(true, () => pressEdit(surface.session, 'cancel'));
+
+        expect(document.querySelector('#placeholder')).not.toBeNull();
+        expect(region().textContent).toBe('Nothing here yet.');
     });
 });

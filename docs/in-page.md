@@ -67,6 +67,12 @@ A browser that refuses `sessionStorage` — a sandboxed iframe, some private
 modes — is a browser where nobody is signed in, so the honest answer there
 is the flag alone.
 
+The same three ways in on **every** kind of page, including the two that are
+not an entry: a page that offers to start one, and the page it is started
+on. A signed-in author moving round the site meets the link to a new entry
+the way they meet the pencil — see [Starting a new
+entry](#starting-a-new-entry).
+
 A host page that wants to decide for itself — a staging site that offers the
 editor to everybody, a CMS embedded in something larger — imports the module
 and calls `boot(window)` on its own terms.
@@ -105,6 +111,38 @@ A `<meta>` naming a collection that is not configured maps to nothing rather
 than being trusted: that is a typo in a template, and mapping it to nothing
 is what makes it visible.
 
+Two kinds of page are not an entry and are not nothing either: a **starter**
+page, which offers a link to begin a new entry, and the collection's **new
+page**, which is where that link leads. The config names both with
+`starter:` and `newPage:` (see [cms.md](cms.md)), and a template can say
+either for itself, for the same reason it can say which entry it is:
+
+```html
+<meta name="cms:starter" content="blog notes">  <!-- one name, or several -->
+<meta name="cms:new-page" content="blog">
+```
+
+So a page is asked four things, in this order, and the first that answers
+is what the page is:
+
+1. **An entry its markup declares** — `cms:entry`. A page that says it is an
+   entry is edited, whatever else its address is also named as.
+2. **A new page** — `cms:new-page`, then `newPage:` against the URL.
+3. **A starter** — `cms:starter`, then `starter:` against the URL. The tag's
+   list is used *instead of* the config's, not added to it.
+4. **An entry by its URL** — `page:`.
+
+The order matters at 2 and 3. A new page at `/blog/write/` fits
+`/blog/{{slug}}/` perfectly well, and asked the other way round its author
+would be told the post called `write` could not be read. A page the config
+names is already safe from that — `page:` steps round every literal
+`newPage` and `starter` — so it is the page only its own markup names that
+the order is for.
+
+A `cms:new-page` naming a collection that does not have `create: true` maps
+to nothing, as above. A `cms:starter` naming one with no `newPage` is
+skipped: a starter is a link, and there is nowhere for that one to go.
+
 ## The bar
 
 Chrome in a shadow root, content in the light DOM — Mode A, one level up,
@@ -114,7 +152,7 @@ belongs to somebody else: their rules must not reach our chrome, and ours
 must not reach a single node of their site. A CMS that restyles the page it
 is editing is a CMS that lies about what the page looks like.
 
-The bar is where **every** answer lands, including the three that are
+The bar is where **every** answer lands, including the ones that are
 somebody's mistake — because a script that decides a page is not editable
 and then says nothing is indistinguishable from a script that failed to
 load.
@@ -129,6 +167,10 @@ load.
 | Open, switch off | Says to press the pencil |
 | Editing | The frontmatter fields, and **Submit for review** |
 | A read that failed | Says why |
+| A starter page | A link, **New Blog entry**, for each collection it starts |
+| The new page, signed in | Asks what the entry is called, and shows the filename that makes |
+| The new page, checking a name | The same form, held still while the repository is read; a refusal lands under the name |
+| The new page, and it cannot be written on | Says why: nobody is signed in, or nothing matches the `body` selector |
 
 It says the entry — `blog/hello` — and what state it is in, and **nothing
 about which element the `body` selector matched**. It used to: `Found
@@ -143,7 +185,10 @@ other mistake — a selector that matches the **wrong** element — see
 the editor replaces that element's children, so a `body:` pointing at the
 page wrapper replaces the site's whole layout with a post.
 
-The bar never starts the editor. That is the switch's job, below.
+The bar never starts the editor over an entry that exists. That is the
+switch's job, below. The one press on the bar that does start it is **Start
+writing** on the new page, where there is no published version for the
+switch to protect.
 
 ## The switch
 
@@ -167,6 +212,11 @@ The waiting applies however you arrived. Pressing **Edit** under `/admin`
 says *which page to open*, not that the reader's view of it should be
 replaced before anybody has looked at it — so that route needs the pencil
 too.
+
+The one page that does not wait is the new page: naming the entry and
+pressing **Start writing** is the press, so the switch comes up already
+showing its tick and its cross. See [Starting a new
+entry](#starting-a-new-entry).
 
 The tick is not a save. **Submit for review** on the bar is the only thing
 that writes to the repository, and it stays live after a tick precisely so
@@ -200,6 +250,75 @@ every untouched block byte-identical, exactly as it does everywhere else —
 see [markdown mode](markdown-mode.md). The frontmatter fields on the bar are
 the same widgets the entry screen under `/admin` uses; either surface can
 edit them.
+
+## Starting a new entry
+
+An entry that does not exist has no page, so there is nowhere on the site
+to press a pencil. What a site has instead is two pages it already knows
+how to build: one that lists the collection, and one it builds **blank**,
+from the same template an entry gets.
+
+1. **The starter page offers a link.** On a page the collection names with
+   `starter:` — the blog's index, the front page, wherever an author would
+   look — the bar says **New Blog entry**. It is an ordinary link to the
+   collection's `newPage`, so it can be middle-clicked, and nothing is read
+   from the repository to show it.
+2. **The new page asks for a name.** *What is it called?* — and under the
+   field, as it is typed, the file the name makes: `Saved as
+   content/blog/my-first-post.md`. The name becomes the filename and the
+   filename becomes the URL, which is why it is asked first and why it
+   cannot be changed afterwards.
+3. **Start writing checks the name.** A name is refused, with the field left
+   as it was typed, when the entry is already published, when it is already
+   waiting in a pull request (the bar says which), or when it would be
+   published at the new page's own address — `new`, for a `newPage` of
+   `/blog/new/` — and so replace the page the next entry has to start from.
+4. **The editor goes up, started.** Over the element `body:` names, in
+   place, exactly as it does on an entry's own page. The frontmatter form
+   opens itself, because the fields the collection requires are empty; a
+   `title` field with no default of its own is filled with the name, so it
+   is typed once.
+5. **Submit for review** creates the file on a branch of its own and opens
+   a pull request. A second Submit adds a commit to the same one.
+
+From the moment the entry is named the tab asks before it closes: nothing
+has been written anywhere yet, and the name is work. The red cross gives
+the page back with the site's own placeholder in it.
+
+### What the new page's template must contain
+
+**One element matching the collection's `body` selector** — or carrying
+`data-cms-body` — and whatever the site wants inside it:
+
+```html
+<article class="post">
+  <p>Nothing here yet.</p>   <!-- replaced when somebody starts writing -->
+</article>
+```
+
+Its children are replaced when the editor starts, so the placeholder is for
+a reader who wandered in, not for the author. The rest of the page should be
+what an entry's page is — the same layout, the same stylesheet — because
+that is what makes writing here a preview of the post. A new page with no
+such element gets a bar that says so and quotes the selector, before
+anybody is asked for a name.
+
+### Where the entry is until it is merged
+
+On its pull request's branch, and nowhere else. The new page stays blank —
+it is built from the base branch, like the rest of the live site — so
+going back to it shows the name field again, and typing the same name is
+refused as already waiting in that pull request.
+
+**Reopening an unmerged entry is done from `/admin`**, which lists it among
+the drafts and links to the page that shows it: the pull request's deploy
+preview where `site.preview` is set (see below). Once it is merged and the
+site has rebuilt, the entry has a page of its own and is edited there like
+any other.
+
+Two authors who pick the same name at the same moment are both told it is
+free, because it is. The second **Submit** is refused — nothing is written
+over the first author's entry — and the words stay in the editor.
 
 ## A site's own tools
 
@@ -244,6 +363,10 @@ says so:
 
 which is also what a copied link or a middle-clicked one gets, because
 the `href` deliberately carries no secret.
+
+The new page says the same with its last words changed — *then come back to
+write it* — and says it **instead of** asking for a name. Somebody who
+cannot save should not be invited to write.
 
 ## Deploying it
 
@@ -338,6 +461,24 @@ collections:
 Leave `site` out entirely and nothing breaks: `/admin` still manages
 drafts and pull requests, it simply offers no link to a page and says so.
 
+Three more for a collection that authors can add to from the site itself:
+
+```yaml
+collections:
+  - name: blog
+    # … as above, and:
+    create: true
+    # The page, or pages, that offer the link.
+    starter: /blog/
+    # A page the SITE builds, blank, from the template an entry gets. It
+    # must contain the element `body` names.
+    newPage: /blog/new/
+```
+
+[cms.md](cms.md) has the rules the config is held to; [Starting a new
+entry](#starting-a-new-entry) has what the two pages then do, and what the
+new page's template has to contain.
+
 ### Checking it worked
 
 Open a published entry with `?cms-edit` on the end, signed out. You should
@@ -360,6 +501,13 @@ costs nothing and writes nothing.
 
 Until that press the page is still the one the site published, whether you
 typed `?cms-edit` yourself or arrived from `/admin`.
+
+For a collection with a `newPage`, open **that** page with `?cms-edit`,
+signed out. The bar should be titled *New Blog entry* and say where to sign
+in. If it says nothing on the page matches your selector, the blank page's
+template is missing the element `body:` names. If it names an entry instead
+— `blog/new` — or says the page is not one, `newPage:` does not match the
+address the site built it at.
 
 ### The site it is proved against
 

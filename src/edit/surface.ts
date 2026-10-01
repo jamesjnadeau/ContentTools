@@ -25,13 +25,26 @@
  * PLACE. Nothing on the page moves -- see `EditingSession`'s `region` and
  * the element's `regionElements` for why that is worth the plumbing it
  * costs.
+ *
+ * Two kinds of page are not an entry and are not nothing either, and
+ * question 2 answers for them first. A STARTER page offers a link and
+ * that is all it does. The NEW page is where the link leads: the site's
+ * own template with no entry behind it, where the bar asks what the
+ * entry is called and the editor then goes up over the same element by
+ * the same lines -- `mount` -- that put it over an entry that exists.
  */
 
-import {loadConfig, findCollection, ConfigError} from '../cms/config.js';
-import type {CmsConfig} from '../cms/config.js';
-import {bodySelector, declaredEntry, entryForUrl} from '../cms/preview.js';
+import {
+    loadConfig, findCollection, fieldsFor, expandSlug, ConfigError
+} from '../cms/config.js';
+import type {CmsConfig, FolderCollection} from '../cms/config.js';
+import {
+    bodySelector, declaredEntry, declaredNewPage, declaredStarters,
+    entryForUrl, newPageForUrl, newPagePath, pagePath, startersForUrl
+} from '../cms/preview.js';
 import type {PageEntry} from '../cms/preview.js';
 import {CmsRepo} from '../cms/repo.js';
+import type {Entry} from '../cms/repo.js';
 import {MediaStore} from '../cms/media.js';
 import {adapterFor} from '../auth/adapter.js';
 import {MarkdownDocument} from '../markdown/document.js';
@@ -42,11 +55,12 @@ import {EditingSession} from './session.js';
 import {ContentToolsEditor, TAG_NAME as EDITOR_TAG}
     from '../element/content-tools-editor.js';
 import {buildBar} from './chrome.js';
-import type {Bar, BarState, Located} from './chrome.js';
+import type {Bar, BarState, Located, Naming, NewPage} from './chrome.js';
 import {PageEdit} from './editing.js';
 import {extend} from './extension.js';
 import type {EditExtension} from './extension.js';
 import {formState} from '../entry/fields.js';
+import {blankDocument} from '../entry/create.js';
 
 /**
  * Where the config lives, when the page does not say.
@@ -91,13 +105,56 @@ export interface OpenOptions {
     readonly extension?: EditExtension | null;
 }
 
-/** An open surface: the bar, and the open entry if one went up. */
+/**
+ * An open surface: the bar, and the open entry if one went up.
+ *
+ * `editing` and `session` are LIVE, not a record of how `open` left
+ * things. On the new page there is no entry when `open` returns and
+ * there is one a moment after somebody names it, so both read null and
+ * then do not -- and a caller that copied them out at the start is
+ * holding the answer from before the thing it wanted to know about.
+ */
 export interface Surface {
     readonly bar: Bar;
-    /** What Submit and the form act on, or null when no editor went up. */
+    /** What Submit and the form act on, or null while no editor is up. */
     readonly editing: PageEdit | null;
     readonly session: EditingSession | null;
 }
+
+/**
+ * What the bar's three handlers reach through. See `open`.
+ *
+ * `begin` is the behaviour itself rather than a flag beside it, so that
+ * "nothing to begin" has one spelling: the slot is empty. It is empty on
+ * every page but the new one, empty while a name is being checked, and
+ * empty for good once an entry is mounted.
+ */
+interface Live {
+    editing: PageEdit | null;
+    begin: ((title: string) => void) | null;
+}
+
+/** An entry as it was read, and the document its editor starts from. */
+interface Opened {
+    /** `content` is null for an entry that was only just named. */
+    readonly entry: Entry;
+    readonly doc: MarkdownDocument;
+    /** The media folder's listing, read in the same round trip. */
+    readonly folder: readonly {readonly name: string}[];
+}
+
+/* The three things the new page says no to a name with, and the one it
+   says to somebody it cannot let write at all. Sentences an author
+   reads, so they are written out whole here rather than assembled at
+   the call site. */
+const SIGN_IN_FIRST = 'Sign in through the admin screens in this tab, '
+    + 'then come back to write it.';
+const OWN_ADDRESS = 'That name would be published at this page\'s own '
+    + 'address. Choose another.';
+const published = (path: string): string =>
+    `${path} is already published. Choose another name.`;
+const inReview = (path: string, pull: number): string =>
+    `${path} is already waiting in pull request #${pull}. Choose another name.`;
 
 /**
  * Put the editing surface on this page.
@@ -110,13 +167,14 @@ export interface Surface {
 export async function open(
         where: Window, options: OpenOptions = {}): Promise<Surface> {
     const doc = where.document;
-    /* The bar is built BEFORE there is anything for its two controls to
-       act on, and it has to be: it is also what says why there is not
-       -- a config that will not parse, a page that is not an entry. So
-       the handlers reach through a holder, filled in below once there
-       is something to fill it with, and until then they do nothing.
-       That is not hypothetical for Details: it is built with the rest
-       of the bar, and `hidden` does not stop a click reaching a button.
+    /* The bar is built BEFORE there is anything for its three controls
+       to act on, and it has to be: it is also what says why there is
+       not -- a config that will not parse, a page that is not an entry.
+       So the handlers reach through a holder, filled in below once
+       there is something to fill it with, and until then they do
+       nothing. That is not hypothetical for Details: it is built with
+       the rest of the bar, and `hidden` does not stop a click reaching
+       a button.
 
        Submit's `?.` is the same guard for a press that cannot arrive
        -- `update` disables the button in every state but `editing`,
@@ -124,28 +182,53 @@ export async function open(
        of one rule rather than a live branch, kept for the case that
        makes it live: a Submit that is ever enabled while this holder
        is empty, which is what a `disabled` line lost in a refactor
-       looks like. */
-    const live: {editing: PageEdit | null} = {editing: null};
+       looks like.
+
+       Start writing's `?.` is that guard again, and it carries more:
+       the slot is emptied for as long as a name is being checked and
+       is never refilled once an entry is mounted, so a second press
+       has nothing to call. The bar disables the button over the same
+       stretch; what this one is for is the day it does not, when the
+       cost would be two editors over one element. See `invite`. */
+    const live: Live = {editing: null, begin: null};
     const bar = buildBar(doc, {
         submit: () => live.editing?.submit(),
         showFields: open => live.editing?.show(open),
-        /* Task 5 gives this its behaviour; until then no state can
-           reach the naming form, so there is nothing to begin. */
-        begin: () => {}
+        begin: title => live.begin?.(title)
     });
     doc.body.appendChild(bar.node);
+
+    /* Read through the holder for the reason `Surface` gives, and one
+       object for every way out of here, so no return below can hand
+       back a different idea of what is open. */
+    const surface: Surface = {
+        bar,
+        get editing() { return live.editing; },
+        get session() { return live.editing?.session ?? null; }
+    };
 
     let located: BarState;
     try {
         located = await resolve(where, options);
     } catch (error) {
         bar.update(failure(error));
-        return {bar, editing: null, session: null};
+        return surface;
     }
 
     bar.update(located);
+    if (located.kind === 'new-page') {
+        const {config, collection, selector, body} = located;
+        /* Guarded like `start` below, and for its first lines: reading
+           the token is reading storage, which a browser may refuse. */
+        try {
+            invite(where, bar, config, {collection, selector, body}, live, options);
+        } catch (error) {
+            bar.update({kind: 'new-blocked', collection, hint: said(error)});
+        }
+        return surface;
+    }
     if (located.kind !== 'ready') {
-        return {bar, editing: null, session: null};
+        return surface;
     }
 
     /* The three fields every state from here on shares, lifted out of the
@@ -164,27 +247,61 @@ export async function open(
            here, together, where the order is visible. */
         live.editing = editing;
         editing?.render();
-        return {bar, editing, session: editing ? editing.session : null};
     } catch (error) {
         /* The element is still named while the bar says what went wrong.
            A read that failed did not un-find the body, and somebody
            looking at a 404 still wants to know the selector was right. */
         bar.update({kind: 'failed', ...seen, hint: said(error)});
-        return {bar, editing: null, session: null};
     }
+    return surface;
 }
 
 /** What the bar should say about the PAGE, once everything is read. */
 export async function resolve(
         where: Window, options: OpenOptions = {}): Promise<BarState> {
     const doc = where.document;
+    const href = where.location.href;
     const config = await loadConfig(configUrl(doc), {fetch: options.fetch});
 
     /* The markup wins over the URL, which is the rule `declaredEntry`
        exists for: a site whose page URLs the config cannot describe can
-       always say what a page is in its own template. */
-    const entry = declaredEntry(config, doc)
-        ?? entryForUrl(config, where.location.href);
+       always say what a page is in its own template. And it wins over
+       everything below too -- a page that says it is an entry is edited,
+       whatever its address is also named as. */
+    const declared = declaredEntry(config, doc);
+    if (declared) {
+        return located(config, declared, doc);
+    }
+
+    /* The new page and the starters BEFORE any URL is read as an
+       entry's, and the order is the point. `entryForUrl` already steps
+       round the addresses the CONFIG names for either; a page that only
+       its own markup names is one it cannot know about, and under a
+       collection's prefix it fits `/blog/{{slug}}/` perfectly well. An
+       author sent there to start a post must not be told the post
+       called `write` could not be read. */
+    const fresh = declaredNewPage(config, doc) ?? newPageForUrl(config, href);
+    if (fresh) {
+        return writable(config, fresh, doc);
+    }
+
+    /* The markup's list INSTEAD of the URL's, not added to it: a page
+       that says which collections it starts has said all of them. */
+    const named = declaredStarters(config, doc);
+    const starters = named.length > 0 ? named : startersForUrl(config, href);
+    if (starters.length > 0) {
+        return {
+            kind: 'starter',
+            links: starters.map(collection => ({
+                label: collection.label,
+                /* Non-null: both lists keep only collections that have
+                   a new page, because a link is all a starter is. */
+                href: newPagePath(config, collection)!
+            }))
+        };
+    }
+
+    const entry = entryForUrl(config, href);
     if (!entry) {
         return {kind: 'not-an-entry', hint: unmapped(config)};
     }
@@ -225,13 +342,179 @@ async function start(
         repo.github.listDirectory(config.media.folder, repo.base)
     ]);
 
-    /* After the awaits and before anything is moved, so a stylesheet
+    return mount(where, bar, repo, seen, {
+        entry, folder, doc: MarkdownDocument.parse(entry.content ?? '')
+    }, options);
+}
+
+/**
+ * Ask what the new entry is called, and put it on the page once it has
+ * a name nothing else holds.
+ *
+ * Everything a name can be refused for is settled HERE, before the
+ * editor goes up, because afterwards the name is the one thing about
+ * the entry that cannot be changed: it is the filename, and the
+ * filename is the URL. `saveEntry` asks the same question again at
+ * Submit, which is the only place the race between two authors who were
+ * both told yes can be settled -- but an author told no at that point
+ * has already written the post.
+ */
+function invite(
+        where: Window, bar: Bar, config: CmsConfig, page: NewPage,
+        live: Live, options: OpenOptions): void {
+    const {collection} = page;
+
+    /* Read, never asked for -- see `start`. And said BEFORE a name is
+       typed rather than at Submit: somebody who cannot save should not
+       be invited to write. */
+    const token = adapterFor(config).currentToken();
+    if (token === null) {
+        bar.update({kind: 'new-blocked', collection, hint: SIGN_IN_FIRST});
+        return;
+    }
+    const repo = new CmsRepo({config, token, fetch: options.fetch});
+
+    function ask(naming: Naming): void {
+        bar.update({kind: 'naming', ...page, ...naming});
+    }
+
+    /* The two lines together, so the button and what it calls come back
+       in the same breath: a bar that looks ready over an empty slot is
+       a press that silently does nothing. */
+    function refuse(refusal: string): void {
+        live.begin = begin;
+        ask({busy: false, refusal});
+    }
+
+    function begin(title: string): void {
+        /* Emptied first. From here until `refuse` there is a name in
+           the air, and after a mount there is an entry on the page;
+           neither is a moment to begin another. */
+        live.begin = null;
+        void write(title);
+    }
+
+    /* Never rejects, which is what the `void` above relies on: this
+       starts in a submit handler on somebody's published page, and
+       every way it can fail is a sentence under the name field. */
+    async function write(title: string): Promise<void> {
+        let editing: PageEdit | null = null;
+        try {
+            const slug = expandSlug(collection, title, new Date());
+
+            /* Known from the config alone, so nothing is read to say
+               it. An entry published at this page's address would
+               replace this page, and the site would have nowhere left
+               to start the next one. Guarded on there BEING an address:
+               a new page that only its markup declares has none, and
+               two nulls are not the same place. */
+            const own = newPagePath(config, collection);
+            if (own !== null && pagePath(config, collection, slug) === own) {
+                refuse(OWN_ADDRESS);
+                return;
+            }
+
+            /* The last refusal goes now, not when the read lands: it
+               was about another name, or about a failure that may have
+               stopped being true. */
+            ask({busy: true, refusal: null});
+
+            const [entry, folder] = await Promise.all([
+                repo.readEntry(collection.name, slug),
+                repo.github.listDirectory(config.media.folder, repo.base)
+            ]);
+
+            /* The pull request first. An entry in review is READ from
+               its branch, so it has content too -- and telling its
+               second author it is published sends them to look for a
+               page the site does not have. */
+            if (entry.pull) {
+                refuse(inReview(entry.path, entry.pull.number));
+                return;
+            }
+            if (entry.content !== null) {
+                refuse(published(entry.path));
+                return;
+            }
+
+            editing = await mount(where, bar, repo, {
+                entry: {collection: collection.name, slug},
+                selector: page.selector,
+                body: page.body
+            }, {
+                entry, folder,
+                /* The name goes into the file as its title where the
+                   collection has an obvious place for one, so it is
+                   typed once. */
+                doc: blankDocument(fieldsFor(collection, slug), title)
+            }, options);
+            live.editing = editing;
+            /* Open, here and nowhere else. On an entry's own page the
+               form stays out of the way of the words; on this one there
+               are no words, and the fields the collection requires are
+               empty. */
+            editing.show(true);
+            /* And started, with no pencil to press. The pencil exists
+               so a reader's page is not replaced until somebody asks,
+               and Start writing was the asking. */
+            switchOn(editing.session.editor);
+        } catch (error) {
+            /* Whatever got as far as the page comes back off it, so the
+               next name does not mount beside the remains of this one. */
+            editing?.session.close();
+            live.editing = null;
+            refuse(said(error));
+        }
+    }
+
+    live.begin = begin;
+    ask({busy: false, refusal: null});
+}
+
+/**
+ * Start the editor the way a press of its pencil does.
+ *
+ * `start()` alone is half of that. The press is two lines in the
+ * library -- start the editor, then turn the switch to its tick and
+ * cross -- and the element's method is only the first, because the
+ * shell that it was written for has no switch. Here there is one, and
+ * left showing the pencil it is worse than untidy: the cross's handler
+ * asks the SWITCH whether anything is being edited before it reverts,
+ * so an author could not back out of the entry they had just named.
+ *
+ * `start()` first, and through the element, so an editor that cannot
+ * start says so by throwing on this stack; the switch is only told what
+ * has by then happened.
+ */
+function switchOn(editor: ContentToolsEditor): void {
+    editor.start();
+    editor.editorApp?.ignition()?.state('editing');
+}
+
+/**
+ * Put an editor over the body, for an entry that has been read.
+ *
+ * ONE function for an entry that exists and an entry that was named a
+ * moment ago, which differ only in what was read and what the editor
+ * starts from. Two copies of this would be two lists of what a mount
+ * consists of, and the one a new entry used would be the one nobody
+ * remembered when the list grew.
+ *
+ * Mounts and does not render: see the call sites, which each say what
+ * the bar should show once this returns.
+ */
+async function mount(
+        where: Window, bar: Bar, repo: CmsRepo, seen: Located,
+        opened: Opened, options: OpenOptions): Promise<PageEdit> {
+    const {config} = repo;
+    const {entry, doc, folder} = opened;
+
+    /* After the read and before anything is moved, so a stylesheet
        that 404s from a badly-deployed `dist/` costs a request rather
        than the editor. */
     linkContentStyles(where.document, options.contentStyles);
     defineEditor();
 
-    const doc = MarkdownDocument.parse(entry.content ?? '');
     const session = new EditingSession({
         document: where.document,
         entry,
@@ -264,19 +547,18 @@ async function start(
     await extend(session.editor, options.extension);
     where.document.body.appendChild(session.editor);
 
-    /* Built and NOT rendered -- see the call site. */
-    const editing = new PageEdit({
+    /* Built and NOT rendered -- see the call sites. */
+    return new PageEdit({
         bar,
         session,
         repo,
         seen,
         /* Non-null for the reason `located` gives one line at a time:
            an entry in hand names a collection this config holds,
-           because both mappings resolve the name against it. */
+           because every mapping resolves the name against it. */
         fields: formState(findCollection(config, seen.entry.collection)!,
                           seen.entry.slug, doc)
     });
-    return editing;
 }
 
 /**
@@ -351,6 +633,37 @@ function located(config: CmsConfig, entry: PageEntry, doc: Document): BarState {
         };
     }
     return {kind: 'ready', config, entry, selector, body};
+}
+
+/**
+ * The state for the NEW page: somewhere to write was found, or was not.
+ *
+ * `located` again, for a page with no entry yet, and found out at the
+ * same moment for the same reason: the editor replaces this element's
+ * children, so a template that lacks it is a deployment's mistake to
+ * learn of from the bar, not an author's to discover by naming a post.
+ */
+function writable(
+        config: CmsConfig, collection: FolderCollection, doc: Document): BarState {
+    const selector = bodySelector(collection, doc);
+    /* Reachable the way `located`'s is: a collection with no `page` and
+       so no `body`, declared the new page by the markup alone. */
+    if (selector === null) {
+        return {
+            kind: 'new-blocked', collection,
+            hint: `\`${collection.name}\` has no \`body\` selector, so there `
+                + 'is nowhere on this page to write a new entry.'
+        };
+    }
+
+    const body = doc.querySelector(selector);
+    if (!(body instanceof HTMLElement)) {
+        return {
+            kind: 'new-blocked', collection,
+            hint: `Nothing on this page matches \`${selector}\`.`
+        };
+    }
+    return {kind: 'new-page', config, collection, selector, body};
 }
 
 /** Why this page maps to nothing, in terms the operator can act on. */
