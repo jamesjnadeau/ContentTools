@@ -1,18 +1,17 @@
 name: Publish
 
-# Publishing is a GitHub release. Cut one from a tag that matches
+# Publishes to GitHub Packages. Publishing is a GitHub release. Cut one from a tag that matches
 # package.json's version (2.0.0-rc.4 -> tag 2.0.0-rc.4) and this runs.
 on:
   release:
     types: [published]
 
 jobs:
-  npm:
+  github-packages:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # Lets `--provenance` sign the build with this run's identity.
-      id-token: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -20,7 +19,9 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          registry-url: https://registry.npmjs.org
+          registry-url: https://npm.pkg.github.com
+          # GitHub Packages only serves a scope that matches the owner.
+          scope: '@jamesjnadeau'
 
       - name: Tag matches package.json
         run: |
@@ -40,8 +41,9 @@ jobs:
       - name: Publish
         # A prerelease (anything with a hyphen in its version) goes under
         # `next`, so a plain `npm install` never picks up a release candidate.
+        # No --provenance: npm only signs those for npmjs.org.
         run: |
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then tag=next; else tag=latest; fi
-          npm publish --provenance --tag "$tag"
+          npm publish --tag "$tag"
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
