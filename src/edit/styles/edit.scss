@@ -200,7 +200,8 @@ $edit-panel-background: #f7f7f7;
 }
 
 .ct-edit__submit,
-.ct-edit__details {
+.ct-edit__details,
+.ct-edit__begin {
     background: $edit-panel-background;
     border: 1px solid $edit-border-color;
     border-radius: 2px;
@@ -224,8 +225,10 @@ $edit-panel-background: #f7f7f7;
 }
 
 // Submit is the one thing on this bar that writes, so it is the one thing
-// that looks like a button rather than a control.
-.ct-edit__submit {
+// that looks like a button rather than a control. "Start writing" is its
+// counterpart on the new page, where there is no Submit yet.
+.ct-edit__submit,
+.ct-edit__begin {
     background: $edit-action-color;
     border-color: $edit-action-color;
     color: white;
@@ -275,6 +278,81 @@ $edit-panel-background: #f7f7f7;
     &[hidden][hidden] {
         display: none;
     }
+}
+
+// --- starting an entry ----------------------------------------------------
+//
+// The links a starter page offers and the form the new page asks its one
+// question in. Neither sets a `display` on anything that is hidden, bar
+// the links' column, which carries the `[hidden][hidden]` guard.
+
+.ct-edit__starters {
+    display: grid;
+    gap: 4px;
+    margin: 8px 0 0;
+
+    &[hidden][hidden] {
+        display: none;
+    }
+}
+
+.ct-edit__new {
+    color: $edit-action-color;
+    @include type-text($font-size: 12px, $line-height: 16px);
+}
+
+.ct-edit__naming {
+    margin: 8px 0 0;
+}
+
+.ct-edit__label {
+    display: block;
+    font-weight: bold;
+    margin: 0 0 2px;
+    @include type-text($font-size: 12px, $line-height: 16px);
+}
+
+.ct-edit__name {
+    border: 1px solid $edit-border-color;
+    box-sizing: border-box;
+    display: block;
+    padding: 4px 6px;
+    width: 100%;
+    @include type-text($font-size: 12px, $line-height: 16px);
+
+    &:focus-visible {
+        outline: 2px solid $edit-action-color;
+        outline-offset: -1px;
+    }
+
+    // Held while beginning is in flight, as the Submit button is.
+    &:disabled {
+        background: $edit-panel-background;
+        color: $muted-action-color;
+    }
+}
+
+// Where the name will be saved, or why it cannot be. Taking no room while
+// the field is empty, as the note does.
+.ct-edit__preview {
+    color: $muted-action-color;
+    margin: 2px 0 0;
+    @include type-text($font-size: 11px, $line-height: 15px);
+
+    &:empty {
+        display: none;
+    }
+}
+
+// A name that was turned away. Coloured as a refusal, like the note's.
+.ct-edit__refusal {
+    color: $cancel-action-color;
+    margin: 2px 0 0;
+    @include type-text($font-size: 12px, $line-height: 16px);
+}
+
+.ct-edit__begin {
+    margin: 8px 0 0;
 }
 
 // --- the frontmatter form -------------------------------------------------

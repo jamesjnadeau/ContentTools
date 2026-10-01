@@ -1,6 +1,7 @@
 /* The bar, and the two things it has to survive: a page written by
    somebody else, and eight answers it must not confuse. */
 
+import {parseConfig} from '../../../src/cms/config.js';
 import {
     BAR_POSITION_KEY, BAR_TAG, buildBar, describe as describeState
 } from '../../../src/edit/chrome.js';
@@ -13,6 +14,7 @@ function onPage(handlers = {}) {
     const bar = buildBar(document, {
         submit: () => pressed.push('submit'),
         showFields: open => pressed.push(`fields:${open}`),
+        begin: title => pressed.push(`begin:${title}`),
         ...handlers
     });
     document.body.appendChild(bar.node);
@@ -20,6 +22,34 @@ function onPage(handlers = {}) {
 }
 
 const entry = {collection: 'blog', slug: 'hello'};
+
+/** The one control or line each test reaches for, by its `ct-edit__` name. */
+function part(bar, name) {
+    return bar.node.shadowRoot.querySelector(`.ct-edit__${name}`);
+}
+
+/** The same, by any selector inside the bar. */
+function q(bar, selector) {
+    return bar.node.shadowRoot.querySelector(selector);
+}
+
+function text(bar, selector) {
+    return q(bar, selector).textContent;
+}
+
+/** What the author does in the name field: replace its value and say so. */
+function type(bar, value) {
+    const input = part(bar, 'name');
+    input.value = value;
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+}
+
+/** A folder collection a site could start new entries of. */
+const BLOG = parseConfig({
+    backend: {repo: 'owner/site'},
+    media: {folder: 'static/images', publicPath: '/images'},
+    collections: [{name: 'blog', label: 'Blog', folder: 'content/blog', create: true}]
+}).collections[0];
 
 /** Nothing has happened yet: no submit, no pull request, no refusal. */
 const QUIET = {busy: false, note: '', refused: false, pull: null, conflict: null};
@@ -41,6 +71,18 @@ function editing(over = {}) {
            away and leaves the edits for Submit to commit. */
         fields: form(), fieldsOpen: false, started: true, save: QUIET, ...over
     };
+}
+
+/** The page everything about a new entry is written on. */
+function newPage() {
+    const body = document.createElement('article');
+    body.className = 'post';
+    return {collection: BLOG, selector: 'article.post', body};
+}
+
+/** The naming state, quiet unless a test says otherwise. */
+function naming(over = {}) {
+    return {kind: 'naming', busy: false, refusal: null, ...newPage(), ...over};
 }
 
 beforeEach(function() {
@@ -205,6 +247,33 @@ describe('describeState', function() {
         expect(said.title).toBe('blog/hello');
         expect(said.hint).toBe('the network said no');
     });
+
+    it('offers to start an entry, on a page that links to them', function() {
+        const said = describeState({kind: 'starter', links: []});
+
+        expect(said.title).toBe('New content');
+        expect(said.hint).toBe('Start a new entry from this page.');
+    });
+
+    it('names the collection on the new page, whichever state it is in',
+       function() {
+        const ready = describeState({
+            kind: 'new-page', config: {}, ...newPage()
+        });
+        const naming_ = describeState(naming());
+        const blocked = describeState({
+            kind: 'new-blocked', collection: BLOG, hint: 'Nothing matched.'
+        });
+
+        expect(ready).toEqual({title: 'New Blog entry', hint: 'Ready to start.'});
+        expect(naming_).toEqual({
+            title: 'New Blog entry',
+            hint: 'Name it, then write it on this page.'
+        });
+        /* Verbatim, like every hint that explains a failure: the words
+           are the whole value of the message. */
+        expect(blocked).toEqual({title: 'New Blog entry', hint: 'Nothing matched.'});
+    });
 });
 
 describe('buildBar', function() {
@@ -258,6 +327,9 @@ describe('buildBar', function() {
 
         bar.update({kind: 'broken', hint: 'x'});
         expect(panel.className).toBe('ct-edit ct-edit--broken');
+
+        bar.update(naming());
+        expect(panel.className).toBe('ct-edit ct-edit--naming');
 
         /* Replaced, not added: a bar that is both broken and ready is a
            bar reading two rules at once. */
@@ -371,11 +443,6 @@ describe('buildBar', function() {
 });
 
 describe('the bar\u2019s editing controls', function() {
-
-    /** The one control each test reaches for. */
-    function part(bar, name) {
-        return bar.node.shadowRoot.querySelector(`.ct-edit__${name}`);
-    }
 
     it('shows no controls at all until an editor is up', function() {
         /* The bar is on every page of the site. A Submit button on a
@@ -705,6 +772,250 @@ describe('the bar\u2019s editing controls', function() {
         bar.update({kind: 'not-an-entry', hint: 'no'});
 
         expect(part(bar, 'conflict').value).toBe('');
+    });
+});
+
+describe('the bar on a starter page', function() {
+
+    it('links each collection\'s new page', function() {
+        const bar = onPage();
+        bar.update({kind: 'starter', links: [
+            {label: 'Blog', href: '/blog/new/'},
+            {label: 'Notes', href: '/notes/new/'}
+        ]});
+
+        const links = [...bar.node.shadowRoot.querySelectorAll('.ct-edit__new')];
+        /* A real link in the same tab: the tab's token is in
+           sessionStorage, which a tab opened with `noopener` would not
+           inherit, and the new page would find nobody signed in. */
+        expect(links.map(a => [a.tagName, a.textContent, a.getAttribute('href'), a.target]))
+            .toEqual([
+                ['A', 'New Blog entry', '/blog/new/', ''],
+                ['A', 'New Notes entry', '/notes/new/', '']
+            ]);
+        expect(part(bar, 'starters').hidden).toBe(false);
+    });
+
+    it('takes the links away on any other page', function() {
+        const bar = onPage();
+        bar.update({kind: 'starter', links: [{label: 'Blog', href: '/blog/new/'}]});
+        bar.update({kind: 'not-an-entry', hint: 'no'});
+
+        expect(getComputedStyle(part(bar, 'starters')).display).toBe('none');
+        /* Gone rather than hidden: a hidden link is still one a
+           keyboard reaches and a test reads. */
+        expect(bar.node.shadowRoot.querySelectorAll('a[href]').length).toBe(0);
+    });
+
+    it('does not rebuild the links when the page says the same again',
+       function() {
+        const bar = onPage();
+        const links = [{label: 'Blog', href: '/blog/new/'}];
+        bar.update({kind: 'starter', links});
+        const first = part(bar, 'new');
+        bar.update({kind: 'starter', links: [...links]});
+
+        expect(part(bar, 'new')).toBe(first);
+    });
+});
+
+describe('the bar on the new page', function() {
+
+    let bar;
+
+    beforeEach(function() {
+        bar = onPage();
+    });
+
+    it('shows the name field only while naming', function() {
+        const states = [
+            {kind: 'new-page', config: {}, ...newPage()},
+            {kind: 'new-blocked', collection: BLOG, hint: 'no'},
+            editing()
+        ];
+        for (const state of states) {
+            bar.update(state);
+            expect(getComputedStyle(part(bar, 'naming')).display).toBe('none');
+        }
+
+        bar.update(naming());
+        expect(getComputedStyle(part(bar, 'naming')).display).not.toBe('none');
+    });
+
+    it('labels the field with the shell\'s own words', function() {
+        bar.update(naming());
+        const field = part(bar, 'name');
+        const label = q(bar, 'label');
+
+        expect(label.textContent).toBe('What is it called?');
+        /* Bound to the input, so a screen reader announces the question
+           on focus rather than an anonymous text box. */
+        expect(label.htmlFor).toBe(field.id);
+        expect(field.id).not.toBe('');
+        expect([field.type, field.getAttribute('autocomplete')]).toEqual(['text', 'off']);
+        expect(part(bar, 'begin').textContent).toBe('Start writing');
+        expect(part(bar, 'begin').type).toBe('submit');
+    });
+
+    it('says where the name will be saved, as it is typed', function() {
+        bar.update(naming());
+        type(bar, 'My first post');
+
+        expect(text(bar, '.ct-edit__preview')).toBe('Saved as content/blog/my-first-post.md');
+        expect(part(bar, 'begin').disabled).toBe(false);
+    });
+
+    it('holds the button for a name with no usable filename', function() {
+        bar.update(naming());
+        for (const name of ['', '   ', '!!!', '日本語']) {
+            type(bar, name);
+            expect(part(bar, 'begin').disabled).toBe(true);
+        }
+
+        expect(text(bar, '.ct-edit__preview'))
+            .toBe('That name has no letters or numbers a filename can use.');
+    });
+
+    it('says nothing about an empty field', function() {
+        bar.update(naming());
+        type(bar, 'Hello');
+        type(bar, '');
+
+        expect(text(bar, '.ct-edit__preview')).toBe('');
+        expect(part(bar, 'begin').disabled).toBe(true);
+    });
+
+    it('says nothing before anything is typed', function() {
+        bar.update(naming());
+
+        expect(text(bar, '.ct-edit__preview')).toBe('');
+        expect(part(bar, 'begin').disabled).toBe(true);
+    });
+
+    it('begins with the name as typed, by the button or by Enter', function() {
+        bar.update(naming());
+        type(bar, 'My first post');
+        part(bar, 'begin').click();
+        part(bar, 'naming').requestSubmit();
+
+        /* As typed, spaces and capitals included: the slug is the
+           filename, and the title is what the author called it. */
+        expect(pressed).toEqual(['begin:My first post', 'begin:My first post']);
+    });
+
+    it('does not reload the page when the form submits', function() {
+        bar.update(naming());
+        type(bar, 'My first post');
+        const submit = new Event('submit', {cancelable: true});
+        part(bar, 'naming').dispatchEvent(submit);
+
+        expect(submit.defaultPrevented).toBe(true);
+    });
+
+    it('does not begin on Enter with an unusable name', function() {
+        bar.update(naming());
+        for (const name of ['', '   ', '!!!', '日本語']) {
+            type(bar, name);
+            part(bar, 'naming').requestSubmit();
+        }
+
+        expect(pressed).toEqual([]);
+    });
+
+    it('holds the field and the button while busy', function() {
+        bar.update(naming());
+        type(bar, 'My first post');
+        bar.update(naming({busy: true}));
+
+        expect(part(bar, 'name').disabled).toBe(true);
+        expect(part(bar, 'begin').disabled).toBe(true);
+        /* A usable name, a held button, and Enter: the second begin
+           would be a second pull request for the same entry. */
+        part(bar, 'naming').requestSubmit();
+        expect(pressed).toEqual([]);
+
+        bar.update(naming({busy: false}));
+        expect(part(bar, 'name').disabled).toBe(false);
+        expect(part(bar, 'begin').disabled).toBe(false);
+    });
+
+    it('shows a refusal and keeps what was typed', function() {
+        bar.update(naming());
+        type(bar, 'Hello');
+        bar.update(naming({
+            refusal: 'content/blog/hello.md is already published. Choose another name.'
+        }));
+
+        expect(part(bar, 'name').value).toBe('Hello');
+        expect(text(bar, '.ct-edit__refusal')).toContain('already published');
+        expect(part(bar, 'refusal').hidden).toBe(false);
+        /* Still beginnable: the author may press it again to be told
+           the same thing, and the preview keeps showing what they typed. */
+        expect(text(bar, '.ct-edit__preview')).toBe('Saved as content/blog/hello.md');
+    });
+
+    it('hides the refusal when there is none', function() {
+        bar.update(naming({refusal: 'no'}));
+        bar.update(naming());
+        expect(part(bar, 'refusal').hidden).toBe(true);
+        expect(text(bar, '.ct-edit__refusal')).toBe('');
+    });
+
+    it('never writes the field\'s value on an update', function() {
+        bar.update(naming());
+        const input = part(bar, 'name');
+        input.value = 'half a na';
+        input.setSelectionRange(2, 4);
+        bar.update(naming({busy: true}));
+        bar.update(naming({busy: false}));
+
+        /* The caret is the author's. */
+        expect([input.value, input.selectionStart, input.selectionEnd])
+            .toEqual(['half a na', 2, 4]);
+    });
+
+    it('keeps the name through the states between two namings', function() {
+        bar.update(naming());
+        type(bar, 'Hello');
+        bar.update({kind: 'new-page', config: {}, ...newPage()});
+        bar.update(naming());
+
+        expect(part(bar, 'name').value).toBe('Hello');
+        expect(text(bar, '.ct-edit__preview')).toBe('Saved as content/blog/hello.md');
+    });
+
+    it('never hides itself on a starter or new page', function() {
+        const states = [
+            {kind: 'starter', links: [{label: 'Blog', href: '/blog/new/'}]},
+            {kind: 'new-blocked', collection: BLOG, hint: 'no'},
+            {kind: 'new-page', config: {}, ...newPage()},
+            naming()
+        ];
+        for (const state of states) {
+            bar.update(state);
+            expect(bar.node.hidden).toBe(false);
+        }
+    });
+
+    it('keeps Submit and Details out of reach until there is an entry', function() {
+        const states = [
+            {kind: 'starter', links: []},
+            {kind: 'new-blocked', collection: BLOG, hint: 'no'},
+            {kind: 'new-page', config: {}, ...newPage()},
+            naming()
+        ];
+        for (const state of states) {
+            bar.update(state);
+            expect(getComputedStyle(part(bar, 'actions')).display).toBe('none');
+            expect(part(bar, 'submit').disabled).toBe(true);
+        }
+    });
+
+    it('says why the new page cannot be written on', function() {
+        bar.update({kind: 'new-blocked', collection: BLOG, hint: 'Sign in through the admin screens in this tab, then come back to write it.'});
+
+        expect(text(bar, '.ct-edit__title')).toBe('New Blog entry');
+        expect(text(bar, '.ct-edit__hint')).toContain('Sign in');
     });
 });
 

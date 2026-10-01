@@ -24,10 +24,11 @@
 
 import {sheetFactory} from '../core/constructed-styles.js';
 import {h} from '../core/render.js';
+import {previewPath} from '../entry/create.js';
 import {buildFields} from '../entry/fields.js';
 import type {FieldsState, FieldsView} from '../entry/fields.js';
 import type {FieldValues} from '../entry/frontmatter.js';
-import type {CmsConfig} from '../cms/config.js';
+import type {CmsConfig, FolderCollection} from '../cms/config.js';
 import type {PageEntry} from '../cms/preview.js';
 import editCSS from './styles/edit.scss?inline';
 
@@ -63,7 +64,10 @@ export interface Located {
  * Each one is somewhere a person can genuinely be left: a config that
  * does not parse, a page that maps to no entry, an entry whose body
  * cannot be found, a page that is editable by somebody who is not signed
- * in, a read in flight, a read that failed, and an editor that is up.
+ * in, a read in flight, a read that failed, and an editor that is up --
+ * and, for a site that starts entries on its own pages, a page that links
+ * to the new-entry page and the new-entry page itself, which is not an
+ * entry yet and so has states of its own.
  */
 export type BarState =
     /** The config is missing or will not parse. Nothing else was tried. */
@@ -89,7 +93,50 @@ export type BarState =
     /** The read, or the mount, did not work. */
     | ({readonly kind: 'failed'; readonly hint: string} & Located)
     /** The editor is up, over the element named in the hint. */
-    | ({readonly kind: 'editing'} & Editing & Located);
+    | ({readonly kind: 'editing'} & Editing & Located)
+    /** A page that offers to start an entry: the links are all it is for. */
+    | {readonly kind: 'starter'; readonly links: readonly StarterLink[]}
+    /**
+     * The new page cannot be written on, and this is why.
+     *
+     * Every reason is one state because the bar says the same thing for
+     * all of them -- the title, and a sentence -- and a caller that has
+     * to pick between two states for two spellings of "no" has a
+     * second place to forget one.
+     */
+    | {readonly kind: 'new-blocked'; readonly collection: FolderCollection; readonly hint: string}
+    /**
+     * The new page, found and writable, before anybody has named
+     * anything. What `resolve` answers, the way `ready` is for an entry:
+     * the config is in here for the same reason it is there.
+     */
+    | ({readonly kind: 'new-page'; readonly config: CmsConfig} & NewPage)
+    /** Asking what the entry is called, or refusing the answer. */
+    | ({readonly kind: 'naming'} & Naming & NewPage);
+
+/** One collection's new-entry page, as a link on a starter page. */
+export interface StarterLink {
+    readonly label: string;
+    readonly href: string;
+}
+
+/**
+ * The new page: the collection it starts, and the element the new
+ * entry's body will be written in.
+ */
+export interface NewPage {
+    readonly collection: FolderCollection;
+    readonly selector: string;
+    readonly body: HTMLElement;
+}
+
+/** What naming is doing. The words typed are the field's, not this state's. */
+export interface Naming {
+    /** Beginning is in flight: the field and the button hold. */
+    readonly busy: boolean;
+    /** Why the last name was turned away, or null. */
+    readonly refusal: string | null;
+}
 
 /** Everything about the entry that only exists once the editor is up. */
 export interface Editing {
@@ -165,6 +212,8 @@ export interface BarHandlers {
     submit(): void;
     /** Show or hide the frontmatter form. */
     showFields(open: boolean): void;
+    /** Start the entry the author has named, with the name as typed. */
+    begin(title: string): void;
 }
 
 /** A built bar: the element to append, and the way to change what it says. */
@@ -188,6 +237,9 @@ const barStyleSheet = sheetFactory(editCSS);
 
 /** The form's id, so the Details button can say what it controls. */
 const FIELDS_ID = 'ct-edit-fields';
+
+/** The name field's, so its label is bound to it. */
+const NAME_ID = 'ct-edit-name';
 
 /**
  * Build the bar, saying nothing yet. `update` is what gives it words.
@@ -247,6 +299,72 @@ export function buildBar(doc: Document, handlers: BarHandlers): Bar {
         onclick: () => handlers.submit()
     }, [SUBMIT_LABEL]);
 
+    /* Plain same-tab links: the tab's token is in `sessionStorage`,
+       which a tab opened with `noopener` does not inherit, so the new
+       page would find nobody signed in. Rebuilt only when the links
+       change -- `starterKey` is what they were last built from. */
+    const starters = h(doc, 'div', {class: 'ct-edit__starters'});
+    let starterKey = '';
+
+    /* The naming form is built once and updated in place: the input is
+       the only copy of what the author has typed, and `update` never
+       writes its value -- the caret is theirs. `current` and `busy` are
+       what the last `naming` state said, kept so typing can recompute
+       the preview without a state to read them off. */
+    let current: FolderCollection | null = null;
+    let busy = false;
+    const nameLabel = h(doc, 'label', {class: 'ct-edit__label', for: NAME_ID},
+                        ['What is it called?']);
+    const name = h(doc, 'input', {
+        class: 'ct-edit__name',
+        id: NAME_ID,
+        type: 'text',
+        autocomplete: 'off',
+        oninput: () => refresh()
+    }) as HTMLInputElement;
+    const preview = h(doc, 'p', {class: 'ct-edit__preview'});
+    const refusal = h(doc, 'p', {class: 'ct-edit__refusal'});
+    refusal.hidden = true;
+    const begin = h(doc, 'button', {
+        class: 'ct-edit__begin',
+        type: 'submit'
+    }, ['Start writing']) as HTMLButtonElement;
+    begin.disabled = true;
+    const nameForm = h(doc, 'form', {
+        class: 'ct-edit__naming',
+        /* Never a navigation: this is an action on the page the author
+           is standing on, and a submit that reloaded it would throw the
+           name away. Checked against the button rather than the name so
+           there is one answer to "may this begin", which Enter, the
+           button and a scripted `requestSubmit` all get. */
+        onsubmit: (ev: Event) => {
+            ev.preventDefault();
+            if (!begin.disabled) {
+                handlers.begin(name.value);
+            }
+        }
+    }, [nameLabel, name, preview, refusal, begin]) as HTMLFormElement;
+    nameForm.hidden = true;
+
+    /* Says nothing for an empty field -- a question nobody has answered
+       is not an error -- and says why for a name no filename can be
+       made from, because a button that is greyed with no reason is the
+       worst answer to "why can't I press it". */
+    function refresh(): void {
+        const typed = name.value;
+        const path = current && typed.trim() !== ''
+            ? previewPath(current, typed, new Date()) : null;
+        if (typed.trim() === '') {
+            preview.textContent = '';
+        } else {
+            preview.textContent = path === null
+                ? 'That name has no letters or numbers a filename can use.'
+                : `Saved as ${path}`;
+        }
+        name.disabled = busy;
+        begin.disabled = busy || path === null;
+    }
+
     const actions = h(doc, 'div', {class: 'ct-edit__actions'}, [details, pull, submit]);
     const note = h(doc, 'p', {class: 'ct-edit__note'});
 
@@ -272,7 +390,7 @@ export function buildBar(doc: Document, handlers: BarHandlers): Bar {
        has scrolled out of the panel is a bar that cannot be moved off
        the paragraph it is covering. */
     const body = h(doc, 'div', {class: 'ct-edit__body'},
-                   [title, hint, actions, note, fields.node, conflict]);
+                   [title, hint, starters, nameForm, actions, note, fields.node, conflict]);
 
     /* `status` rather than `alert`: the bar is built empty and filled a
        moment later, once the config has been fetched, so without a live
@@ -304,6 +422,29 @@ export function buildBar(doc: Document, handlers: BarHandlers): Bar {
 
             const editing = state.kind === 'editing' ? state : null;
             actions.hidden = editing === null;
+
+            const links = state.kind === 'starter' ? state.links : [];
+            const key = JSON.stringify(links);
+            if (key !== starterKey) {
+                starterKey = key;
+                /* Emptied, not hidden, on any other page: a hidden
+                   link is still one a keyboard reaches. */
+                starters.replaceChildren(...links.map(link => h(doc, 'a', {
+                    class: 'ct-edit__new',
+                    href: link.href
+                }, [`New ${link.label} entry`])));
+            }
+            starters.hidden = links.length === 0;
+
+            const naming = state.kind === 'naming' ? state : null;
+            nameForm.hidden = naming === null;
+            if (naming) {
+                current = naming.collection;
+                busy = naming.busy;
+                refresh();
+            }
+            refusal.textContent = naming?.refusal ?? '';
+            refusal.hidden = !naming?.refusal;
 
             /* Gone whilst the pencil is showing. The pencil IS the
                page's affordance in that state, and a bar beside it
@@ -545,7 +686,23 @@ export function describe(state: BarState): {title: string; hint: string} {
             };
         case 'failed':
             return {title: entryName(state.entry), hint: state.hint};
+        case 'starter':
+            return {title: 'New content', hint: 'Start a new entry from this page.'};
+        case 'new-page':
+            return {title: newEntryTitle(state.collection), hint: 'Ready to start.'};
+        case 'naming':
+            return {
+                title: newEntryTitle(state.collection),
+                hint: 'Name it, then write it on this page.'
+            };
+        case 'new-blocked':
+            return {title: newEntryTitle(state.collection), hint: state.hint};
     }
+}
+
+/** The title of every state on the new page. */
+function newEntryTitle(collection: FolderCollection): string {
+    return `New ${collection.label} entry`;
 }
 
 /** `blog/hello`: the spelling `<meta name="cms:entry">` uses. */

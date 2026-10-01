@@ -128,7 +128,10 @@ export async function open(
     const live: {editing: PageEdit | null} = {editing: null};
     const bar = buildBar(doc, {
         submit: () => live.editing?.submit(),
-        showFields: open => live.editing?.show(open)
+        showFields: open => live.editing?.show(open),
+        /* Task 5 gives this its behaviour; until then no state can
+           reach the naming form, so there is nothing to begin. */
+        begin: () => {}
     });
     doc.body.appendChild(bar.node);
 
