@@ -346,15 +346,15 @@ export function buildBar(doc: Document, handlers: BarHandlers): Bar {
     }, [nameLabel, name, preview, refusal, begin]) as HTMLFormElement;
     nameForm.hidden = true;
 
-    /* Says nothing for an empty field -- a question nobody has answered
-       is not an error -- and says why for a name no filename can be
-       made from, because a button that is greyed with no reason is the
-       worst answer to "why can't I press it". */
+    /* Says nothing only for a field with no characters in it -- a
+       question nobody has answered is not an error -- and says why for
+       every name no filename can be made from, spaces included: a
+       greyed button beside a blank-looking preview is the worst answer
+       to "why can't I press it". */
     function refresh(): void {
         const typed = name.value;
-        const path = current && typed.trim() !== ''
-            ? previewPath(current, typed, new Date()) : null;
-        if (typed.trim() === '') {
+        const path = current ? previewPath(current, typed, new Date()) : null;
+        if (typed === '') {
             preview.textContent = '';
         } else {
             preview.textContent = path === null

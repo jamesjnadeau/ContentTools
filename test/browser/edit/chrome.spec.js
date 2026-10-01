@@ -867,13 +867,15 @@ describe('the bar on the new page', function() {
 
     it('holds the button for a name with no usable filename', function() {
         bar.update(naming());
-        for (const name of ['', '   ', '!!!', '日本語']) {
+        const unusable = 'That name has no letters or numbers a filename can use.';
+        /* Per name, not once after the loop: the preview of the last one
+           says nothing about the others. Only the field with no
+           characters in it is left unexplained; spaces are a name. */
+        for (const [name, said] of [['', ''], ['   ', unusable], ['!!!', unusable], ['日本語', unusable]]) {
             type(bar, name);
             expect(part(bar, 'begin').disabled).toBe(true);
+            expect(text(bar, '.ct-edit__preview')).toBe(said);
         }
-
-        expect(text(bar, '.ct-edit__preview'))
-            .toBe('That name has no letters or numbers a filename can use.');
     });
 
     it('says nothing about an empty field', function() {
